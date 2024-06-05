@@ -1,10 +1,30 @@
+#' Create a SynogDB object
+#'
+#' This function creates a SynogDB object containing genome, GFF, CDS, and protein information
+#' for query and subject genomes. It also initializes an HDF5 file to store related data.
+#'
+#' @param query_genome Path to the query genome file.
+#' @param subject_genome Path to the subject genome file.
+#' @param query_gff Path to the query GFF file.
+#' @param subject_gff Path to the subject GFF file.
+#' @param query_cds Path to the query CDS file.
+#' @param subject_cds Path to the subject CDS file.
+#' @param query_prot Path to the query protein file.
+#' @param subject_prot Path to the subject protein file.
+#' @param positive_list Path to the positive list file.
+#' @param negative_list Path to the negative list file.
+#' @param hdf5_path Path to the HDF5 file (default is "./synog.h5").
+#'
+#' @return A SynogDB object.
 #' @export
+#'
 makeSynogDB <- function(query_genome, subject_genome,
                         query_gff, subject_gff,
                         query_cds, subject_cds,
                         query_prot, subject_prot,
                         positive_list, negative_list,
                         hdf5_path = "./synog.h5"){
+    # Create a list containing all input file paths
     out <- list(query_genome = query_genome,
                 subject_genome = subject_genome,
                 query_gff = query_gff,
@@ -16,31 +36,53 @@ makeSynogDB <- function(query_genome, subject_genome,
                 positive_list = positive_list,
                 negative_list = negative_list)
 
+    # Check if all input files exist
     for(i in seq_along(out)){
         if(!file.exists(out[[i]])){
             stop(out[[i]], " do not exists!")
         }
     }
 
+    # Summarize the query and subject genomes
     out$genome$query <- .genomeSummary(genome = query_genome)
     out$genome$subject <- .genomeSummary(genome = subject_genome)
 
+    # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "SynogDB")
     out$h5 <- .makeHDF5(hdf5_path = hdf5_path)
     return(out)
 }
 
+#' Summarize genome information
+#'
+#' This function reads a genome file and returns a summary containing the names and lengths of the sequences.
+#'
+#' @param genome Path to the genome file.
+#'
+#' @return A list containing genome names and lengths.
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom BiocGenerics width
 .genomeSummary <- function(genome){
+    # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(genome)
+
+    # Create a summary list with sequence names and lengths
     out <- list(names = names(genome),
                 length = width(genome))
     return(out)
 }
 
-
+#' Summarize SynogDB object
+#'
+#' This function provides a summary of the SynogDB object, optionally for gene or transcript information.
+#'
+#' @param object A SynogDB object.
+#' @param gene Logical, whether to summarize genewise orthology information (default is FALSE).
+#' @param split Logical, whether to summarize split genewise orthology information (default is FALSE).
+#'
+#' @return A summary dataframe.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#'
 summarySynog <- function(object, gene = FALSE, split = FALSE){
     stopifnot(inherits(x = object, "SynogDB"))
     h5 <- H5Fopen(object$h5)
@@ -58,8 +100,8 @@ summarySynog <- function(object, gene = FALSE, split = FALSE){
             }
             df <- h5$synog_gene$summary
         }
-    } else {
 
+    } else {
         if(!H5Lexists(h5, "synog_tx/summary")){
             stop("Run syntenyOrtho to obtain ortholog info.")
         }
@@ -75,46 +117,79 @@ summarySynog <- function(object, gene = FALSE, split = FALSE){
     return(df)
 }
 
-
-################################################################################
-#' @export
+#' Create FASTA files
+#'
+#' This function generates FASTA files for query and subject CDS from the SynogDB object.
+#'
+#' @param object A SynogDB object.
+#' @param out_dir Output directory for FASTA files.
+#'
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom Biostrings writeXStringSet
-#'
+#' @export
 createFASTA <- function(object, out_dir){
     h5 <- H5Fopen(object$h5)
     on.exit(H5Fclose(h5))
+    # Create CDS sequences for query and subject genomes
     q_cds <- .makeCDS(gff = as.vector(h5$protmap$s2q_gff),
                       genome = object$query_genome)
     s_cds <- .makeCDS(gff = as.vector(h5$protmap$q2s_gff),
                       genome = object$subject_genome)
+
+    # Define filenames for the CDS FASTA files
     q_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$s2q_gff))
     s_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$q2s_gff))
+
+    # Write the CDS sequences to FASTA files
     writeXStringSet(q_cds, q_cds_fn)
     writeXStringSet(s_cds, s_cds_fn)
 
+    # Overwrite the HDF5 file with the new CDS FASTA filenames
     .h5overwrite(obj = q_cds_fn, file = object$h5, "protmap/s2q_cds")
     .h5overwrite(obj = s_cds_fn, file = object$h5, "protmap/q2s_cds")
 }
 
+#' Create CDS sequences from GFF and genome files
+#'
+#' This function generates CDS sequences from provided GFF and genome files.
+#'
+#' @param gff Path to the GFF file.
+#' @param genome Path to the genome file.
+#'
+#' @return A DNAStringSet object containing CDS sequences.
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom GenomicFeatures makeTxDbFromGFF cdsBy extractTranscriptSeqs
+#'
 .makeCDS <- function(gff, genome){
+    # Create a TxDb object from the GFF file
     txdb <- makeTxDbFromGFF(file = gff)
+
+    # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(filepath = genome)
+
+    # Extract CDS sequences from the TxDb object
     cds_db <- cdsBy(x = txdb, by = "tx", use.names = TRUE)
     cds <- extractTranscriptSeqs(x = genome, transcripts = cds_db)
+
+    # Order CDS sequences by their names
     cds <- cds[order(names(cds))]
     return(cds)
 }
 
-################################################################################
-#' @export
-#' @importFrom rhdf5 H5Fopen H5Fclose
+#' Update SynogDB files
 #'
+#' This function updates the GFF and CDS files in a SynogDB object from the HDF5 file.
+#'
+#' @param object A SynogDB object.
+#'
+#' @return The updated SynogDB object.
+#' @importFrom rhdf5 H5Fopen H5Fclose
+#' @export
 updateFiles <- function(object){
     h5 <- H5Fopen(object$h5)
     on.exit(H5Fclose(h5))
+
+    # Update GFF and CDS file paths from the HDF5 file
     object$query_gff <- as.vector(h5$protmap$s2q_gff)
     object$subject_gff <- as.vector(h5$protmap$q2s_gff)
     object$query_cds <- as.vector(h5$protmap$s2q_cds)
@@ -122,10 +197,17 @@ updateFiles <- function(object){
     return(object)
 }
 
-################################################################################
-#' @export
-#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' Get Synog information
 #'
+#' This function retrieves ortholog pairs information from the SynogDB object.
+#'
+#' @param object A SynogDB object.
+#' @param gene Logical, whether to get genewise orthology information (default is FALSE).
+#' @param split Logical, whether to get split genewise orthology information (default is FALSE).
+#'
+#' @return A dataframe containing ortholog pairs.
+#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' @export
 getSynog <- function(object, gene = FALSE, split = FALSE){
     h5 <- H5Fopen(object$h5)
     on.exit(H5Fclose(h5))
@@ -170,8 +252,19 @@ getSynog <- function(object, gene = FALSE, split = FALSE){
     return(out)
 }
 
-#' @export
+#' Get orphan information
+#'
+#' This function retrieves orphan genes or transcripts information from the SynogDB object.
+#'
+#' @param object A SynogDB object.
+#' @param gene Logical, whether to get orphan gene information.
+#' Orphan transcript information will be returned if FALSE. (default is FALSE).
+#' @param split Logical, whether to obtain split orphan gene information (default is FALSE).
+#'
+#' @return A dataframe containing orphan genes or transcripts.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' @export
+#'
 getOrphan <- function(object, gene = FALSE, split = FALSE){
     h5 <- H5Fopen(object$h5)
     on.exit(H5Fclose(h5))
@@ -203,4 +296,3 @@ getOrphan <- function(object, gene = FALSE, split = FALSE){
     }
     return(out)
 }
-
