@@ -1,12 +1,22 @@
-#' Define a function to filter ortholog pairs based on LCBs
+#' Filter ortholog pairs based on Locally Collinear Blocks (LCBs)
+#'
+#' This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
+#'
+#' @param object A SynogDB object.
+#' @param non1to1 Logical indicating whether to include non-1-to-1 LCB pairs (default is TRUE).
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-#'
 anchorOrtho <- function(object,
                         non1to1 = TRUE){
+    # Check if the input object is of class "SynogDB"
     stopifnot(inherits(x = object, "SynogDB"))
+
+    # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
+    # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
+
+    # Check if the necessary groups exist in the HDF5 file
     if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
         stop("Run getLCBpairs to obtain LCB pair info.")
     }
@@ -14,33 +24,93 @@ anchorOrtho <- function(object,
         stop("Run rbh with `best = TRUE` to obtain RBBH info.")
     }
 
+    # Create a working object from the SynogDB object and HDF5 file
     obj <- .makeObject(object = object, h5 = h5)
 
+    # Filter orthologs in 1-to-1 LCBs
     obj <- .orthoIn1to1lcb(obj = obj)
-    obj <- .orthoInNon1to1lcb(obj = obj)
+    # Filter orthologs in non-1-to-1 LCBs if specified
+    if (non1to1) {
+        obj <- .orthoInNon1to1lcb(obj = obj)
+    }
+    # Filter orthologs in 1-to-1 CBI
     obj <- .orthoIn1to1cbi(obj = obj)
 
+    # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
+    .h5overwrite(obj = obj$out, file = object$h5, "anchor")
+}#' Filter ortholog pairs based on Locally Collinear Blocks (LCBs)
+#'
+#' This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
+#'
+#' @param object A SynogDB object.
+#' @param non1to1 Logical indicating whether to include non-1-to-1 LCB pairs (default is TRUE).
+#' @export
+#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+anchorOrtho <- function(object,
+                        non1to1 = TRUE){
+    # Check if the input object is of class "SynogDB"
+    stopifnot(inherits(x = object, "SynogDB"))
+
+    # Open the HDF5 file
+    h5 <- H5Fopen(object$h5)
+    # Ensure the HDF5 file is closed when the function exits
+    on.exit(H5Fclose(h5))
+
+    # Check if the necessary groups exist in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
+        stop("Run getLCBpairs to obtain LCB pair info.")
+    }
+    if(!H5Lexists(h5, "blast/rbbh")){
+        stop("Run rbh with `best = TRUE` to obtain RBBH info.")
+    }
+
+    # Create a working object from the SynogDB object and HDF5 file
+    obj <- .makeObject(object = object, h5 = h5)
+
+    # Filter orthologs in 1-to-1 LCBs
+    obj <- .orthoIn1to1lcb(obj = obj)
+    # Filter orthologs in non-1-to-1 LCBs if specified
+    if (non1to1) {
+        obj <- .orthoInNon1to1lcb(obj = obj)
+    }
+    # Filter orthologs in 1-to-1 CBI
+    obj <- .orthoIn1to1cbi(obj = obj)
+
+    # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
     .h5overwrite(obj = obj$out, file = object$h5, "anchor")
 }
 
+#' Create a working object for ortholog filtering
+#'
+#' This function creates a working object containing necessary data for ortholog filtering based on LCBs.
+#'
+#' @param object A SynogDB object.
+#' @param h5 An HDF5 file handle.
+#' @return A list containing the working object data.
 .makeObject <- function(object, h5){
+    # Order the LCB pairs
     pairs <- list(lcb_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_1to1),
                   lcb_non_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_non_1to1))
 
+    # Convert data frames to GRanges objects
     gr <- .df2gr(pairs = pairs)
 
+    # Create GRanges objects for gaps in the query and subject genomes
     gap_gr <- list(query = .gapGR(gr = gr$query_1to1,
                                   chrLen = object$genome$query),
                    subject = .gapGR(gr = gr$subject_1to1,
                                     chrLen = object$genome$subject))
 
+    # Import GFF files for query and subject genomes
     query_gff <- .importAllGFF(object$query_gff)
     subject_gff <- .importAllGFF(object$subject_gff)
     gff <- .subsetGFF(query_gff = query_gff, subject_gff = subject_gff)
 
+    # Get the Reciprocal Best BLAST Hits (RBBH) from the HDF5 file
     rbbh <- h5$blast$rbbh
     rbbh$index <- seq_along(rbbh$qseqid)
 
+    # Create and return the working object
     out <- list(gr = gr,
                 rbbh = rbbh,
                 gap_gr = gap_gr,
@@ -48,48 +118,82 @@ anchorOrtho <- function(object,
     return(out)
 }
 
+#' Order LCB pairs
+#'
+#' This function orders Locally Collinear Block (LCB) pairs based on query or subject genome coordinates.
+#'
+#' @param df A data.frame containing LCB pairs.
+#' @param by A character string indicating whether to order by "query" or "subject" (default is "query").
+#'
+#' @return An ordered data.frame of LCB pairs.
 .order <- function(df, by = "query"){
     if(by == "query"){
+        # Order by query chromosome and start position
         q_order <- order(df$query_chr, df$query_start)
         df <- df[q_order, ]
     } else {
-        s_order <- order(df$subject_chr,
-                         df$subject_start)
+        # Order by subject chromosome and start position
+        s_order <- order(df$subject_chr, df$subject_start)
         df <- df[s_order, ]
     }
     return(df)
 }
 
+#' Convert LCB pairs to GRanges objects
+#'
+#' This function converts Locally Collinear Block (LCB) pairs to GRanges objects for both query and subject genomes.
+#'
+#' @param pairs A list containing LCB pairs data frames.
+#'
+#' @return A list of GRanges objects for query and subject genomes.
+#'
 .df2gr <- function(pairs){
-    gr <- list(query_1to1 = .makeGRanges(df = pairs$lcb_1to1,
-                                         genome = "query"),
-               subject_1to1 = .makeGRanges(df = pairs$lcb_1to1,
-                                           genome = "subject"),
-               query_non1to1 = .makeGRanges(df = pairs$lcb_non_1to1,
-                                            genome = "query"),
-               subject_non1to1 = .makeGRanges(df = pairs$lcb_non_1to1,
-                                              genome = "subject"))
+    gr <- list(
+        # Create GRanges object for 1-to-1 LCB pairs in the query genome
+        query_1to1 = .makeGRanges(df = pairs$lcb_1to1, genome = "query"),
+        # Create GRanges object for 1-to-1 LCB pairs in the subject genome
+        subject_1to1 = .makeGRanges(df = pairs$lcb_1to1, genome = "subject"),
+        # Create GRanges object for non-1-to-1 LCB pairs in the query genome
+        query_non1to1 = .makeGRanges(df = pairs$lcb_non_1to1, genome = "query"),
+        # Create GRanges object for non-1-to-1 LCB pairs in the subject genome
+        subject_non1to1 = .makeGRanges(df = pairs$lcb_non_1to1, genome = "subject")
+    )
     return(gr)
 }
 
+#' Convert LCB pairs to GRanges object
+#'
+#' This function converts Locally Collinear Block (LCB) pairs to a GRanges object for either the query or subject genome.
+#'
+#' @param df A data.frame containing LCB pairs.
+#' @param genome A character string indicating whether to create GRanges for "query" or "subject".
+#' @return A GRanges object for the specified genome.
+#'
 #' @importFrom GenomicRanges GRanges
 #' @importFrom IRanges IRanges
+#'
 .makeGRanges <- function(df, genome){
     if(genome == "query"){
+        # Handle cases where start position is greater than end position
         minus <- df$query_start > df$query_end
         tmp <- df$query_start[minus]
         df$query_start[minus] <- df$query_end[minus]
         df$query_end[minus] <- tmp
+
+        # Create GRanges object for query genome
         gr <- GRanges(seqnames = df$query_chr,
                       ranges = IRanges(start = df$query_start,
                                        end = df$query_end),
                       strand = "*")
 
     } else {
+        # Handle cases where start position is greater than end position
         minus <- df$subject_start > df$subject_end
         tmp <- df$subject_start[minus]
         df$subject_start[minus] <- df$subject_end[minus]
         df$subject_end[minus] <- tmp
+
+        # Create GRanges object for subject genome
         gr <- GRanges(seqnames = df$subject_chr,
                       ranges = IRanges(start = df$subject_start,
                                        end = df$subject_end),
@@ -98,23 +202,57 @@ anchorOrtho <- function(object,
     return(gr)
 }
 
+#' Subset and order GFF files
+#'
+#' This function subsets GFF files to include only transcripts and mRNA, and orders them.
+#'
+#' @param query_gff A GRanges object containing the query GFF data.
+#' @param subject_gff A GRanges object containing the subject GFF data.
+#'
+#' @return A list containing the subsetted and ordered query and subject GFF data.
+#'
 .subsetGFF <- function(query_gff, subject_gff){
+    # Subset the GFF data to include only "transcript" and "mRNA" types
     query_gff <- query_gff[query_gff$type %in% c("transcript", "mRNA")]
     subject_gff <- subject_gff[subject_gff$type %in% c("transcript", "mRNA")]
 
+    # Order the GFF data
     query_gff <- .orderGFF(gff = query_gff)
     subject_gff <- .orderGFF(gff = subject_gff)
+
     return(list(query = query_gff, subject = subject_gff))
 }
 
+#' Order GFF data
+#'
+#' This function orders GFF entries based on chromosome and start position.
+#'
+#' @param gff A GRanges object containing the GFF data.
+#'
+#' @return An ordered GRanges object.
+#'
 .orderGFF <- function(gff){
+    # Order GFF data by chromosome and start position
     gff_order <- order(as.character(seqnames(gff)), start(gff))
     gff <- gff[gff_order]
     return(gff)
 }
 
+#' Create GRanges object for genomic gaps
+#'
+#' This function creates a GRanges object for genomic gaps between Locally Collinear Blocks (LCBs).
+#'
+#' @param gr A GRanges object containing LCBs.
+#' @param chrLen A data.frame containing chromosome lengths.
+#'
+#' @return A GRanges object representing the gaps between LCBs.
+#'
+#' @importFrom GenomicRanges GRanges
+#' @importFrom IRanges IRanges
+#'
 .gapGR <- function(gr, chrLen){
     n_gr <- length(gr)
+    # Create a data.frame for the gaps between LCBs
     gap_gr <- data.frame(chr_start = as.character(seqnames(gr[-n_gr])),
                          chr_end = as.character(seqnames(gr[-1])),
                          start = end(gr[-n_gr]) + 1,
@@ -122,31 +260,46 @@ anchorOrtho <- function(object,
                          start_block = seq_along(gr)[-n_gr],
                          end_block = seq_along(gr)[-1])
 
-    gap_gr <- rbind(subset(gap_gr, subset = chr_start == chr_end),
-                    .gapGrStartEdge(gr = gr, gap_gr = gap_gr),
-                    .gapGrEndEdge(gr = gr,
-                                  gap_gr = gap_gr,
-                                  chrLen = chrLen,
-                                  n_gr = n_gr))
+    # Include gaps at the start and end of chromosomes
+    gap_gr <- rbind(
+        subset(gap_gr, subset = chr_start == chr_end),
+        .gapGrStartEdge(gr = gr, gap_gr = gap_gr),
+        .gapGrEndEdge(gr = gr, gap_gr = gap_gr, chrLen = chrLen, n_gr = n_gr)
+    )
 
+    # Flip minus strand gaps
     gap_gr <- .flipMinusStrand(df = gap_gr)
 
+    # Create a GRanges object from the gap data
     gap_gr <- GRanges(seqnames = gap_gr$chr_start,
-                      ranges = IRanges(start = gap_gr$start,
-                                       end = gap_gr$end),
+                      ranges = IRanges(start = gap_gr$start, end = gap_gr$end),
                       start_block = gap_gr$start_block,
                       end_block = gap_gr$end_block)
 
+    # Filter out gaps with width less than or equal to 1
     gap_gr <- gap_gr[width(gap_gr) > 1]
     return(gap_gr)
 }
 
+#' Create GRanges for start edges of gaps
+#'
+#' This function creates a GRanges object for the gaps at the start edges of chromosomes.
+#'
+#' @param gr A GRanges object containing LCBs.
+#' @param gap_gr A data.frame containing gap information.
+#'
+#' @return A data.frame with updated gap information for start edges.
+#'
 #' @importFrom GenomeInfoDb seqnames
+#'
 .gapGrStartEdge <- function(gr, gap_gr){
+    # Subset gaps where chromosome start and end differ
     out <- subset(gap_gr, subset = chr_start != chr_end)
     out$chr_start <- out$chr_end
     out$start <- 1
     out$start_block <- NA
+
+    # Add gap at the start of the first chromosome
     chr <- as.character(seqnames(gr[1]))
     end <- start(gr[1]) - 1
     out <- rbind(data.frame(chr_start = chr,
@@ -159,11 +312,26 @@ anchorOrtho <- function(object,
     return(out)
 }
 
+#' Create GRanges for end edges of gaps
+#'
+#' This function creates a GRanges object for the gaps at the end edges of chromosomes.
+#'
+#' @param gr A GRanges object containing LCBs.
+#' @param gap_gr A data.frame containing gap information.
+#' @param chrLen A data.frame containing chromosome lengths.
+#' @param n_gr The number of GRanges in the input.
+#'
+#' @return A data.frame with updated gap information for end edges.
+#'
 #' @importFrom GenomeInfoDb seqnames
+#'
 .gapGrEndEdge <- function(gr, gap_gr, chrLen, n_gr){
+    # Subset gaps where chromosome start and end differ
     out <- subset(gap_gr, subset = chr_start != chr_end)
     out$chr_end <- out$chr_start
     out$end <- chrLen$length[match(out$chr_start, chrLen$names)]
+
+    # Add gap at the end of the last chromosome
     chr <- as.character(seqnames(gr[n_gr]))
     start <- end(gr[n_gr]) + 1
     out$end_block <- NA
@@ -177,6 +345,14 @@ anchorOrtho <- function(object,
     return(out)
 }
 
+#' Flip start and end positions for minus strand gaps
+#'
+#' This function flips the start and end positions for gaps on the minus strand.
+#'
+#' @param df A data.frame containing gap information.
+#'
+#' @return A data.frame with flipped start and end positions for minus strand gaps.
+#'
 .flipMinusStrand <- function(df){
     minus <- df$start > df$end
     tmp <- df$start[minus]
@@ -185,6 +361,14 @@ anchorOrtho <- function(object,
     return(df)
 }
 
+#' Filter orthologs in 1-to-1 LCBs
+#'
+#' This function filters ortholog pairs that are in 1-to-1 Locally Collinear Blocks (LCBs).
+#'
+#' @param obj A working object containing necessary data.
+#'
+#' @return A working object with filtered orthologs.
+#'
 .orthoIn1to1lcb <- function(obj){
     out <- .orthoInBlock(gr_query = obj$gr$query_1to1,
                          gr_subject = obj$gr$subject_1to1,
@@ -196,6 +380,14 @@ anchorOrtho <- function(object,
     return(obj)
 }
 
+#' Filter orthologs in non-1-to-1 LCBs
+#'
+#' This function filters ortholog pairs that are in non-1-to-1 Locally Collinear Blocks (LCBs).
+#'
+#' @param obj A working object containing necessary data.
+#'
+#' @return A working object with filtered orthologs.
+#'
 .orthoInNon1to1lcb <- function(obj){
     out <- .orthoInBlock(gr_query = obj$gr$query_non1to1,
                          gr_subject = obj$gr$subject_non1to1,
@@ -207,6 +399,14 @@ anchorOrtho <- function(object,
     return(obj)
 }
 
+#' Filter orthologs in 1-to-1 CBI
+#'
+#' This function filters ortholog pairs that are in 1-to-1 Chromosome Break Intervals (CBI).
+#'
+#' @param obj A working object containing necessary data.
+#'
+#' @return A working object with filtered orthologs.
+#'
 .orthoIn1to1cbi <- function(obj){
     out <- .orthoInBlock(gr_query = obj$gap_gr$query,
                          gr_subject = obj$gap_gr$subject,
@@ -219,23 +419,36 @@ anchorOrtho <- function(object,
     return(obj)
 }
 
+#' Filter ortholog pairs in blocks
+#'
+#' This function filters ortholog pairs that are within specified blocks.
+#'
+#' @param gr_query A GRanges object for query genome.
+#' @param gr_subject A GRanges object for subject genome.
+#' @param rbbh A data.frame containing reciprocal best BLAST hits.
+#' @param gff_query A GRanges object containing query GFF data.
+#' @param gff_subject A GRanges object containing subject GFF data.
+#' @param interval Logical indicating whether to use intervals (default is FALSE).
+#'
+#' @return A data.frame containing the filtered ortholog pairs.
+#'
 .orthoInBlock <- function(gr_query,
                           gr_subject,
                           rbbh,
                           gff_query,
                           gff_subject,
                           interval = FALSE){
-    q_g2b <-  .gene2block(gr = gr_query,
-                          rbbh_id = rbbh$qseqid,
-                          gff = gff_query)
+    # Map genes to blocks for query and subject genomes
+    q_g2b <-  .gene2block(gr = gr_query, rbbh_id = rbbh$qseqid, gff = gff_query)
+    s_g2b <-  .gene2block(gr = gr_subject, rbbh_id = rbbh$sseqid, gff = gff_subject)
 
-    s_g2b <-  .gene2block(gr = gr_subject,
-                          rbbh_id = rbbh$sseqid,
-                          gff = gff_subject)
+    # If intervals are specified, get the intervals for the blocks
     if(interval){
         q_g2b <- .getInterval(g2b = q_g2b, gr = gr_query)
         s_g2b <- .getInterval(g2b = s_g2b, gr = gr_subject)
     }
+
+    # Find valid ortholog pairs
     valid <- q_g2b == s_g2b
     out <- subset(rbbh, subset = valid)
     return(out)
