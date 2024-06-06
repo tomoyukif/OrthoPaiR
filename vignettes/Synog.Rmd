@@ -1,19 +1,198 @@
 ---
-title: "Synog"
+title: "Synog Package Vignette"
+author: "Your Name"
+date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Synog}
+  %\VignetteIndexEntry{Synog Package Vignette}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
 
-```{r, include = FALSE}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
   comment = "#>"
 )
 ```
 
-```{r setup}
-library(Synog)
+# Introduction
+
+The `Synog` package provides tools for conducting syntenic orthologous gene pairing between given genomes. This vignette demonstrates how to use the package functions to perform syntenic orthologous gene pairing and analyze the results.
+
+# Installation of Prerequisite Packages
+
+Before using the `Synog` package, make sure you have the following prerequisite packages installed:
+
+```{r}
+install.packages("BiocManager")
+BiocManager::install(c("GenomicRanges", "GenomeInfoDb", "rhdf5", "rtracklayer", "Biostrings", "S4Vectors"))
+install.packages(c("ggplot2", "data.table"))
 ```
+
+Ensure you also have Miniprot and Sibeliaz installed. You can follow their installation guides on their respective websites.
+
+# Creating a SynogDB Object
+
+First, create a `SynogDB` object using the `makeSynogDB` function. This object will hold all necessary input files and parameters.
+
+```{r create-synogdb}
+library(Synog)
+
+object <- makeSynogDB(
+  query_genome = "input/nb_genome.fa",
+  subject_genome = "input/wk21_genome.fa",
+  query_gff = "input/nb.gff",
+  subject_gff = "input/wk21.gff",
+  query_cds = "input/nb_cds.fa",
+  subject_cds = "input/wk21_cds.fa",
+  query_prot = "input/nb_prot.fa",
+  subject_prot = "input/wk21_prot.fa",
+  positive_list = "input/positive_list.csv",
+  negative_list = "input/negative_list.csv",
+  hdf5_path = "output/synog.h5"
+)
+```
+
+# Running Sibeliaz
+
+Run Sibeliaz to identify locally collinear blocks (LCBs) between the query and subject genomes.
+
+```{r run-sibeliaz}
+runSibeliaz(
+  object = object,
+  out_dir = "sibeliaz_out",
+  conda = "/home/ftom/tools/anaconda3/bin/conda",
+  condaenv = "sibeliaz", 
+  run_sibeliaz = TRUE
+)
+sibeliaLCB2DF(object = object)
+lcbClassify(object = object)
+getLCBpairs(object = object)
+```
+
+# Finding Ortholog Pairs Based on CDS RBH
+
+Find reciprocal best hits (RBH) for CDS sequences.
+
+```{r find-rbh}
+rbh(object = object, n_threads = 30)
+```
+
+# Running LCB-based RBBH Filtering
+
+Anchor orthologous genes using LCB-based RBBH filtering.
+
+```{r anchor-ortho}
+anchorOrtho(object = object)
+```
+
+# Synteny-based RBH Filtering
+
+Filter orthologous genes based on synteny.
+
+```{r synteny-ortho}
+syntenyOrtho(
+  object = object, 
+  omit_chr = "chrUn|chrSy",
+  pident = 90, 
+  evalue = 1e-100, 
+  qcovs = 50
+)
+```
+
+# Gene-wise Orthologous Pairing
+
+Perform gene-wise orthologous pairing.
+
+```{r gene-ortho}
+geneOrtho(object = object)
+```
+
+# Summarizing Results
+
+Generate summaries and export results.
+
+```{r summarize-results}
+txwise_summary <- summarySynog(object = object, gene = FALSE)
+genewise_summary <- summarySynog(object = object, gene = TRUE)
+synog_genewise <- getSynog(object = object, gene = TRUE)
+orphan_genewise <- getOrphan(object = object, gene = TRUE)
+
+write.csv(txwise_summary, "output/synog_nonMiniprot_txwise_summary.csv")
+write.csv(genewise_summary, "output/synog_nonMiniprot_genewise_summary.csv")
+write.csv(synog_genewise, "output/synog_nonMiniprot_genewise_ortho.csv")
+write.csv(orphan_genewise$query, "output/synog_nonMiniprot_orphan_query.csv", row.names = FALSE)
+write.csv(orphan_genewise$subject, "output/synog_nonMiniprot_orphan_subject.csv", row.names = FALSE)
+```
+
+# Mapping Proteins with Miniprot
+
+Map proteins using Miniprot to further refine orthologous pairs.
+
+```{r map-prot}
+miniprot_bin <- "/home/ftom/tools/miniprot/miniprot"
+mapProt(
+  object = object,
+  miniprot_bin = miniprot_bin,
+  n_core = 20,
+  out_prefix = "output/nb_wk21_"
+)
+```
+
+# Updating Files and Re-running Analyses
+
+Update files and re-run analyses for refined results.
+
+```{r update-files}
+object <- updateFiles(object = object)
+rbh(object = object, n_threads = 30)
+anchorOrtho(object = object)
+syntenyOrtho(
+  object = object, 
+  omit_chr = "chrUn|chrSy",
+  pident = 90, 
+  evalue = 1e-100, 
+  qcovs = 50
+)
+geneOrtho(object = object)
+```
+
+# Summarizing Refined Results
+
+Generate refined summaries and export results.
+
+```{r summarize-refined-results}
+txwise_summary <- summarySynog(object = object, gene = FALSE)
+genewise_summary <- summarySynog(object = object, gene = TRUE)
+synog_genewise <- getSynog(object = object, gene = TRUE)
+orphan_genewise <- getOrphan(object = object, gene = TRUE)
+
+write.csv(txwise_summary, "output/synog_txwise_summary.csv")
+write.csv(genewise_summary, "output/synog_genewise_summary.csv")
+write.csv(synog_genewise, "output/synog_genewise_ortho.csv")
+write.csv(orphan_genewise$query, "output/synog_orphan_query.csv", row.names = FALSE)
+write.csv(orphan_genewise$subject, "output/synog_orphan_subject.csv", row.names = FALSE)
+```
+
+# Splitting Genes
+
+Split genes based on the orthologous pairs identified.
+
+```{r split-genes}
+splitGenes(object = object)
+genewise_split_summary <- summarySynog(object = object, gene = TRUE, split = TRUE)
+synog_txwise <- getSynog(object = object, gene = FALSE)
+synog_genewise_split <- getSynog(object = object, gene = TRUE, split = TRUE)
+orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
+
+write.csv(genewise_split_summary, "output/synog_genewise_split_summary.csv")
+write.csv(synog_genewise_split, "output/synog_genewise_split_ortho.csv")
+write.csv(synog_txwise, "output/synog_txwise_ortho.csv")
+write.csv(orphan_genewise_split$query, "output/synog_orphan_split_query.csv", row.names = FALSE)
+write.csv(orphan_genewise_split$subject, "output/synog_orphan_split_subject.csv", row.names = FALSE)
+```
+
+# Conclusion
+
+This vignette demonstrated the use of the `Synog` package to conduct syntenic orthologous gene pairing between genomes. The package provides comprehensive tools for identifying, filtering, and analyzing orthologous gene pairs, facilitating comparative genomic studies.
