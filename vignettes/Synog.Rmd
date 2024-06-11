@@ -11,8 +11,8 @@ vignette: >
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(
-  collapse = TRUE,
-  comment = "#>"
+    collapse = TRUE,
+    comment = "#>"
 )
 ```
 
@@ -30,7 +30,7 @@ BiocManager::install(c("GenomicRanges", "GenomeInfoDb", "rhdf5", "rtracklayer", 
 install.packages(c("ggplot2", "data.table"))
 ```
 
-Ensure you also have Miniprot and Sibeliaz installed. You can follow their installation guides on their respective websites.
+Ensure you also have Miniprot and SibeliaZ installed and executable. You can follow their installation guides on their respective websites.
 
 # Creating a SynogDB Object
 
@@ -38,34 +38,57 @@ First, create a `SynogDB` object using the `makeSynogDB` function. This object w
 
 ```{r create-synogdb}
 library(Synog)
+```
 
-object <- makeSynogDB(
-  query_genome = "input/nb_genome.fa",
-  subject_genome = "input/wk21_genome.fa",
-  query_gff = "input/nb.gff",
-  subject_gff = "input/wk21.gff",
-  query_cds = "input/nb_cds.fa",
-  subject_cds = "input/wk21_cds.fa",
-  query_prot = "input/nb_prot.fa",
-  subject_prot = "input/wk21_prot.fa",
-  positive_list = "input/positive_list.csv",
-  negative_list = "input/negative_list.csv",
-  hdf5_path = "output/synog.h5"
-)
+
+```{r create-synogdb}
+query_genome <- system.file("extdata", "query_genome.fa", package = "Synog")
+subject_genome <- system.file("extdata", "subject_genome.fa", package = "Synog")
+query_gff <- system.file("extdata", "query.gff", package = "Synog")
+subject_gff <- system.file("extdata", "subject.gff", package = "Synog")
+query_cds <- system.file("extdata", "query_cds.fa", package = "Synog")
+subject_cds <- system.file("extdata", "subject_cds.fa", package = "Synog")
+query_prot <- system.file("extdata", "query_prot.fa", package = "Synog")
+subject_prot <- system.file("extdata", "subject_prot.fa", package = "Synog")
+out_dir <- tempdir()
+hdf5_path <- file.path(out_dir, "synog.h5")
+
+object <- makeSynogDB(query_genome = "inst/extdata/query_genome.fa",
+                      subject_genome = "inst/extdata/subject_genome.fa",
+                      query_gff = "inst/extdata/query.gff",
+                      subject_gff = "inst/extdata/subject.gff",
+                      query_cds = "inst/extdata/query_cds.fa",
+                      subject_cds = "inst/extdata/subject_cds.fa",
+                      query_prot = "inst/extdata/query_prot.fa",
+                      subject_prot = "inst/extdata/subject_prot.fa",
+                      hdf5_path = hdf5_path)
+
+# object <- makeSynogDB(query_genome = query_genome,
+#                       subject_genome = subject_genome,
+#                       query_gff = query_gff,
+#                       subject_gff = subject_gff,
+#                       query_cds = query_cds,
+#                       subject_cds = subject_cds,
+#                       query_prot = query_prot,
+#                       subject_prot = subject_prot,
+#                       hdf5_path = hdf5_path)
 ```
 
 # Running Sibeliaz
 
 Run Sibeliaz to identify locally collinear blocks (LCBs) between the query and subject genomes.
+Usually, installation of SibeliaZ using conda or conda wrappers may be the easiest way. If you installed SibeliaZ using conda or conda wrappers, you need to specify the name of the conda environment for SibeliaZ. If your conda binary is not executable from your R environment, please specify the path to the conda binary.
 
 ```{r run-sibeliaz}
-runSibeliaz(
-  object = object,
-  out_dir = "sibeliaz_out",
-  conda = "/home/ftom/tools/anaconda3/bin/conda",
-  condaenv = "sibeliaz", 
-  run_sibeliaz = TRUE
-)
+runSibeliaZ(object = object,
+            out_dir = file.path(out_dir, "sibeliaz_out"), 
+            conda = "/home/ftom/miniforge/miniforge3/bin/conda",
+            condaenv = "sibeliaz", 
+            run_sibeliaz = TRUE)
+```
+
+
+```{r run-sibeliaz}
 sibeliaLCB2DF(object = object)
 lcbClassify(object = object)
 getLCBpairs(object = object)
@@ -92,13 +115,11 @@ anchorOrtho(object = object)
 Filter orthologous genes based on synteny.
 
 ```{r synteny-ortho}
-syntenyOrtho(
-  object = object, 
-  omit_chr = "chrUn|chrSy",
-  pident = 90, 
-  evalue = 1e-100, 
-  qcovs = 50
-)
+syntenyOrtho(object = object, 
+             omit_chr = "chrUn|chrSy",
+             pident = 90, 
+             evalue = 1e-100, 
+             qcovs = 50)
 ```
 
 # Gene-wise Orthologous Pairing
@@ -118,12 +139,6 @@ txwise_summary <- summarySynog(object = object, gene = FALSE)
 genewise_summary <- summarySynog(object = object, gene = TRUE)
 synog_genewise <- getSynog(object = object, gene = TRUE)
 orphan_genewise <- getOrphan(object = object, gene = TRUE)
-
-write.csv(txwise_summary, "output/synog_nonMiniprot_txwise_summary.csv")
-write.csv(genewise_summary, "output/synog_nonMiniprot_genewise_summary.csv")
-write.csv(synog_genewise, "output/synog_nonMiniprot_genewise_ortho.csv")
-write.csv(orphan_genewise$query, "output/synog_nonMiniprot_orphan_query.csv", row.names = FALSE)
-write.csv(orphan_genewise$subject, "output/synog_nonMiniprot_orphan_subject.csv", row.names = FALSE)
 ```
 
 # Mapping Proteins with Miniprot
@@ -133,10 +148,10 @@ Map proteins using Miniprot to further refine orthologous pairs.
 ```{r map-prot}
 miniprot_bin <- "/home/ftom/tools/miniprot/miniprot"
 mapProt(
-  object = object,
-  miniprot_bin = miniprot_bin,
-  n_core = 20,
-  out_prefix = "output/nb_wk21_"
+    object = object,
+    miniprot_bin = miniprot_bin,
+    n_core = 20,
+    out_prefix = "output/nb_wk21_"
 )
 ```
 
@@ -148,13 +163,11 @@ Update files and re-run analyses for refined results.
 object <- updateFiles(object = object)
 rbh(object = object, n_threads = 30)
 anchorOrtho(object = object)
-syntenyOrtho(
-  object = object, 
-  omit_chr = "chrUn|chrSy",
-  pident = 90, 
-  evalue = 1e-100, 
-  qcovs = 50
-)
+syntenyOrtho(object = object, 
+             omit_chr = "chrUn|chrSy",
+             pident = 90, 
+             evalue = 1e-100, 
+             qcovs = 50)
 geneOrtho(object = object)
 ```
 
@@ -167,12 +180,6 @@ txwise_summary <- summarySynog(object = object, gene = FALSE)
 genewise_summary <- summarySynog(object = object, gene = TRUE)
 synog_genewise <- getSynog(object = object, gene = TRUE)
 orphan_genewise <- getOrphan(object = object, gene = TRUE)
-
-write.csv(txwise_summary, "output/synog_txwise_summary.csv")
-write.csv(genewise_summary, "output/synog_genewise_summary.csv")
-write.csv(synog_genewise, "output/synog_genewise_ortho.csv")
-write.csv(orphan_genewise$query, "output/synog_orphan_query.csv", row.names = FALSE)
-write.csv(orphan_genewise$subject, "output/synog_orphan_subject.csv", row.names = FALSE)
 ```
 
 # Splitting Genes
@@ -185,14 +192,4 @@ genewise_split_summary <- summarySynog(object = object, gene = TRUE, split = TRU
 synog_txwise <- getSynog(object = object, gene = FALSE)
 synog_genewise_split <- getSynog(object = object, gene = TRUE, split = TRUE)
 orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
-
-write.csv(genewise_split_summary, "output/synog_genewise_split_summary.csv")
-write.csv(synog_genewise_split, "output/synog_genewise_split_ortho.csv")
-write.csv(synog_txwise, "output/synog_txwise_ortho.csv")
-write.csv(orphan_genewise_split$query, "output/synog_orphan_split_query.csv", row.names = FALSE)
-write.csv(orphan_genewise_split$subject, "output/synog_orphan_split_subject.csv", row.names = FALSE)
 ```
-
-# Conclusion
-
-This vignette demonstrated the use of the `Synog` package to conduct syntenic orthologous gene pairing between genomes. The package provides comprehensive tools for identifying, filtering, and analyzing orthologous gene pairs, facilitating comparative genomic studies.

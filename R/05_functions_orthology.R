@@ -295,6 +295,9 @@ anchorOrtho <- function(object,
 .gapGrStartEdge <- function(gr, gap_gr){
     # Subset gaps where chromosome start and end differ
     out <- subset(gap_gr, subset = chr_start != chr_end)
+    if(nrow(out) == 0){
+        return(NULL)
+    }
     out$chr_start <- out$chr_end
     out$start <- 1
     out$start_block <- NA
@@ -328,6 +331,9 @@ anchorOrtho <- function(object,
 .gapGrEndEdge <- function(gr, gap_gr, chrLen, n_gr){
     # Subset gaps where chromosome start and end differ
     out <- subset(gap_gr, subset = chr_start != chr_end)
+    if(nrow(out) == 0){
+        return(NULL)
+    }
     out$chr_end <- out$chr_start
     out$end <- chrLen$length[match(out$chr_start, chrLen$names)]
 
@@ -532,12 +538,13 @@ syntenyOrtho <- function(object,
     anchor_ls <- .makeAnchorList(gff_ls = gff_ls, h5 = h5, omit_chr = omit_chr)
     # Calculate distances for RBH
     rbh_dist <- .getDist(gff_ls = gff_ls, h5 = h5, anchor_ls = anchor_ls)
-    # Read positive and negative lists
-    tp_list <- read.csv(object$positive_list)
-    fp_list <- read.csv(object$negative_list)
-    # Get performance metrics
-    metrics <- .getMetrics(rbh_dist = rbh_dist, tp_list = tp_list, fp_list = fp_list)
-    rbh_dist$so_valid <- rbh_dist$dist <= metrics$so_threshold
+
+    rbh_dist <- .findSingleExonGene(rbh_dist = rbh_dist, gff_ls = gff_ls)
+    dist_threshold <- .findDistThreshold(rbh_dist = rbh_dist)
+    rbh_dist$so_valid <- rbh_dist$dist <= dist_threshold
+    message("The threshold of syntenic gene distance was set to ",
+            dist_threshold)
+
     # Create a data frame for syntenic orthologs
     syn_og <- .makeSynogDF(rbh = rbh_dist, h5 = h5)
     syn_og <- .getMutualScore(ortho = syn_og)
@@ -559,10 +566,7 @@ syntenyOrtho <- function(object,
     .h5overwrite(obj = out$syn_og, file = object$h5, "synog_tx/orthopairs")
     .h5overwrite(obj = out$summary, file = object$h5, "synog_tx/summary")
     .h5overwrite(obj = out$orphan, file = object$h5, "synog_tx/orphan")
-    .h5overwrite(obj = metrics$so_metrics, file = object$h5, "synog_tx/metrics")
-    .h5overwrite(obj = metrics$so_threshold, file = object$h5, "synog_tx/so_threshold")
-
-    invisible(metrics$metrics_plot)
+    .h5overwrite(obj = dist_threshold, file = object$h5, "synog_tx/dist_threshold")
 }
 
 #' Get GFF List
@@ -600,6 +604,42 @@ syntenyOrtho <- function(object,
 
     # Organize anchor data
     out <- .orgAnchor(anchor = anchor, query_anchor = query_anchor, subject_anchor = subject_anchor)
+    return(out)
+}
+
+.findSingleExonGene <- function(rbh_dist, gff_ls){
+    query_tx_ids <- unique(rbh_dist$qseqid)
+    cds_i <- gff_ls$query_gff$type == "CDS"
+    query_cds_parents <- unlist(gff_ls$query_gff$Parent[cds_i])
+    n_query_cds_parents <- table(query_cds_parents)
+    hit <- match(rbh_dist$qseqid, names(n_query_cds_parents))
+    rbh_dist$q_sigle_exon <- n_query_cds_parents[hit] == 1
+
+    subject_tx_ids <- unique(rbh_dist$sseqid)
+    cds_i <- gff_ls$subject_gff$type == "CDS"
+    subject_cds_parents <- unlist(gff_ls$subject_gff$Parent[cds_i])
+    n_subject_cds_parents <- table(subject_cds_parents)
+    hit <- match(rbh_dist$sseqid, names(n_subject_cds_parents))
+    rbh_dist$s_sigle_exon <- n_subject_cds_parents[hit] == 1
+
+    return(rbh_dist)
+}
+
+.findDistThreshold <- function(rbh_dist){
+    rbh_dist <- .getMutualScore(ortho = rbh_dist)
+    rbh_dist <- subset(rbh_dist, subset = !is.infinite(dist))
+    dup_q <- rbh_dist$qseqid[duplicated(rbh_dist$qseqid)]
+    dup_s <- rbh_dist$sseqid[duplicated(rbh_dist$sseqid)]
+    dist_zero <- rbh_dist$dist == 0
+    dup_ids <- rbh_dist$qseqid %in% dup_q | rbh_dist$sseqid %in% dup_s
+    single_exon <- rbh_dist$q_sigle_exon | rbh_dist$s_sigle_exon
+    dist_eval_filt <- !(dist_zero | single_exon)
+    dist_vs_ci <- sapply(seq_len(100),
+                         function(i){
+                             cond <- dist_eval_filt & rbh_dist$dist <= i
+                             return(mean(rbh_dist$mutual_ci[cond]))
+                         })
+    out <- which.max(dist_vs_ci)
     return(out)
 }
 
@@ -718,6 +758,8 @@ syntenyOrtho <- function(object,
 #' Get Distance between Anchors and RBH
 #'
 #' This function calculates the distance between anchors and reciprocal best hits (RBH).
+#'
+#' @importFrom Biobase rowMin
 #'
 .getDist <- function(gff_ls, h5, anchor_ls){
     # Extract RBH data
@@ -992,6 +1034,7 @@ syntenyOrtho <- function(object,
 #' This function merges syntenic ortholog data frames with RBBH orthologs.
 #'
 .mergeSynogDF <- function(syn_og, rbbh_og, gff_ls){
+    syn_og <- subset(syn_og, select = -c(q_sigle_exon, s_sigle_exon))
     # Check if RBBH orthologs data frame is not empty
     if(nrow(rbbh_og) != 0){
         # Set gene IDs for the RBBH orthologs
@@ -1086,14 +1129,23 @@ syntenyOrtho <- function(object,
     og_m1 <- not_mm[not_mm_s_dup, ]
 
     # Combine all classifications into one data frame
-    out <- og_11
-    out$class <- "1to1"
-    og_1m$class <- "1toM"
-    out <- rbind(out, og_1m)
-    og_m1$class <- "Mto1"
-    out <- rbind(out, og_m1)
-    og_mm$class <- "MtoM"
-    out <- rbind(out, og_mm)
+    out <- NULL
+    if(nrow(og_11) != 0){
+        og_11$class <- "1to1"
+        out <- rbind(out, og_11)
+    }
+    if(nrow(og_1m) != 0){
+        og_1m$class <- "1toM"
+        out <- rbind(out, og_1m)
+    }
+    if(nrow(og_m1) != 0){
+        og_m1$class <- "Mto1"
+        out <- rbind(out, og_m1)
+    }
+    if(nrow(og_mm) != 0){
+        og_mm$class <- "MtoM"
+        out <- rbind(out, og_mm)
+    }
 
     # Match the classifications to the original ortholog pairs
     hit <- match(ortho$pair_id, out$pair_id)
@@ -1699,7 +1751,6 @@ splitGenes <- function(object){
 #'
 #' This function imports and filters GFF data to extract CDS features and ensures that the Parent attributes are properly unlisted.
 #'
-#' @importFrom GenomicRanges import
 .prepGFF <- function(object){
     # Import GFF data for query and subject genomes
     query_gff <- .importAllGFF(object$query_gff)
@@ -1718,7 +1769,6 @@ splitGenes <- function(object){
 #'
 #' This function evaluates 1-to-M orthologs to identify cases where a 1-to-M relationship might actually be a result of gene splits.
 #'
-#' @importFrom dplyr subset
 .eval1toM <- function(ortho, gff = gff){
     # Initialize output with current classifications
     out <- ortho$genewise_class
@@ -1744,7 +1794,6 @@ splitGenes <- function(object){
 #'
 #' This function evaluates M-to-1 orthologs to identify cases where a M-to-1 relationship might actually be a result of gene splits.
 #'
-#' @importFrom dplyr subset
 .evalMto1 <- function(ortho, gff = gff){
     # Initialize output with current classifications
     out <- ortho$genewise_class
@@ -1771,7 +1820,6 @@ splitGenes <- function(object){
 #'
 #' This function evaluates M-to-M orthologs to identify cases where an M-to-M relationship might actually be a result of gene splits.
 #'
-#' @importFrom dplyr subset
 .evalMtoM <- function(ortho, gff = gff){
     # Initialize output with current classifications
     out <- ortho$genewise_class
