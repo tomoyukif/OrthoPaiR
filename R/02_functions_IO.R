@@ -11,8 +11,6 @@
 #' @param subject_cds Path to the subject CDS file.
 #' @param query_prot Path to the query protein file.
 #' @param subject_prot Path to the subject protein file.
-#' @param positive_list Path to the positive list file.
-#' @param negative_list Path to the negative list file.
 #' @param hdf5_path Path to the HDF5 file (default is "./synog.h5").
 #'
 #' @return A SynogDB object.
@@ -22,7 +20,6 @@ makeSynogDB <- function(query_genome, subject_genome,
                         query_gff, subject_gff,
                         query_cds, subject_cds,
                         query_prot, subject_prot,
-                        positive_list, negative_list,
                         hdf5_path = "./synog.h5"){
     # Create a list containing all input file paths
     out <- list(query_genome = query_genome,
@@ -32,9 +29,7 @@ makeSynogDB <- function(query_genome, subject_genome,
                 query_cds = query_cds,
                 subject_cds = subject_cds,
                 query_prot = query_prot,
-                subject_prot = subject_prot,
-                positive_list = positive_list,
-                negative_list = negative_list)
+                subject_prot = subject_prot)
 
     # Check if all input files exist
     for(i in seq_along(out)){

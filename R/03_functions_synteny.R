@@ -5,33 +5,33 @@
 #'
 #' @param object A SynogDB object.
 #' @param out_dir Output directory for SibeliaZ results.
-#' @param SibeliaZ_bin Path to the SibeliaZ binary (default is "SibeliaZ").
+#' @param sibeliaz_bin Path to the SibeliaZ binary (default is "sibeliaz").
 #' @param maf2synteny_bin Path to the maf2synteny binary (default is "maf2synteny").
 #' @param conda Path to the conda executable (default is "conda").
 #' @param condaenv Name of the conda environment to use (default is NULL).
-#' @param run_SibeliaZ Logical, whether to run SibeliaZ (default is TRUE).
+#' @param run_sibeliaz Logical, whether to run SibeliaZ (default is TRUE).
 #'
 #' @export
 #'
 runSibeliaZ <- function(object, out_dir,
-                        SibeliaZ_bin = "SibeliaZ",
+                        sibeliaz_bin = "sibeliaz",
                         maf2synteny_bin = "maf2synteny",
                         conda = "conda",
                         condaenv = NULL,
-                        run_SibeliaZ = TRUE){
+                        run_sibeliaz = TRUE){
     stopifnot(inherits(x = object, "SynogDB"))
 
-    if(run_SibeliaZ){
+    if(run_sibeliaz){
         # Prepare query and subject genome files for SibeliaZ
         q_fn <- .prepGenome(genome = object$query_genome, label = "query")
         s_fn <- .prepGenome(genome = object$subject_genome, label = "subject")
 
         # Run SibeliaZ and maf2synteny with or without conda environment
         if(!is.null(condaenv)){
-            .condaExe(conda = conda, env = condaenv, command = SibeliaZ_bin,
+            .condaExe(conda = conda, env = condaenv, command = sibeliaz_bin,
                       args = paste("-o", out_dir, "-n", q_fn, s_fn))
         } else {
-            system2(command = SibeliaZ_bin,
+            system2(command = sibeliaz_bin,
                     args = paste("-o", out_dir, "-n", q_fn, s_fn))
         }
 
@@ -47,11 +47,11 @@ runSibeliaZ <- function(object, out_dir,
     }
 
     # Create HDF5 groups and overwrite with new results
-    .h5creategroup(object$h5, "SibeliaZ")
+    .h5creategroup(object$h5, "sibeliaz")
     .h5overwrite(obj = file.path(out_dir, "blocks_coords.gff"),
-                 file = object$h5, "SibeliaZ/raw")
+                 file = object$h5, "sibeliaz/raw")
     .h5overwrite(obj = file.path(out_dir, "5000/blocks_coords.txt"),
-                 file = object$h5, "SibeliaZ/blocks")
+                 file = object$h5, "sibeliaz/blocks")
 }
 
 #' Prepare genome for SibeliaZ
@@ -106,12 +106,12 @@ sibeliaRAW2DF <- function(object){
     on.exit(H5Fclose(h5))
 
     # Check if the "SibeliaZ/raw" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/raw")){
+    if(!H5Lexists(h5, "sibeliaz/raw")){
         stop("Run runSibeliaZ to obtain LCB info.")
     }
 
     # Import the GFF3 file from the HDF5 file
-    gff <- import.gff3(h5$SibeliaZ$raw)
+    gff <- import.gff3(h5$sibeliaz$raw)
 
     # Create a data frame from the imported GFF3 file
     df <- data.frame(chr = as.character(seqnames(gff)),
@@ -150,8 +150,8 @@ sibeliaRAW2DF <- function(object){
     # Set the class of the output data frame
     class(out) <- c(class(out), "RawLCB")
 
-    # Overwrite the "SibeliaZ/lcb" group in the HDF5 file with the new data frame
-    .h5overwrite(obj = out, file = object$h5, "SibeliaZ/lcb")
+    # Overwrite the "sibeliaz/lcb" group in the HDF5 file with the new data frame
+    .h5overwrite(obj = out, file = object$h5, "sibeliaz/lcb")
 }
 
 
@@ -172,18 +172,18 @@ sibeliaLCB2DF <- function(object){
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/blocks" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/blocks")){
+    # Check if the "sibeliaz/blocks" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/blocks")){
         stop("Run runSibeliaZ to obtain LCB info.")
     }
 
     # Check if the blocks file exists within the HDF5 file
-    if(!file.exists(h5$SibeliaZ$blocks)){
-        stop(h5$SibeliaZ$blocks, " does not exists.")
+    if(!file.exists(h5$sibeliaz$blocks)){
+        stop(h5$sibeliaz$blocks, " does not exists.")
     }
 
     # Read the SibeliaZ blocks file
-    sibelia <- scan(file = h5$SibeliaZ$blocks, what = "character", sep = "\n")
+    sibelia <- scan(file = h5$sibeliaz$blocks, what = "character", sep = "\n")
     # Identify lines separating different sections in the blocks file
     sep_lines <- grep("^-+", sibelia)
 
@@ -220,8 +220,8 @@ sibeliaLCB2DF <- function(object){
     # Set the class of the output data frame
     class(out) <- c(class(out), "LCB")
 
-    # Overwrite the "SibeliaZ/lcb" group in the HDF5 file with the new data frame
-    .h5overwrite(obj = out, file = object$h5, "SibeliaZ/lcb")
+    # Overwrite the "sibeliaz/lcb" group in the HDF5 file with the new data frame
+    .h5overwrite(obj = out, file = object$h5, "sibeliaz/lcb")
 }
 
 #' Show LCB information
@@ -240,16 +240,16 @@ showLCB <- function(object){
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/lcb" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb")){
+    # Check if the "sibeliaz/lcb" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb")){
         stop("Run sibeliaLCB2DF to obtain LCB info.")
     }
 
     # Display chromosome IDs for query and subject genomes
     message("Chromosome IDs:")
-    q_id <- grep("^query_", unique(h5$SibeliaZ$lcb$chr), value = TRUE)
+    q_id <- grep("^query_", unique(h5$sibeliaz$lcb$chr), value = TRUE)
     q_id <- sort(sub("^query_", "", q_id))
-    s_id <- grep("^subject_", unique(h5$SibeliaZ$lcb$chr), value = TRUE)
+    s_id <- grep("^subject_", unique(h5$sibeliaz$lcb$chr), value = TRUE)
     s_id <- sort(sub("^subject_", "", s_id))
 
     message("    Query genome:")
@@ -260,10 +260,10 @@ showLCB <- function(object){
 
     # Display the number of entries and LCBs
     message("No of entries: ")
-    print(length(h5$SibeliaZ$lcb$chr))
+    print(length(h5$sibeliaz$lcb$chr))
 
     message("No of LCBs: ")
-    print(length(unique(h5$SibeliaZ$lcb$block_id)))
+    print(length(unique(h5$sibeliaz$lcb$block_id)))
 }
 
 #' Classify LCBs
@@ -282,18 +282,18 @@ lcbClassify <- function(object){
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/lcb" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb")){
+    # Check if the "sibeliaz/lcb" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb")){
         stop("Run sibeliaLCB2DF to obtain LCB info.")
     }
 
     # Initialize a vector to classify the chromosomes
-    chr <- rep(0, length(h5$SibeliaZ$lcb$chr))
-    s_chr <- grepl("^subject_", h5$SibeliaZ$lcb$chr)
+    chr <- rep(0, length(h5$sibeliaz$lcb$chr))
+    s_chr <- grepl("^subject_", h5$sibeliaz$lcb$chr)
     chr[s_chr] <- 1
 
     # Classify LCBs based on the presence of query and subject chromosomes
-    lcb_class <- tapply(chr, h5$SibeliaZ$lcb$block_id, function(i){
+    lcb_class <- tapply(chr, h5$sibeliaz$lcb$block_id, function(i){
         if(sum(i) == 0){
             out <- "q2q"  # Only query chromosomes present
         } else if(prod(i) == 0){
@@ -304,8 +304,8 @@ lcbClassify <- function(object){
     })
 
     # Match the block IDs and overwrite the HDF5 file with the LCB classifications
-    hit <- match(h5$SibeliaZ$lcb$block_id, as.numeric(names(lcb_class)))
-    .h5overwrite(obj = lcb_class[hit], file = object$h5, "SibeliaZ/lcb_class")
+    hit <- match(h5$sibeliaz$lcb$block_id, as.numeric(names(lcb_class)))
+    .h5overwrite(obj = lcb_class[hit], file = object$h5, "sibeliaz/lcb_class")
 }
 
 #' Summarize LCB statistics
@@ -315,13 +315,7 @@ lcbClassify <- function(object){
 #' @param object A SynogDB object.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-#' Summarize LCB statistics
 #'
-#' This function calculates and summarizes statistics for Locally Collinear Blocks (LCBs) in the SynogDB object.
-#'
-#' @param object A SynogDB object.
-#' @export
-#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 statsLCB <- function(object){
     # Check if the input object is of class "SynogDB"
     stopifnot(inherits(x = object, "SynogDB"))
@@ -331,41 +325,41 @@ statsLCB <- function(object){
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/lcb" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb")){
+    # Check if the "sibeliaz/lcb" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb")){
         stop("Run sibeliaLCB2DF to obtain LCB info.")
     }
 
-    # Check if the "SibeliaZ/lcb_class" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb_class")){
+    # Check if the "sibeliaz/lcb_class" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb_class")){
         stop("Run lcbClassify to obtain LCB classification info.")
     }
 
     # Calculate statistics based on the presence of LCB classification
-    if(is.null(h5$SibeliaZ$lcb_class)){
+    if(is.null(h5$sibeliaz$lcb_class)){
         # Calculate statistics for query and subject genomes separately
-        q_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb, target = "^query_")
-        s_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb, target = "^subject_")
+        q_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb, target = "^query_")
+        s_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb, target = "^subject_")
         out <- rbind(cbind(genome = "query", q_summary),
                      cbind(genome = "subject", s_summary))
 
     } else {
         # Calculate statistics for different classes of LCBs
-        q2q <- h5$SibeliaZ$lcb_class == "q2q"
-        q_q2q_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb[q2q, ], target = "^query_")
-        s2s <- h5$SibeliaZ$lcb_class == "s2s"
-        s_s2s_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb[s2s, ], target = "^subject_")
-        q2s <- h5$SibeliaZ$lcb_class == "q2s"
-        q_q2s_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb[q2s, ], target = "^query_")
-        s_q2s_summary <- .calc_lcb_stats(object = h5$SibeliaZ$lcb[q2s, ], target = "^subject_")
+        q2q <- h5$sibeliaz$lcb_class == "q2q"
+        q_q2q_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb[q2q, ], target = "^query_")
+        s2s <- h5$sibeliaz$lcb_class == "s2s"
+        s_s2s_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb[s2s, ], target = "^subject_")
+        q2s <- h5$sibeliaz$lcb_class == "q2s"
+        q_q2s_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb[q2s, ], target = "^query_")
+        s_q2s_summary <- .calc_lcb_stats(object = h5$sibeliaz$lcb[q2s, ], target = "^subject_")
         out <- rbind(cbind(genome = "query", class = "Q2Q", q_q2q_summary),
                      cbind(genome = "subject", class = "S2S", s_s2s_summary),
                      cbind(genome = "query", class = "Q2S", q_q2s_summary),
                      cbind(genome = "subject", class = "Q2S", s_q2s_summary))
     }
 
-    # Overwrite the "SibeliaZ/lcb_stats" group in the HDF5 file with the new statistics
-    .h5overwrite(obj = out, file = object$h5, "SibeliaZ/lcb_stats")
+    # Overwrite the "sibeliaz/lcb_stats" group in the HDF5 file with the new statistics
+    .h5overwrite(obj = out, file = object$h5, "sibeliaz/lcb_stats")
 
     # Print the summarized statistics
     print(out)
@@ -426,28 +420,28 @@ getLCBpairs <- function(object){
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/lcb" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb")){
+    # Check if the "sibeliaz/lcb" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb")){
         stop("Run sibeliaLCB2DF to obtain LCB info.")
     }
 
-    # Check if the "SibeliaZ/lcb_class" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb_class")){
+    # Check if the "sibeliaz/lcb_class" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb_class")){
         stop("Run lcbClassify to obtain LCB classification info.")
     }
 
     # Identify LCBs classified as "q2s" (query to subject)
-    q2s <- h5$SibeliaZ$lcb_class == "q2s"
-    lcb_q2s_id_tbl <- table(h5$SibeliaZ$lcb$block_id[q2s])
+    q2s <- h5$sibeliaz$lcb_class == "q2s"
+    lcb_q2s_id_tbl <- table(h5$sibeliaz$lcb$block_id[q2s])
     lcb_id_1to1 <- names(lcb_q2s_id_tbl)[lcb_q2s_id_tbl == 2]
-    valid <- h5$SibeliaZ$lcb$block_id %in% lcb_id_1to1
+    valid <- h5$sibeliaz$lcb$block_id %in% lcb_id_1to1
 
     # Create lists of 1-to-1 and non-1-to-1 LCB pairs
     lcb_pairs <- list(lcb_1to1 = .get1to1(h5 = h5, valid = valid),
                       lcb_non_1to1 = .getNon1to1(h5 = h5, valid = valid))
 
-    # Overwrite the "SibeliaZ/lcb_pairs" group in the HDF5 file with the new LCB pairs
-    .h5overwrite(obj = lcb_pairs, file = object$h5, "SibeliaZ/lcb_pairs")
+    # Overwrite the "sibeliaz/lcb_pairs" group in the HDF5 file with the new LCB pairs
+    .h5overwrite(obj = lcb_pairs, file = object$h5, "sibeliaz/lcb_pairs")
 }
 
 #' Get 1-to-1 LCB pairs
@@ -460,10 +454,10 @@ getLCBpairs <- function(object){
 #' @return A data.frame containing 1-to-1 LCB pairs.
 .get1to1 <- function(h5, valid){
     # Identify the 1-to-1 LCB pairs where the LCB class is "q2s" (query to subject)
-    hit <- valid & h5$SibeliaZ$lcb_class == "q2s"
+    hit <- valid & h5$sibeliaz$lcb_class == "q2s"
 
     # Subset the LCB data for the identified 1-to-1 pairs
-    df <- h5$SibeliaZ$lcb[hit, ]
+    df <- h5$sibeliaz$lcb[hit, ]
 
     # Separate the data into query and subject subsets
     q_df <- subset(df, subset = grepl("^query_", chr), select = c(chr, start, end, block_id))
@@ -496,12 +490,15 @@ getLCBpairs <- function(object){
 #' @param valid A logical vector indicating valid LCBs.
 #'
 #' @return A data.frame containing non-1-to-1 LCB pairs.
+#'
+#' @importFrom dplyr full_join
+#'
 .getNon1to1 <- function(h5, valid){
     # Identify the non-1-to-1 LCB pairs where the LCB class is "q2s" (query to subject)
-    hit <- !valid & h5$SibeliaZ$lcb_class == "q2s"
+    hit <- !valid & h5$sibeliaz$lcb_class == "q2s"
 
     # Subset the LCB data for the identified non-1-to-1 pairs
-    df <- h5$SibeliaZ$lcb[hit, ]
+    df <- h5$sibeliaz$lcb[hit, ]
 
     # Separate the data into query and subject subsets
     q_df <- subset(df, subset = grepl("^query_", chr), select = c(chr, start, end, block_id))
@@ -553,28 +550,28 @@ plotLCBpairs <- function(object,
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
 
-    # Check if the "SibeliaZ/lcb_pairs" group exists in the HDF5 file
-    if(!H5Lexists(h5, "SibeliaZ/lcb_pairs")){
+    # Check if the "sibeliaz/lcb_pairs" group exists in the HDF5 file
+    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
         stop("Run getLCBpairs to obtain LCB pair info.")
     }
 
     # Select the appropriate LCB pairs based on the class parameter
     if(class == "1to1"){
-        df <- h5$SibeliaZ$lcb_pairs$lcb_1to1
+        df <- h5$sibeliaz$lcb_pairs$lcb_1to1
         df$class <- "1to1"
         color_value <- color_1to1
         color_break <- "1to1"
 
     } else if(class == "non1to1"){
-        df <- h5$SibeliaZ$lcb_pairs$lcb_non_1to1
+        df <- h5$sibeliaz$lcb_pairs$lcb_non_1to1
         df$class <- "non1to1"
         color_value <- color_non1to1
         color_break <- "non1to1"
 
     } else {
-        df1 <- h5$SibeliaZ$lcb_pairs$lcb_1to1
+        df1 <- h5$sibeliaz$lcb_pairs$lcb_1to1
         df1$class <- "1to1"
-        df2 <- h5$SibeliaZ$lcb_pairs$lcb_non_1to1
+        df2 <- h5$sibeliaz$lcb_pairs$lcb_non_1to1
         df2$class <- "non1to1"
         df <- rbind(df1, df2)
         color_value <- c(color_1to1, color_non1to1)
