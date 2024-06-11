@@ -4,7 +4,15 @@
 \alias{mapProt}
 \title{Map Proteins Between Genomes}
 \usage{
-mapProt(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5)
+mapProt(
+  object,
+  out_prefix,
+  miniprot_bin = "miniprot",
+  conda = "conda",
+  condaenv = NULL,
+  n_core,
+  len_diff = 0.5
+)
 }
 \arguments{
 \item{object}{A SynogDB object.}

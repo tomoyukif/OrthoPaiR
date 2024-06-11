@@ -4,7 +4,15 @@
 \alias{mapOrphan}
 \title{Map Orphan Proteins Between Genomes}
 \usage{
-mapOrphan(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5)
+mapOrphan(
+  object,
+  out_prefix,
+  miniprot_bin,
+  conda,
+  condaenv,
+  n_core,
+  len_diff = 0.5
+)
 }
 \arguments{
 \item{object}{A SynogDB object.}
