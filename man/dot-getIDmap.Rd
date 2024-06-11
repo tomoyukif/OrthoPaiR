@@ -5,11 +5,7 @@
 \title{Create ID Map for Gene Overlaps}
 \usage{
 .getIDmap(gff_gene, ol_list)
-
-.getIDmap(gff_gene, ol_list)
 }
 \description{
-This function creates an ID map for overlapping genes by selecting a representative gene ID for each set of overlapping genes.
-
 This function creates an ID map for overlapping genes by selecting a representative gene ID for each set of overlapping genes.
 }

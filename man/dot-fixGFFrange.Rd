@@ -5,11 +5,7 @@
 \title{Fix GFF Range}
 \usage{
 .fixGFFrange(gff)
-
-.fixGFFrange(gff)
 }
 \description{
-This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
-
 This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
 }

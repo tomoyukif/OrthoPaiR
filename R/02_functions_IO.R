@@ -153,7 +153,9 @@ createFASTA <- function(object, out_dir){
 #'
 #' @return A DNAStringSet object containing CDS sequences.
 #' @importFrom Biostrings readDNAStringSet
-#' @importFrom GenomicFeatures makeTxDbFromGFF cdsBy extractTranscriptSeqs
+#' @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
+#' @importFrom txdbmaker makeTxDbFromGFF
+#' @import BSgenome
 #'
 .makeCDS <- function(gff, genome){
     # Create a TxDb object from the GFF file

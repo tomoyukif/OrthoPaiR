@@ -11,7 +11,9 @@
 #' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
 #'
 #' @export
-mapProt <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
+mapProt <- function(object, out_prefix, miniprot_bin = "miniprot",
+                    conda = "conda",
+                    condaenv = NULL, n_core, len_diff = 0.5){
     stopifnot(inherits(x = object, "SynogDB"))
 
     # Call the mapping engine function with specified parameters
@@ -20,6 +22,8 @@ mapProt <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
                query_prot = object$query_prot,
                out_prefix = out_prefix,
                miniprot_bin = miniprot_bin,
+               conda = conda,
+               condaenv = condaenv,
                n_core = n_core,
                overlap = TRUE,
                len_diff = len_diff)
@@ -39,7 +43,8 @@ mapProt <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
 #'
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
+mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
+                      condaenv, n_core, len_diff = 0.5){
     stopifnot(inherits(x = object, "SynogDB"))
 
     # Open the HDF5 file and ensure it gets closed on exit
@@ -72,6 +77,8 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
                query_prot = q_aa_fn,
                out_prefix = out_prefix,
                miniprot_bin = miniprot_bin,
+               conda = conda,
+               condaenv = condaenv,
                n_core = n_core,
                overlap = TRUE,
                len_diff = len_diff)
@@ -84,7 +91,8 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
 #' @importFrom rtracklayer export.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 .mapEngine <- function(object, subject_prot, query_prot,
-                       out_prefix, miniprot_bin, n_core,
+                       out_prefix, miniprot_bin, conda,
+                       condaenv, n_core,
                        overlap, len_diff){
     # Define output file paths for both directions of mapping
     s2q_out <- paste0(out_prefix, "query_miniprot_out")
@@ -93,11 +101,13 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
     # Run miniprot mapping from subject to query genome
     .miniprot(query_fn = subject_prot, genome_fn = object$query_genome,
               out_prefix = s2q_out, miniprot_bin = miniprot_bin,
+              conda = conda, condaenv = condaenv,
               n_core = n_core)
 
     # Run miniprot mapping from query to subject genome
     .miniprot(query_fn = query_prot, genome_fn = object$subject_genome,
               out_prefix = q2s_out, miniprot_bin = miniprot_bin,
+              conda = conda, condaenv = condaenv,
               n_core = n_core)
 
     # Create HDF5 group for protein mapping results and save GFF files
@@ -147,6 +157,35 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
     export.gff3(s2q_gff, paste0(s2q_out, ".gff"))
     export.gff3(q2s_gff, paste0(q2s_out, ".gff"))
 }
+
+.miniprot <- function(query_fn, genome_fn, out_prefix,
+                      miniprot_bin,
+                      conda, condaenv,
+                      n_core = 1){
+
+    if(!is.null(condaenv)){
+        .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
+                  args = paste("-t", n_core,
+                               "-d", paste0(out_prefix, ".mpi"),
+                               genome_fn))
+        .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
+                  args = paste("-t", n_core, "--gff",
+                               paste0(out_prefix, ".mpi"),
+                               query_fn, ">", paste0(out_prefix, ".gff")))
+
+    } else {
+        system2(command = miniprot_bin,
+                args = paste("-t", n_core,
+                             "-d", paste0(out_prefix, ".mpi"),
+                             genome_fn))
+        system2(command = miniprot_bin,
+                args = paste("-t", n_core,
+                             "--gff",
+                             paste0(out_prefix, ".mpi"),
+                             query_fn, ">", paste0(out_prefix, ".gff")))
+    }
+}
+
 
 #' Write Protein Sequences to a FASTA File
 #'
@@ -520,23 +559,26 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
     out <- do.call("rbind", out)
     return(out)
 }
-#' Create ID Map for Gene Overlaps
-#'
-#' This function creates an ID map for overlapping genes by selecting a representative gene ID for each set of overlapping genes.
-#'
-.getIDmap <- function(gff_gene, ol_list){
-    # Create ID map for each set of overlapping genes
-    out <- lapply(ol_list, function(i){
-        gene_id <- gff_gene$ID[i]
-        # Select the representative gene ID that does not start with 'query_' or 'subject_'
-        set_gene_id <- gene_id[!grepl("^query_|^subject_", gene_id)][1]
-        id_map <- cbind(gene_id, set_gene_id)
-        return(id_map)
+
+
+.mapID <- function(gff, id_map){
+    gff_parent <- sapply(gff$Parent, function(x){
+        if(length(x) == 0){
+            return(NA)
+        } else {
+            return(x)
+        }
     })
-    # Combine all ID maps into a single data frame
-    out <- do.call("rbind", out)
-    return(out)
+    hit <- match(gff_parent, id_map[, 1])
+    gff$Parent[!is.na(hit)] <- lapply(id_map[na.omit(hit), 2], c)
+    gff$gene_id[!is.na(hit)] <- id_map[na.omit(hit), 2]
+
+    rm_gene <- id_map[id_map[, 1] != id_map[, 2], ]
+    gff <- gff[!gff$ID %in% rm_gene[, 1]]
+    return(gff)
 }
+
+
 #' Fix and Standardize GFF Annotations
 #'
 #' This function applies a series of fixes and standardizations to GFF annotations.
@@ -607,48 +649,35 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, n_core, len_diff = 0.5){
 
     return(gff)
 }
-#' Fix GFF Range
-#'
-#' This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
-#'
-#' @importFrom BiocGenerics start end
-.fixGFFrange <- function(gff){
-    # Fix the start and end positions of each transcript to
-    # cover the whole range of member elements (CDS, exon, and UTRs)
-    tx_i <- which(gff$type %in% c("transcript", "mRNA"))
-    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
 
-    # Determine minimum start and maximum end positions for member elements
-    min_start <- tapply(start(gff[element_i]), unlist(gff$Parent[element_i]), min)
-    max_end <- tapply(end(gff[element_i]), unlist(gff$Parent[element_i]), max)
 
-    # Match and update transcript start and end positions
-    hit <- match(gff$ID[tx_i], names(min_start))
-    tx_start <- min_start[hit]
-    tx_end <- max_end[hit]
-    not_na_start <- !is.na(tx_start)
-    not_na_end <- !is.na(tx_end)
-    start(gff[tx_i[not_na_start]]) <- tx_start[not_na_start]
-    end(gff[tx_i[not_na_end]]) <- tx_end[not_na_end]
+.fixGFFexon <- function(gff){
+    gff <- gff[gff$type != "exon"]
+    gff_exon <- gff[gff$type %in% c("CDS", "five_prime_UTR", "three_prime_UTR")]
+    gff_exon$type <- "exon"
+    gff_exon$Name <- gff_exon$ID <- paste0(unlist(gff_exon$Parent), ":exon")
+    gff_exon$score <- gff_exon$phase <- NA
 
-    # Fix the start and end positions of each gene to
-    # cover the whole range of member transcripts
-    gene_i <- which(gff$type == "gene")
-    tx_i <- which(gff$type %in% c("transcript", "mRNA"))
+    tx_i <- gff$type %in% c("transcript", "mRNA")
+    non_cds <- gff[tx_i][!gff$ID[tx_i] %in% unlist(gff_exon$Parent)]
+    if(length(non_cds) > 0){
+        non_cds$type <- "exon"
+        non_cds$Parent <- lapply(non_cds$ID, c)
+        non_cds$Name <- non_cds$ID <- paste0(non_cds$ID, ":exon")
+        non_cds$score <- non_cds$phase <- NA
+        gff_exon <- c(gff_exon, non_cds)
+    }
 
-    # Determine minimum start and maximum end positions for transcripts
-    min_start <- tapply(start(gff[tx_i]), gff$gene_id[tx_i], min)
-    max_end <- tapply(end(gff[tx_i]), gff$gene_id[tx_i], max)
-
-    # Match and update gene start and end positions
-    hit <- match(gff$gene_id[gene_i], names(min_start))
-    gene_start <- min_start[hit]
-    gene_end <- max_end[hit]
-    start(gff[gene_i]) <- gene_start
-    end(gff[gene_i]) <- gene_end
-
-    return(gff)
+    out <- c(gff, gff_exon)
+    out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
+                                            "five_prime_UTR", "exon",
+                                            "CDS", "three_prime_UTR"))
+    out$type <- droplevels(out$type)
+    out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
+    return(out)
 }
+
+
 #' Fix GFF Phase
 #'
 #' This function adjusts the phase of CDS features in GFF annotations.

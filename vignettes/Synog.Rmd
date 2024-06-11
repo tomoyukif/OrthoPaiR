@@ -146,13 +146,10 @@ orphan_genewise <- getOrphan(object = object, gene = TRUE)
 Map proteins using Miniprot to further refine orthologous pairs.
 
 ```{r map-prot}
-miniprot_bin <- "/home/ftom/tools/miniprot/miniprot"
-mapProt(
-    object = object,
-    miniprot_bin = miniprot_bin,
-    n_core = 20,
-    out_prefix = "output/nb_wk21_"
-)
+mapProt(object = object,
+        conda = "/home/ftom/miniforge/miniforge3/bin/conda", condaenv = "miniprot",
+        n_core = 20,
+        out_prefix = file.path(out_dir, "miniprot_out"))
 ```
 
 # Updating Files and Re-running Analyses
@@ -160,6 +157,7 @@ mapProt(
 Update files and re-run analyses for refined results.
 
 ```{r update-files}
+createFASTA(object = object)
 object <- updateFiles(object = object)
 rbh(object = object, n_threads = 30)
 anchorOrtho(object = object)

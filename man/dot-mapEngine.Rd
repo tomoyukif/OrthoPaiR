@@ -10,6 +10,8 @@
   query_prot,
   out_prefix,
   miniprot_bin,
+  conda,
+  condaenv,
   n_core,
   overlap,
   len_diff
