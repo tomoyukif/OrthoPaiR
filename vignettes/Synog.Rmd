@@ -32,9 +32,51 @@ install.packages(c("ggplot2", "data.table"))
 
 Ensure you also have Miniprot and SibeliaZ installed and executable. You can follow their installation guides on their respective websites.
 
+# Quick start
+You can go through the Synog pipeline using the `runSynog()` function that is a 
+wrapper functions to execute a series of the functions to go through the Synog 
+pipeline.
+```{r}
+object <- runSynog(query_genome = query_genome,
+                   subject_genome = subject_genome,
+                   query_gff = query_gff,
+                   subject_gff = subject_gff,
+                   query_cds = query_cds,
+                   subject_cds = subject_cds,
+                   query_prot = query_prot,
+                   subject_prot = subject_prot,
+                   hdf5_path = hdf5_path,
+                   sibeliaz_out_dir = "./sibeliaz_out",
+                   sibeliaz_bin = "sibeliaz",
+                   maf2synteny_bin = "maf2synteny",
+                   conda = "/home/ftom/miniforge/miniforge3/bin/conda",
+                   sibeliaz_condaenv = "sibeliaz",
+                   miniprot_bin = "miniprot",
+                   miniprot_condaenv = "miniprot",
+                   miniprot_out_dir = "./miniprot_out",
+                   n_threads = 30,
+                   omit_chr = "chrUn|chrSy")
+```
+The runSynog() function output a SynogDB object that contains a link to the hdf5 
+file storing syntenic ortholog pairing results. Those results can be accessed by
+the following functions.
+
+```{r}
+txwise_summary <- summarySynog(object = object, gene = FALSE)
+genewise_summary <- summarySynog(object = object, gene = TRUE)
+synog_genewise <- getSynog(object = object, gene = TRUE)
+orphan_genewise <- getOrphan(object = object, gene = TRUE)
+genewise_split_summary <- summarySynog(object = object, gene = TRUE, split = TRUE)
+synog_txwise <- getSynog(object = object, gene = FALSE)
+synog_genewise_split <- getSynog(object = object, gene = TRUE, split = TRUE)
+orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
+```
+See the [Output results] section in this vignette for more details of output resutls.
+
 # Creating a SynogDB Object
 
-First, create a `SynogDB` object using the `makeSynogDB` function. This object will hold all necessary input files and parameters.
+First, create a `SynogDB` object using the `makeSynogDB` function. 
+This object will hold all necessary input files and parameters.
 
 ```{r create-synogdb}
 library(Synog)
