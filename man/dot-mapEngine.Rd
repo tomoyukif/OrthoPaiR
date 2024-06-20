@@ -8,11 +8,11 @@
   object,
   subject_prot,
   query_prot,
-  out_prefix,
+  out_dir,
   miniprot_bin,
   conda,
   condaenv,
-  n_core,
+  n_threads,
   overlap,
   len_diff
 )

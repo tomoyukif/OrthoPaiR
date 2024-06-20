@@ -13,7 +13,7 @@ runSynog(
   subject_cds,
   query_prot,
   subject_prot,
-  hdf5_fn = "./synog.h5",
+  hdf5_path = "./synog.h5",
   sibeliaz_out_dir = "./sibeliaz_out",
   sibeliaz_bin = "sibeliaz",
   maf2synteny_bin = "maf2synteny",
@@ -21,9 +21,10 @@ runSynog(
   sibeliaz_condaenv = "sibeliaz",
   miniprot_bin = "miniprot",
   miniprot_condaenv = "miniprot",
-  miniprot_out_dir = "./miniprot_out",
+  miniprot_out_dir = "./miniprot_out/",
   n_threads = NULL,
-  omit_chr = NULL
+  omit_chr = NULL,
+  verbose = TRUE
 )
 }
 \description{

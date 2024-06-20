@@ -6,27 +6,28 @@
 \usage{
 mapOrphan(
   object,
-  out_prefix,
+  out_dir,
   miniprot_bin,
   conda,
   condaenv,
-  n_core,
-  len_diff = 0.5
+  n_threads,
+  len_diff = 0.5,
+  overlap = FALSE
 )
 }
 \arguments{
 \item{object}{A SynogDB object.}
 
-\item{out_prefix}{A character string specifying the prefix for the output files.}
+\item{out_dir}{A character string specifying the prefix for the output files.}
 
 \item{miniprot_bin}{A character string specifying the path to the miniprot binary.}
 
-\item{n_core}{An integer specifying the number of cores to use for the mapping.}
+\item{n_threads}{An integer specifying the number of cores to use for the mapping.}
 
 \item{len_diff}{A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.}
 }
 \value{
-None. The function performs the mapping and writes the results to the output files specified by \code{out_prefix}.
+None. The function performs the mapping and writes the results to the output files specified by \code{out_dir}.
 }
 \description{
 This function maps orphan proteins between the query and subject genomes using the specified miniprot binary and number of cores.

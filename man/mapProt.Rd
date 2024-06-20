@@ -6,24 +6,25 @@
 \usage{
 mapProt(
   object,
-  out_prefix,
+  out_dir,
   miniprot_bin = "miniprot",
   conda = "conda",
   condaenv = NULL,
-  n_core,
-  len_diff = 0.5
+  n_threads,
+  len_diff = 0.5,
+  overlap = TRUE
 )
 }
 \arguments{
 \item{object}{A SynogDB object.}
 
-\item{out_prefix}{A character string specifying the prefix for the output files.}
-
 \item{miniprot_bin}{A character string specifying the path to the miniprot binary.}
 
-\item{n_core}{An integer specifying the number of cores to use for the mapping.}
+\item{n_threads}{An integer specifying the number of cores to use for the mapping.}
 
 \item{len_diff}{A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.}
+
+\item{out_prefix}{A character string specifying the prefix for the output files.}
 }
 \value{
 None. The function performs the mapping and writes the results to the output files specified by \code{out_prefix}.
