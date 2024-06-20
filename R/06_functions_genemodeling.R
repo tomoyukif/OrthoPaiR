@@ -5,28 +5,36 @@
 #' @param object A SynogDB object.
 #' @param out_prefix A character string specifying the prefix for the output files.
 #' @param miniprot_bin A character string specifying the path to the miniprot binary.
-#' @param n_core An integer specifying the number of cores to use for the mapping.
+#' @param n_threads An integer specifying the number of cores to use for the mapping.
 #' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.
 #'
 #' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
 #'
 #' @export
-mapProt <- function(object, out_prefix, miniprot_bin = "miniprot",
+mapProt <- function(object, out_dir, miniprot_bin = "miniprot",
                     conda = "conda",
-                    condaenv = NULL, n_core, len_diff = 0.5){
+                    condaenv = NULL, n_threads, len_diff = 0.5, overlap = TRUE){
     stopifnot(inherits(x = object, "SynogDB"))
 
     # Call the mapping engine function with specified parameters
     .mapEngine(object = object,
                subject_prot = object$subject_prot,
                query_prot = object$query_prot,
-               out_prefix = out_prefix,
+               out_dir = out_dir,
                miniprot_bin = miniprot_bin,
                conda = conda,
                condaenv = condaenv,
-               n_core = n_core,
-               overlap = TRUE,
+               n_threads = n_threads,
+               overlap = overlap,
                len_diff = len_diff)
+
+    .createFASTA(object = object)
+
+    object <- .updateFiles(object = object)
+
+    .filterGFF(object = object)
+
+    return(object)
 }
 
 #' Map Orphan Proteins Between Genomes
@@ -34,17 +42,17 @@ mapProt <- function(object, out_prefix, miniprot_bin = "miniprot",
 #' This function maps orphan proteins between the query and subject genomes using the specified miniprot binary and number of cores.
 #'
 #' @param object A SynogDB object.
-#' @param out_prefix A character string specifying the prefix for the output files.
+#' @param out_dir A character string specifying the prefix for the output files.
 #' @param miniprot_bin A character string specifying the path to the miniprot binary.
-#' @param n_core An integer specifying the number of cores to use for the mapping.
+#' @param n_threads An integer specifying the number of cores to use for the mapping.
 #' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.
 #'
-#' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
+#' @return None. The function performs the mapping and writes the results to the output files specified by `out_dir`.
 #'
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
-                      condaenv, n_core, len_diff = 0.5){
+mapOrphan <- function(object, out_dir, miniprot_bin, conda,
+                      condaenv, n_threads, len_diff = 0.5, overlap = FALSE){
     stopifnot(inherits(x = object, "SynogDB"))
 
     # Open the HDF5 file and ensure it gets closed on exit
@@ -57,8 +65,8 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
     }
 
     # Define file paths for query and subject orphan protein sequences
-    q_aa_fn <- paste0(out_prefix, "miniprot_query_prot.fa")
-    s_aa_fn <- paste0(out_prefix, "miniprot_subject_prot.fa")
+    q_aa_fn <- paste0(out_dir, "miniprot_query_prot.fa")
+    s_aa_fn <- paste0(out_dir, "miniprot_subject_prot.fa")
 
     # Write orphan protein sequences to FASTA files
     .writeProtFASTA(id = h5$synog_tx$orphan$query$qseqid,
@@ -75,12 +83,12 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
     .mapEngine(object = object,
                subject_prot = s_aa_fn,
                query_prot = q_aa_fn,
-               out_prefix = out_prefix,
+               out_dir = out_dir,
                miniprot_bin = miniprot_bin,
                conda = conda,
                condaenv = condaenv,
-               n_core = n_core,
-               overlap = TRUE,
+               n_threads = n_threads,
+               overlap = overlap,
                len_diff = len_diff)
 }
 
@@ -91,24 +99,26 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
 #' @importFrom rtracklayer export.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 .mapEngine <- function(object, subject_prot, query_prot,
-                       out_prefix, miniprot_bin, conda,
-                       condaenv, n_core,
+                       out_dir, miniprot_bin, conda,
+                       condaenv, n_threads,
                        overlap, len_diff){
+    dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
+
     # Define output file paths for both directions of mapping
-    s2q_out <- paste0(out_prefix, "query_miniprot_out")
-    q2s_out <- paste0(out_prefix, "subject_miniprot_out")
+    s2q_out <- file.path(out_dir, "query_miniprot_out")
+    q2s_out <- file.path(out_dir, "subject_miniprot_out")
 
     # Run miniprot mapping from subject to query genome
     .miniprot(query_fn = subject_prot, genome_fn = object$query_genome,
               out_prefix = s2q_out, miniprot_bin = miniprot_bin,
               conda = conda, condaenv = condaenv,
-              n_core = n_core)
+              n_threads = n_threads)
 
     # Run miniprot mapping from query to subject genome
     .miniprot(query_fn = query_prot, genome_fn = object$subject_genome,
               out_prefix = q2s_out, miniprot_bin = miniprot_bin,
               conda = conda, condaenv = condaenv,
-              n_core = n_core)
+              n_threads = n_threads)
 
     # Create HDF5 group for protein mapping results and save GFF files
     .h5creategroup(object$h5,"protmap")
@@ -144,11 +154,11 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
     q2s_gff <- .fixGFF(gff = q2s_gff)
     m_s2q_gff <- mcols(s2q_gff)
     hit <- names(m_s2q_gff) %in% c("source", "type", "score", "phase",
-                                   "ID", "Name", "gene_id", "Parent")
+                                   "ID", "Name", "gene_id", "Parent", "Target")
     mcols(s2q_gff) <- m_s2q_gff[, hit]
     m_q2s_gff <- mcols(q2s_gff)
     hit <- names(m_q2s_gff) %in% c("source", "type", "score", "phase",
-                                   "ID", "Name", "gene_id", "Parent")
+                                   "ID", "Name", "gene_id", "Parent", "Target")
     mcols(q2s_gff) <- m_q2s_gff[, hit]
     s2q_gff$Name <- s2q_gff$ID
     q2s_gff$Name <- q2s_gff$ID
@@ -161,25 +171,25 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
 .miniprot <- function(query_fn, genome_fn, out_prefix,
                       miniprot_bin,
                       conda, condaenv,
-                      n_core = 1){
+                      n_threads = 1){
 
     if(!is.null(condaenv)){
         .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
-                  args = paste("-t", n_core,
+                  args = paste("-t", n_threads,
                                "-d", paste0(out_prefix, ".mpi"),
                                genome_fn))
         .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
-                  args = paste("-t", n_core, "--gff",
+                  args = paste("-t", n_threads, "--gff",
                                paste0(out_prefix, ".mpi"),
                                query_fn, ">", paste0(out_prefix, ".gff")))
 
     } else {
         system2(command = miniprot_bin,
-                args = paste("-t", n_core,
+                args = paste("-t", n_threads,
                              "-d", paste0(out_prefix, ".mpi"),
                              genome_fn))
         system2(command = miniprot_bin,
-                args = paste("-t", n_core,
+                args = paste("-t", n_threads,
                              "--gff",
                              paste0(out_prefix, ".mpi"),
                              query_fn, ">", paste0(out_prefix, ".gff")))
@@ -286,6 +296,7 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
 
         # Get unique transcripts from gff1
         out <- .getUniqTx(gff1 = gff1, gff1_block_uniq = gff1_block_uniq)
+
     } else {
         # Find overlaps between gff1 and gff2 transcripts
         tx_i1 <- gff1$type == "transcript"
@@ -299,6 +310,8 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
 
     # Check length differences with gff3
     out <- .checkLength(gff = out, gff3 = gff3, len_diff = len_diff)
+
+
     return(out)
 }
 #' Get CDS Blocks
@@ -783,4 +796,90 @@ mapOrphan <- function(object, out_prefix, miniprot_bin, conda,
     }
 
     return(gff_cds_minus)
+}
+
+################################################################################
+
+#' Create FASTA files
+#'
+#' This function generates FASTA files for query and subject CDS from the SynogDB object.
+#'
+#' @param object A SynogDB object.
+#' @param out_dir Output directory for FASTA files.
+#'
+#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' @importFrom Biostrings writeXStringSet
+.createFASTA <- function(object, out_dir){
+    h5 <- H5Fopen(object$h5)
+    on.exit(H5Fclose(h5))
+    # Create CDS sequences for query and subject genomes
+    q_cds <- .makeCDS(gff = as.vector(h5$protmap$s2q_gff),
+                      genome = object$query_genome)
+    s_cds <- .makeCDS(gff = as.vector(h5$protmap$q2s_gff),
+                      genome = object$subject_genome)
+
+    # Define filenames for the CDS FASTA files
+    q_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$s2q_gff))
+    s_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$q2s_gff))
+
+    # Write the CDS sequences to FASTA files
+    writeXStringSet(q_cds, q_cds_fn)
+    writeXStringSet(s_cds, s_cds_fn)
+
+    # Overwrite the HDF5 file with the new CDS FASTA filenames
+    .h5overwrite(obj = q_cds_fn, file = object$h5, "protmap/s2q_cds")
+    .h5overwrite(obj = s_cds_fn, file = object$h5, "protmap/q2s_cds")
+}
+
+#' Create CDS sequences from GFF and genome files
+#'
+#' This function generates CDS sequences from provided GFF and genome files.
+#'
+#' @param gff Path to the GFF file.
+#' @param genome Path to the genome file.
+#'
+#' @return A DNAStringSet object containing CDS sequences.
+#' @importFrom Biostrings readDNAStringSet
+#' @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
+#' @importFrom txdbmaker makeTxDbFromGFF
+#' @import BSgenome
+#'
+.makeCDS <- function(gff, genome){
+    # Create a TxDb object from the GFF file
+    txdb <- makeTxDbFromGFF(file = gff)
+
+    # Read the genome file as a DNAStringSet object
+    genome <- readDNAStringSet(filepath = genome)
+
+    # Extract CDS sequences from the TxDb object
+    cds_db <- cdsBy(x = txdb, by = "tx", use.names = TRUE)
+    cds <- extractTranscriptSeqs(x = genome, transcripts = cds_db)
+
+    # Order CDS sequences by their names
+    cds <- cds[order(names(cds))]
+    return(cds)
+}
+
+#' Update SynogDB files
+#'
+#' This function updates the GFF and CDS files in a SynogDB object from the HDF5 file.
+#'
+#' @param object A SynogDB object.
+#'
+#' @return The updated SynogDB object.
+#' @importFrom rhdf5 H5Fopen H5Fclose
+.updateFiles <- function(object){
+    h5 <- H5Fopen(object$h5)
+    on.exit(H5Fclose(h5))
+
+    # Update GFF and CDS file paths from the HDF5 file
+    object$query_gff <- as.vector(h5$protmap$s2q_gff)
+    object$subject_gff <- as.vector(h5$protmap$q2s_gff)
+    object$query_cds <- as.vector(h5$protmap$s2q_cds)
+    object$subject_cds <- as.vector(h5$protmap$q2s_cds)
+    return(object)
+}
+
+.filterGFF <- function(object){
+
 }

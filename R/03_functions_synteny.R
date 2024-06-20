@@ -21,6 +21,8 @@ runSibeliaZ <- function(object, out_dir,
                         run_sibeliaz = TRUE){
     stopifnot(inherits(x = object, "SynogDB"))
 
+    dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
+
     if(run_sibeliaz){
         # Prepare query and subject genome files for SibeliaZ
         q_fn <- .prepGenome(genome = object$query_genome, label = "query")

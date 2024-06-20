@@ -662,7 +662,9 @@ syntenyOrtho <- function(object,
 
     # Convert GFF data to a data frame and exclude specified chromosomes
     gff <- data.frame(chr = as.character(seqnames(gff)), start = start(gff), ID = gff$ID)
-    gff <- gff[!grepl(omit_chr, gff$chr), ]
+    if(omit_chr != ""){
+        gff <- gff[!grepl(omit_chr, gff$chr), ]
+    }
 
     # Initialize anchor and nearest anchor columns
     gff$anchor <- FALSE
