@@ -94,12 +94,12 @@ runSynog <- function(query_genome,
         message("Gene modeling by Miniprot to find missing genes.")
     }
 
-    object <- mapProt(object = object,
-                      miniprot_bin = miniprot_bin,
-                      conda = conda,
-                      condaenv = miniprot_condaenv,
-                      n_threads = n_threads,
-                      out_dir = miniprot_out_dir)
+    mapProt(object = object,
+            miniprot_bin = miniprot_bin,
+            conda = conda,
+            condaenv = miniprot_condaenv,
+            n_threads = n_threads,
+            out_dir = miniprot_out_dir)
 
     if(verbose){
         message("Performinig reciprocal BLAST.")

@@ -4,7 +4,7 @@
 \alias{.getDist}
 \title{Get Distance between Anchors and RBH}
 \usage{
-.getDist(gff_ls, h5, anchor_ls)
+.getDist(gff_ls, h5 = NULL, anchor_ls, miniprot = FALSE)
 }
 \description{
 This function calculates the distance between anchors and reciprocal best hits (RBH).

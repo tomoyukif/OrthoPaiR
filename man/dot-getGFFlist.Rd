@@ -4,7 +4,7 @@
 \alias{.getGFFlist}
 \title{Get GFF List}
 \usage{
-.getGFFlist(object)
+.getGFFlist(object, h5 = NULL)
 }
 \description{
 This function imports and orders GFF files for query and subject genomes.

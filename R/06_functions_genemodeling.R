@@ -11,9 +11,14 @@
 #' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
 #'
 #' @export
-mapProt <- function(object, out_dir, miniprot_bin = "miniprot",
+mapProt <- function(object,
+                    out_dir,
+                    miniprot_bin = "miniprot",
                     conda = "conda",
-                    condaenv = NULL, n_threads, len_diff = 0.5, overlap = TRUE){
+                    condaenv = NULL,
+                    n_threads,
+                    len_diff = 0.5,
+                    overlap = TRUE){
     stopifnot(inherits(x = object, "SynogDB"))
 
     # Call the mapping engine function with specified parameters
@@ -28,68 +33,10 @@ mapProt <- function(object, out_dir, miniprot_bin = "miniprot",
                overlap = overlap,
                len_diff = len_diff)
 
-    .createFASTA(object = object)
-
+    .createFASTA(object = object, out_dir = out_dir)
     object <- .updateFiles(object = object)
 
-    .filterGFF(object = object)
-
-    return(object)
-}
-
-#' Map Orphan Proteins Between Genomes
-#'
-#' This function maps orphan proteins between the query and subject genomes using the specified miniprot binary and number of cores.
-#'
-#' @param object A SynogDB object.
-#' @param out_dir A character string specifying the prefix for the output files.
-#' @param miniprot_bin A character string specifying the path to the miniprot binary.
-#' @param n_threads An integer specifying the number of cores to use for the mapping.
-#' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.
-#'
-#' @return None. The function performs the mapping and writes the results to the output files specified by `out_dir`.
-#'
-#' @export
-#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-mapOrphan <- function(object, out_dir, miniprot_bin, conda,
-                      condaenv, n_threads, len_diff = 0.5, overlap = FALSE){
-    stopifnot(inherits(x = object, "SynogDB"))
-
-    # Open the HDF5 file and ensure it gets closed on exit
-    h5 <- H5Fopen(object$h5)
-    on.exit(H5Fclose(h5))
-
-    # Check if genewise ortholog information exists
-    if(!H5Lexists(h5, "synog_gene/orthopairs")){
-        stop("Run geneOrtho to obtain genewise ortholog info.")
-    }
-
-    # Define file paths for query and subject orphan protein sequences
-    q_aa_fn <- paste0(out_dir, "miniprot_query_prot.fa")
-    s_aa_fn <- paste0(out_dir, "miniprot_subject_prot.fa")
-
-    # Write orphan protein sequences to FASTA files
-    .writeProtFASTA(id = h5$synog_tx$orphan$query$qseqid,
-                    prot_fn = object$query_prot,
-                    gff_fn = object$query_gff,
-                    fn = q_aa_fn)
-
-    .writeProtFASTA(id = h5$synog_tx$orphan$subject$sseqid,
-                    prot_fn = object$subject_prot,
-                    gff_fn = object$subject_gff,
-                    fn = s_aa_fn)
-
-    # Call the mapping engine function with specified parameters
-    .mapEngine(object = object,
-               subject_prot = s_aa_fn,
-               query_prot = q_aa_fn,
-               out_dir = out_dir,
-               miniprot_bin = miniprot_bin,
-               conda = conda,
-               condaenv = condaenv,
-               n_threads = n_threads,
-               overlap = overlap,
-               len_diff = len_diff)
+    .syntenyOrthoMiniprot(object = object)
 }
 
 #' Execute Protein Mapping Between Genomes
@@ -880,6 +827,329 @@ mapOrphan <- function(object, out_dir, miniprot_bin, conda,
     return(object)
 }
 
-.filterGFF <- function(object){
+.syntenyOrthoMiniprot <- function(object){
+    # Open the HDF5 file
+    h5 <- H5Fopen(object$h5)
+    on.exit(H5Fclose(h5))
 
+    # Check for the existence of syntenic ortholog pairs
+    if(!H5Lexists(h5, "synog_tx/orthopairs")){
+        stop("Run syntenyOrtho to obtain ortholog anchors info.")
+    }
+
+    # Get the GFF lists
+    gff_ls <- .getGFFlist(object = object, h5 = h5)
+
+    out <- .filterGFF(object = object, gff_ls = gff_ls, h5 = h5)
+#
+#     lcb_gr <- .makeLCBgr(object = object, h5 = h5)
+#
+#     .remakeAnchor(gff_ls = gff_ls, lcb_gr = lcb_gr, h5 = h5)
+#
+#     # Create anchor lists
+#     anchor_ls <- .makeAnchorList(gff_ls = gff_ls,
+#                                  h5 = h5,
+#                                  omit_chr = omit_chr)
+#
+#     # Calculate distances for RBH
+#     mp_dist <- .getDist(gff_ls = gff_ls, anchor_ls = anchor_ls, miniprot = TRUE)
+#     dist_threshold <- as.vector(h5$synog_tx$dist_threshold)
+#     mp_dist$so_valid <- mp_dist$dist <= dist_threshold
+#
+#     # Create a data frame for syntenic orthologs
+#     syn_og <- .makeSynogDF(rbh = mp_dist, h5 = h5)
+#     syn_og$rbbh <- TRUE
+#
+#     # Add Reciprocal Best BLAST Hits (RBBH) and filter
+#     rbbh_og <- .addRBBH(rbbh = subset(mp_dist, !is.infinite(dist)),
+#                         syn_og = syn_og)
+#     rbbh_og <- subset(rbbh_og, select = c(qseqid,
+#                                           sseqid,
+#                                           qgeneid,
+#                                           sgeneid))
+#     rbbh_og$rbbh <- TRUE
+#     rbbh_og$syntenic <- FALSE
+#
+#     # Combine the syntenic orthologs with the RBBH orthologs
+#     syn_og <- rbind(subset(syn_og, select = c(qseqid,
+#                                               sseqid,
+#                                               syntenic,
+#                                               rbbh,
+#                                               qgeneid,
+#                                               sgeneid)),
+#                     rbbh_og)
+#     syn_og$pair_id <- paste(syn_og$qseqid, syn_og$sseqid, sep = "_")
+#     syn_og$class <- NA
+#     syn_og$mutual_e <- NA
+#     syn_og$mutual_ci <- NA
+#     old_syn_og <- subset(h5$synog_tx$orthopairs, select = -OG)
+#     old_syn_og$pair_id <- paste(old_syn_og$qseqid, old_syn_og$sseqid, sep = "_")
+#     syn_og <- rbind(syn_og, old_syn_og)
+#     syn_og$class <- .classifySO(ortho = syn_og)
+#
+#     # Identify orphan genes
+#     orphan <- .getOrphan(gff_ls = gff_ls, syn_og = syn_og)
+#
+#     # Create the final output
+#     out <- .makeOutput(syn_og = syn_og, orphan = orphan)
+#
+#     # Save results to the HDF5 file
+#     .h5creategroup(object$h5,"synog_tx")
+#     .h5overwrite(obj = out$syn_og, file = object$h5, "synog_tx/orthopairs")
+#     .h5overwrite(obj = out$summary, file = object$h5, "synog_tx/summary")
+#     .h5overwrite(obj = out$orphan, file = object$h5, "synog_tx/orphan")
+#     .h5overwrite(obj = dist_threshold, file = object$h5, "synog_tx/dist_threshold")
+
+    # Export the final GFF results to output files
+    export.gff3(out$gff_ls$query_gff, as.vector(h5$protmap$s2q_gff))
+    export.gff3(out$gff_ls$subject_gff, as.vector(h5$protmap$q2s_gff))
+
+    hit <- names(out$query_cds) %in% out$gff_ls$query_gff$ID
+    writeXStringSet(out$query_cds[hit], h5$protmap$s2q_cds)
+    hit <- names(out$subject_cds) %in% out$gff_ls$subject_gff$ID
+    writeXStringSet(out$subject_cds[hit], h5$protmap$q2s_cds)
 }
+
+
+# .makeLCBgr <- function(object, h5){
+#     # Order the LCB pairs
+#     pairs <- list(lcb_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_1to1),
+#                   lcb_non_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_non_1to1))
+#
+#     # Convert data frames to GRanges objects
+#     gr <- .df2gr(pairs = pairs)
+#
+#     # Create GRanges objects for gaps in the query and subject genomes
+#     gap_gr <- list(query = .gapGR(gr = gr$query_1to1,
+#                                   chrLen = object$genome$query),
+#                    subject = .gapGR(gr = gr$subject_1to1,
+#                                     chrLen = object$genome$subject))
+#     out <- list(gr = gr,
+#                 gap_gr = gap_gr)
+#     return(out)
+# }
+#
+# .remakeAnchor <- function(gff_ls, lcb_gr, h5){
+#     df1 <- .makeMiniprotPairDF(gff1 = gff_ls$query_gff,
+#                                gff2 = gff_ls$subject_gff)
+#     df1 <- .filterMPtx(df = df1, gff_ls = gff_ls, query = TRUE)
+#
+#     df2 <- .makeMiniprotPairDF(gff1 = gff_ls$subject_gff,
+#                                gff2 = gff_ls$query_gff)
+#     df2 <- .filterMPtx(df = df2, gff_ls = gff_ls, query = FALSE)
+#
+#     new_anchor <- .getNewAnchors(df1 = df1,
+#                                  df2 = df2,
+#                                  h5 = h5,
+#                                  lcb_gr = lcb_gr,
+#                                  gff_ls = gff_ls)
+#
+#     out <- rbind(subset(h5$anchor, select = c(qseqid, sseqid)),
+#                  subset(new_anchor, select = c(qseqid, sseqid)))
+#
+#     # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
+#     .h5overwrite(obj = out, file = object$h5, "anchor")
+# }
+#
+# .filterMPtx <- function(df, gff_ls, query = TRUE){
+#     if(query){
+#         df <- subset(df, subset = grepl("query_", gene))
+#         df$tx_single <- .isSingleExon(tx = df$tx,
+#                                       gff = gff_ls$query_gff)
+#         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
+#                                              gff = gff_ls$subject_gff)
+#         df <- subset(df, subset = !tx_single & !target_tx_single)
+#
+#     } else {
+#         df <- subset(df, subset = grepl("subject_", gene))
+#         df$tx_single <- .isSingleExon(tx = df$tx,
+#                                       gff = gff_ls$subject_gff)
+#         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
+#                                              gff = gff_ls$query_gff)
+#         df <- subset(df, subset = !tx_single & !target_tx_single)
+#     }
+#     return(df)
+# }
+#
+# .isSingleExon <- function(tx, gff){
+#     cds_i <- gff$type == "CDS"
+#     query_cds_parents <- unlist(gff$Parent[cds_i])
+#     n_query_cds_parents <- table(query_cds_parents)
+#     hit <- match(tx, names(n_query_cds_parents))
+#     out <- n_query_cds_parents[hit] == 1
+#     return(out)
+# }
+#
+# .getNewAnchors <- function(df1, df2, h5, lcb_gr, gff_ls){
+#     df1 <- .omitPairedGenes(df = df1,
+#                             geneid = h5$synog_gene$orthopairs$sgeneid,
+#                             syntenic = h5$synog_gene$orthopairs$syntenic)
+#     df2 <- .omitPairedGenes(df = df2,
+#                             geneid = h5$synog_gene$orthopairs$qgeneid,
+#                             syntenic = h5$synog_gene$orthopairs$syntenic)
+#
+#     rbbh <- data.frame(qseqid = c(df1$tx, df2$target_tx),
+#                        sseqid = c(df1$target_tx, df2$tx))
+#     rbbh$index <- seq_len(nrow(rbbh))
+#
+#     obj <- list(gr = lcb_gr$gr,
+#                 gap_gr = lcb_gr$gap_gr,
+#                 rbbh = rbbh,
+#                 gff = list(query = gff_ls$query_gff,
+#                            subject = gff_ls$subject_gff))
+#
+#     # Filter orthologs in 1-to-1 LCBs
+#     obj <- .orthoIn1to1lcb(obj = obj)
+#
+#     # Filter orthologs in non-1-to-1 LCBs if specified
+#     obj <- .orthoInNon1to1lcb(obj = obj)
+#
+#     # Filter orthologs in 1-to-1 CBI
+#     obj <- .orthoIn1to1cbi(obj = obj)
+#
+#     return(obj$out)
+# }
+#
+# .omitPairedGenes <- function(df, geneid, syntenic){
+#     hit <- match(df$target_gene, geneid)
+#     df$paired[!is.na(hit)] <- TRUE
+#     df$syntenic <- as.logical(syntenic[hit])
+#     df$synog <- df$paired & df$syntenic
+#     df$synog[is.na(df$synog)] <- FALSE
+#     df <- subset(df, subset = !synog)
+#     return(df)
+# }
+
+.filterGFF <- function(object, gff_ls, h5){
+    query_cds <- readDNAStringSet(object$query_cds)
+    subject_cds <- readDNAStringSet(object$subject_cds)
+
+    query_df <- .makeQueryDF(query_gff = gff_ls$query_gff,
+                             subject_gff = gff_ls$subject_gff,
+                             query_cds = query_cds)
+    subject_df <- .makeSubjectDF(subject_gff = gff_ls$subject_gff,
+                                 query_gff = gff_ls$query_gff,
+                                 subject_cds = subject_cds)
+    query_valid <- .filterMPgenes(df = query_df, pattern = "^query_")
+    subject_valid <- .filterMPgenes(df = subject_df, pattern = "^subject_")
+    gff_ls$query_gff <- .removeInvalidMP(gff = gff_ls$query_gff,
+                                         valid_id = query_valid,
+                                         pattern = "^query_")
+    gff_ls$subject_gff <- .removeInvalidMP(gff = gff_ls$subject_gff,
+                                           valid_id = subject_valid,
+                                           pattern = "^subject_")
+    out <- list(gff_ls = gff_ls,
+                query_cds = query_cds,
+                subject_cds = subject_cds)
+    return(out)
+}
+
+
+.makeQueryDF <- function(query_gff, subject_gff, query_cds){
+    query_cds_init <- .checkInitCodon(cds = query_cds)
+    query_cds_term <- .checkTermCodon(cds = query_cds)
+    query_gff_tx_index <- query_gff$type %in% c("transcript", "mRNA")
+    query_df <- data.frame(tx = query_gff$ID[query_gff_tx_index],
+                           gene = query_gff$gene_id[query_gff_tx_index])
+    hit <- match(query_df$tx, names(query_cds_init))
+    query_df$init <- query_cds_init[hit]
+    query_df$term <- query_cds_term[hit]
+    query_df$valid <- query_df$init & query_df$term
+    query_df$len <- width(query_cds)[hit]
+    hit <- match(query_df$tx, query_gff$ID)
+    query_df$target <- sub("\\s.+", "", query_gff$Target[hit])
+    hit <- match(query_df$target, subject_gff$ID)
+    query_df$target <- subject_gff$gene_id[hit]
+    query_df$pair_id <- paste(query_df$gene, query_df$target, sep = "_")
+    return(query_df)
+}
+
+.makeSubjectDF <- function(subject_gff, query_gff, subject_cds){
+    subject_cds_init <- .checkInitCodon(cds = subject_cds)
+    subject_cds_term <- .checkTermCodon(cds = subject_cds)
+    subject_gff_tx_index <- subject_gff$type %in% c("transcript", "mRNA")
+    subject_df <- data.frame(tx = subject_gff$ID[subject_gff_tx_index],
+                             gene = subject_gff$gene_id[subject_gff_tx_index])
+    hit <- match(subject_df$tx, names(subject_cds_init))
+    subject_df$init <- subject_cds_init[hit]
+    subject_df$term <- subject_cds_term[hit]
+    subject_df$valid <- subject_df$init & subject_df$term
+    subject_df$len <- width(subject_cds)[hit]
+    hit <- match(subject_df$tx, subject_gff$ID)
+    subject_df$target <- sub("\\s.+", "", subject_gff$Target[hit])
+    hit <- match(subject_df$target, query_gff$ID)
+    subject_df$target <- query_gff$gene_id[hit]
+    subject_df$pair_id <- paste(subject_df$gene, subject_df$target, sep = "_")
+    return(subject_df)
+}
+
+.checkInitCodon <- function(cds){
+    return(substr(cds, 1, 3) == "ATG")
+}
+
+.checkTermCodon <- function(cds){
+    len <- width(cds)
+    return(substr(cds, len - 2, len) %in% c("TAA", "TGA", "TAG"))
+}
+
+.filterMPgenes <- function(df, pattern = "^query_"){
+    df <- df[order(df$gene), ]
+    mp_tx_index <- grepl(pattern, df$tx)
+    eval <- data.frame(id = unique(df$gene))
+
+    mp_valid_max_len <- tapply(df$len[mp_tx_index][df$valid[mp_tx_index]],
+                               df$gene[mp_tx_index][df$valid[mp_tx_index]],
+                               max)
+    hit <- match(eval$id, names(mp_valid_max_len))
+    eval$mp_valid_max_len <- mp_valid_max_len[hit]
+    eval$mp_valid_max_len[is.na(eval$mp_valid_max_len)] <- 0
+
+    non_mp_valid_max_len <- tapply(df$len[!mp_tx_index][df$valid[!mp_tx_index]],
+                                   df$gene[!mp_tx_index][df$valid[!mp_tx_index]],
+                                   max)
+    hit <- match(eval$id, names(non_mp_valid_max_len))
+    eval$non_mp_valid_max_len <- non_mp_valid_max_len[hit]
+    eval$non_mp_valid_max_len[is.na(eval$non_mp_valid_max_len)] <- 0
+
+    max_tx_index <- tapply(df$len[df$valid],
+                           df$gene[df$valid],
+                           which.max)
+    max_tx_index <- sapply(max_tx_index, function(x){
+        if(length(x) == 0){
+            x <- NA
+        }
+        return(x)
+    })
+    hit <- match(eval$id, names(max_tx_index))
+    eval$max_tx_index <- max_tx_index[hit]
+
+    max_tx_is_na <- is.na(eval$max_tx_index)
+    hit <- match(grep(pattern, eval$id[max_tx_is_na], value = TRUE),
+                 df$gene)
+    max_tx_index <- tapply(df$len[hit],
+                           df$gene[hit],
+                           which.max)
+    hit <- match(eval$id[max_tx_is_na], names(max_tx_index))
+    eval$max_tx_index[max_tx_is_na] <- max_tx_index[hit]
+
+    start_index <- match(df$gene, df$gene)
+    hit <- match(df$gene, eval$id)
+    df$index <- eval$max_tx_index[hit] + start_index - 1
+    out <- grep(pattern, df$tx[df$index], value = TRUE)
+    return(out)
+}
+
+.removeInvalidMP <- function(gff, valid_id, pattern){
+    parent <- sapply(gff$Parent, function(x){
+        if(length(x) == 0){
+            x <- NA
+        }
+        return(x)
+    })
+    valid_tx <- gff$ID %in% valid_id
+    valid_elemetns <- parent %in% valid_id
+    non_mp_entries <- !grepl(pattern, gff$ID)
+    valid_entries <- valid_tx | valid_elemetns | non_mp_entries
+    return(gff[valid_entries])
+}
+

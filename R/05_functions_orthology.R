@@ -572,7 +572,7 @@ syntenyOrtho <- function(object,
 #' Get GFF List
 #'
 #' This function imports and orders GFF files for query and subject genomes.
-.getGFFlist <- function(object){
+.getGFFlist <- function(object, h5 = NULL){
     # Import GFF files for query and subject genomes
     query_gff <- .importAllGFF(object$query_gff)
     subject_gff <- .importAllGFF(object$subject_gff)
@@ -593,19 +593,27 @@ syntenyOrtho <- function(object,
     anchor <- h5$anchor
 
     # Find nearest anchors for query and subject genomes
-    query_anchor <- .findNearestAnchor(gff = gff_ls$query_gff, anchor = anchor$qseqid, omit_chr = omit_chr)
-    subject_anchor <- .findNearestAnchor(gff = gff_ls$subject_gff, anchor = anchor$sseqid, omit_chr = omit_chr)
+    query_anchor <- .findNearestAnchor(gff = gff_ls$query_gff,
+                                       anchor = anchor$qseqid,
+                                       omit_chr = omit_chr)
+    subject_anchor <- .findNearestAnchor(gff = gff_ls$subject_gff,
+                                         anchor = anchor$sseqid,
+                                         omit_chr = omit_chr)
 
     # Set gene IDs to anchors
-    gene_id <- .setGeneID2Anchor(anchor = anchor, gff_ls = gff_ls)
+    gene_id <- .setGeneID2Anchor(anchor = anchor,
+                                 gff_ls = gff_ls)
 
     # Combine anchor data with gene IDs
     anchor <- cbind(anchor, gene_id)
 
     # Organize anchor data
-    out <- .orgAnchor(anchor = anchor, query_anchor = query_anchor, subject_anchor = subject_anchor)
+    out <- .orgAnchor(anchor = anchor,
+                      query_anchor = query_anchor,
+                      subject_anchor = subject_anchor)
     return(out)
 }
+
 
 .findSingleExonGene <- function(rbh_dist, gff_ls){
     query_tx_ids <- unique(rbh_dist$qseqid)
@@ -763,21 +771,38 @@ syntenyOrtho <- function(object,
 #'
 #' @importFrom Biobase rowMin
 #'
-.getDist <- function(gff_ls, h5, anchor_ls){
-    # Extract RBH data
-    rbh <- .extractRBH(h5 = h5, gff_ls = gff_ls)
+.getDist <- function(gff_ls, h5 = NULL, anchor_ls, miniprot = FALSE){
+    if(miniprot){
+        # Extract RBH data
+        mp <- .extractMiniprotPair(gff_ls = gff_ls)
 
-    # Set anchor information for RBH
-    anchor2rbh <- .setAnchor2RBH(rbh = rbh, anchor_ls = anchor_ls)
-    rbh <- cbind(rbh, anchor2rbh)
+        # Set anchor information for MP
+        anchor2mp <- .setAnchor2MP(mp = mp, anchor_ls = anchor_ls)
+        mp <- cbind(mp, anchor2mp)
 
-    # Trace anchor distances for query to subject and subject to query
-    q2s_dist <- .traceAnchorQ2S(rbh = rbh, anchor_ls = anchor_ls)
-    s2q_dist <- .traceAnchorS2Q(rbh = rbh, anchor_ls = anchor_ls)
+        # Trace anchor distances for query to subject and subject to query
+        q2s_dist <- .traceMPanchorQ2S(mp = mp, anchor_ls = anchor_ls)
+        s2q_dist <- .traceMPanchorS2Q(mp = mp, anchor_ls = anchor_ls)
 
-    # Calculate minimum distance
-    rbh <- cbind(rbh, dist = rowMin(cbind(q2s_dist, s2q_dist)))
-    return(rbh)
+        # Calculate minimum distance
+        out <- cbind(mp, dist = rowMin(cbind(q2s_dist, s2q_dist)))
+
+    } else{
+        # Extract RBH data
+        rbh <- .extractRBH(h5 = h5, gff_ls = gff_ls)
+
+        # Set anchor information for RBH
+        anchor2rbh <- .setAnchor2RBH(rbh = rbh, anchor_ls = anchor_ls)
+        rbh <- cbind(rbh, anchor2rbh)
+
+        # Trace anchor distances for query to subject and subject to query
+        q2s_dist <- .traceAnchorQ2S(rbh = rbh, anchor_ls = anchor_ls)
+        s2q_dist <- .traceAnchorS2Q(rbh = rbh, anchor_ls = anchor_ls)
+
+        # Calculate minimum distance
+        out <- cbind(rbh, dist = rowMin(cbind(q2s_dist, s2q_dist)))
+    }
+    return(out)
 }
 
 #' Extract Reciprocal Best Hits (RBH)
@@ -802,6 +827,37 @@ syntenyOrtho <- function(object,
     return(out)
 }
 
+.extractMiniprotPair <- function(gff_ls){
+    df1 <- .makeMiniprotPairDF(gff1 = gff_ls$query_gff,
+                               gff2 = gff_ls$subject_gff)
+    df2 <- .makeMiniprotPairDF(gff1 = gff_ls$subject_gff,
+                               gff2 = gff_ls$query_gff)
+
+    out <- data.frame(qseqid = c(df1$tx, df2$target_tx),
+                      qgeneid = c(df1$gene, df2$target_gene),
+                      qchr = c(df1$chr, df2$target_chr),
+                      sseqid = c(df1$target_tx, df2$tx),
+                      sgeneid = c(df1$target_gene, df2$gene),
+                      schr = c(df1$target_chr, df2$chr))
+
+    # Create pair ID for each Miniprot pairs
+    out$pair_id <- paste(out$qgeneid, out$sgeneid, sep = "_")
+    return(out)
+}
+
+.makeMiniprotPairDF <- function(gff1, gff2){
+    query_gff_tx_index <- gff1$type %in% c("transcript", "mRNA")
+    out <- data.frame(tx = gff1$ID[query_gff_tx_index],
+                      gene = gff1$gene_id[query_gff_tx_index],
+                      chr = as.character(seqnames(gff1[query_gff_tx_index])))
+    hit <- match(out$tx, gff1$ID)
+    out$target_tx <- sub("\\s.+", "", gff1$Target[hit])
+    hit <- match(out$target_tx, gff2$ID)
+    out$target_gene <- gff2$gene_id[hit]
+    out$target_chr <- as.character(seqnames(gff2))[hit]
+    return(out)
+}
+
 #' Set Anchor Information to RBH
 #'
 #' This function sets the anchor information to the reciprocal best hits (RBH).
@@ -821,6 +877,11 @@ syntenyOrtho <- function(object,
                       s2q_q_location = s2q_q_location,
                       s2q_s_anchor = s2q_s_anchor,
                       q2s_s_location = q2s_s_location)
+    return(out)
+}
+
+.setAnchor2MP <- function(mp, anchor_ls){
+    out <- .setAnchor2RBH(rbh = mp, anchor_ls)
     return(out)
 }
 
@@ -938,6 +999,16 @@ syntenyOrtho <- function(object,
     # Find the minimum distance
     out <- min(s2q_dist)
 
+    return(out)
+}
+
+.traceMPanchorQ2S <- function(mp, anchor_ls){
+    out <- .traceAnchorQ2S(rbh = mp, anchor_ls = anchor_ls)
+    return(out)
+}
+
+.traceMPanchorS2Q <- function(mp, anchor_ls){
+    out <- .traceAnchorS2Q(rbh = mp, anchor_ls = anchor_ls)
     return(out)
 }
 
