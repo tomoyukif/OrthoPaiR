@@ -72,16 +72,23 @@ makeSynogDB <- function(query_genome, subject_genome,
 #' This function provides a summary of the SynogDB object, optionally for gene or transcript information.
 #'
 #' @param object A SynogDB object.
+#' @param h5_fn A path to a hdf5 file storing Synog results.
 #' @param gene Logical, whether to summarize genewise orthology information (default is FALSE).
 #' @param split Logical, whether to summarize split genewise orthology information (default is FALSE).
 #'
 #' @return A summary dataframe.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #'
-summarySynog <- function(object, gene = FALSE, split = FALSE){
-    stopifnot(inherits(x = object, "SynogDB"))
-    h5 <- H5Fopen(object$h5)
-    on.exit(H5Fclose(h5))
+#' @export
+#'
+summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+    if(is.null(object)){
+        h5 <- H5Fopen(h5_fn)
+
+    } else {
+        h5 <- H5Fopen(object$h5)
+    }
+
     if(gene){
         if(split){
             if(!H5Lexists(h5, "synog_gene_split/summary")){
@@ -117,15 +124,22 @@ summarySynog <- function(object, gene = FALSE, split = FALSE){
 #' This function retrieves ortholog pairs information from the SynogDB object.
 #'
 #' @param object A SynogDB object.
+#' @param h5_fn A path to a hdf5 file storing Synog results.
 #' @param gene Logical, whether to get genewise orthology information (default is FALSE).
 #' @param split Logical, whether to get split genewise orthology information (default is FALSE).
 #'
 #' @return A dataframe containing ortholog pairs.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
-getSynog <- function(object, gene = FALSE, split = FALSE){
-    h5 <- H5Fopen(object$h5)
+getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+    if(is.null(object)){
+        h5 <- H5Fopen(h5_fn)
+
+    } else {
+        h5 <- H5Fopen(object$h5)
+    }
     on.exit(H5Fclose(h5))
+
     if(gene){
         if(split){
             if(!H5Lexists(h5, "synog_gene_split/orthopairs")){
@@ -180,8 +194,13 @@ getSynog <- function(object, gene = FALSE, split = FALSE){
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
 #'
-getOrphan <- function(object, gene = FALSE, split = FALSE){
-    h5 <- H5Fopen(object$h5)
+getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+    if(is.null(object)){
+        h5 <- H5Fopen(h5_fn)
+
+    } else {
+        h5 <- H5Fopen(object$h5)
+    }
     on.exit(H5Fclose(h5))
     if(gene){
         if(split){

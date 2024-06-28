@@ -4,10 +4,12 @@
 \alias{summarySynog}
 \title{Summarize SynogDB object}
 \usage{
-summarySynog(object, gene = FALSE, split = FALSE)
+summarySynog(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE)
 }
 \arguments{
 \item{object}{A SynogDB object.}
+
+\item{h5_fn}{A path to a hdf5 file storing Synog results.}
 
 \item{gene}{Logical, whether to summarize genewise orthology information (default is FALSE).}
 

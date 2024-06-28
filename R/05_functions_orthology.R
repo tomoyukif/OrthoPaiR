@@ -76,6 +76,25 @@ anchorOrtho <- function(object,
     # Filter orthologs in 1-to-1 CBI
     obj <- .orthoIn1to1cbi(obj = obj)
 
+    .filterSingleExonAnchor(obj = obj)
+    .filterSingleExonAnchor <- function(obj){
+        cds_i <-  obj$gff$query$type == "CDS"
+        query_cds_parents <- unlist( obj$gff$query$Parent[cds_i])
+        n_query_cds_parents <- table(query_cds_parents)
+        hit <- match(obj$out$qseqid, names(n_query_cds_parents))
+        query_single <- n_query_cds_parents[hit] == 1
+
+        cds_i <- obj$gff$subject$type == "CDS"
+        subject_cds_parents <- unlist(obj$gff$subject$Parent[cds_i])
+        n_subject_cds_parents <- table(subject_cds_parents)
+        hit <- match(obj$out$sseqid, names(n_subject_cds_parents))
+        subject_single <- n_subject_cds_parents[hit] == 1
+
+        invalid <- query_single | subject_single
+        obj$out <- obj$out[!invalid, ]
+        return(obj)
+    }
+
     # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
     .h5overwrite(obj = obj$out, file = object$h5, "anchor")
 }
@@ -572,7 +591,7 @@ syntenyOrtho <- function(object,
 #' Get GFF List
 #'
 #' This function imports and orders GFF files for query and subject genomes.
-.getGFFlist <- function(object, h5 = NULL){
+.getGFFlist <- function(object){
     # Import GFF files for query and subject genomes
     query_gff <- .importAllGFF(object$query_gff)
     subject_gff <- .importAllGFF(object$subject_gff)

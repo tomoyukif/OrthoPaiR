@@ -6,7 +6,7 @@
 #' @param out_prefix A character string specifying the prefix for the output files.
 #' @param miniprot_bin A character string specifying the path to the miniprot binary.
 #' @param n_threads An integer specifying the number of cores to use for the mapping.
-#' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.
+#' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.2.
 #'
 #' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
 #'
@@ -17,7 +17,7 @@ mapProt <- function(object,
                     conda = "conda",
                     condaenv = NULL,
                     n_threads,
-                    len_diff = 0.5,
+                    len_diff = 0.2,
                     overlap = TRUE){
     stopifnot(inherits(x = object, "SynogDB"))
 
@@ -45,6 +45,7 @@ mapProt <- function(object,
 #'
 #' @importFrom rtracklayer export.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' @importFrom S4Vectors mcols mcols<-
 .mapEngine <- function(object, subject_prot, query_prot,
                        out_dir, miniprot_bin, conda,
                        condaenv, n_threads,
@@ -68,11 +69,11 @@ mapProt <- function(object,
               n_threads = n_threads)
 
     # Create HDF5 group for protein mapping results and save GFF files
-    .h5creategroup(object$h5,"protmap")
+    .h5creategroup(object$h5,"miniprot")
     .h5overwrite(obj = paste0(q2s_out, ".gff"),
-                 file = object$h5, "protmap/q2s_gff")
+                 file = object$h5, "miniprot/q2s_gff")
     .h5overwrite(obj = paste0(s2q_out, ".gff"),
-                 file = object$h5, "protmap/s2q_gff")
+                 file = object$h5, "miniprot/s2q_gff")
 
     # Import existing GFF files for query and subject genomes
     query_gff <- .importAllGFF(object$query_gff)
@@ -207,10 +208,28 @@ mapProt <- function(object,
     gff2 <- gff2[order(as.numeric(seqnames(gff2)), start(gff2))]
 
     # Validate GFF data
-    gff_valid <- .validTX(gff1 = gff1, gff2 = gff2, gff3 = gff3, overlap = overlap, len_diff = len_diff)
+    gff_valid <- .validTX(gff1 = gff1,
+                          gff2 = gff2,
+                          gff3 = gff3,
+                          overlap = overlap,
+                          len_diff = len_diff)
 
     # Organize transcripts and CDS features
     gff_tx <- .orgTX(gff = gff_valid, prefix = prefix)
+
+    .solveChimericTX(gff_valid = gff_valid)
+    .solveChimericTX <- function(gff_valid){
+        gff_valid_cds_i <- gff_valid$type %in% "CDS"
+        ol <- findOverlaps(gff_valid[gff_valid_cds_i],
+                           gff_valid[gff_valid_cds_i])
+        ol <- as.data.frame(ol)
+        ol <- subset(ol, subset = queryHits != subjectHits)
+        ol_sort <- apply(ol, 1, sort)
+        ol <- subset(ol, subset = !duplicated(t(ol_sort)))
+        ol$query_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$queryHits])
+        ol$subject_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$subjectHits])
+    }
+
     gff_cds <- .orgCDS(gff1 = gff1, gff_tx = gff_tx)
     gff_gene <- .orgGene(gff_tx = gff_tx)
 
@@ -572,6 +591,7 @@ mapProt <- function(object,
 #'
 #' This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
 #'
+#' @importFrom rtracklayer start end start<- end<-
 .fixGFFrange <- function(gff){
     # Fix the start and end positions of each transcript to
     # cover the whole range of member elements (CDS, exon, and UTRs)
@@ -760,22 +780,22 @@ mapProt <- function(object,
     h5 <- H5Fopen(object$h5)
     on.exit(H5Fclose(h5))
     # Create CDS sequences for query and subject genomes
-    q_cds <- .makeCDS(gff = as.vector(h5$protmap$s2q_gff),
+    q_cds <- .makeCDS(gff = as.vector(h5$miniprot$s2q_gff),
                       genome = object$query_genome)
-    s_cds <- .makeCDS(gff = as.vector(h5$protmap$q2s_gff),
+    s_cds <- .makeCDS(gff = as.vector(h5$miniprot$q2s_gff),
                       genome = object$subject_genome)
 
     # Define filenames for the CDS FASTA files
-    q_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$s2q_gff))
-    s_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$protmap$q2s_gff))
+    q_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$miniprot$s2q_gff))
+    s_cds_fn <- sub("\\.gff", "_cds.fa", as.vector(h5$miniprot$q2s_gff))
 
     # Write the CDS sequences to FASTA files
     writeXStringSet(q_cds, q_cds_fn)
     writeXStringSet(s_cds, s_cds_fn)
 
     # Overwrite the HDF5 file with the new CDS FASTA filenames
-    .h5overwrite(obj = q_cds_fn, file = object$h5, "protmap/s2q_cds")
-    .h5overwrite(obj = s_cds_fn, file = object$h5, "protmap/q2s_cds")
+    .h5overwrite(obj = q_cds_fn, file = object$h5, "miniprot/s2q_cds")
+    .h5overwrite(obj = s_cds_fn, file = object$h5, "miniprot/q2s_cds")
 }
 
 #' Create CDS sequences from GFF and genome files
@@ -820,10 +840,10 @@ mapProt <- function(object,
     on.exit(H5Fclose(h5))
 
     # Update GFF and CDS file paths from the HDF5 file
-    object$query_gff <- as.vector(h5$protmap$s2q_gff)
-    object$subject_gff <- as.vector(h5$protmap$q2s_gff)
-    object$query_cds <- as.vector(h5$protmap$s2q_cds)
-    object$subject_cds <- as.vector(h5$protmap$q2s_cds)
+    object$query_gff <- as.vector(h5$miniprot$s2q_gff)
+    object$subject_gff <- as.vector(h5$miniprot$q2s_gff)
+    object$query_cds <- as.vector(h5$miniprot$s2q_cds)
+    object$subject_cds <- as.vector(h5$miniprot$q2s_cds)
     return(object)
 }
 
@@ -838,76 +858,18 @@ mapProt <- function(object,
     }
 
     # Get the GFF lists
-    gff_ls <- .getGFFlist(object = object, h5 = h5)
+    gff_ls <- .getGFFlist(object = object)
 
-    out <- .filterGFF(object = object, gff_ls = gff_ls, h5 = h5)
-#
-#     lcb_gr <- .makeLCBgr(object = object, h5 = h5)
-#
-#     .remakeAnchor(gff_ls = gff_ls, lcb_gr = lcb_gr, h5 = h5)
-#
-#     # Create anchor lists
-#     anchor_ls <- .makeAnchorList(gff_ls = gff_ls,
-#                                  h5 = h5,
-#                                  omit_chr = omit_chr)
-#
-#     # Calculate distances for RBH
-#     mp_dist <- .getDist(gff_ls = gff_ls, anchor_ls = anchor_ls, miniprot = TRUE)
-#     dist_threshold <- as.vector(h5$synog_tx$dist_threshold)
-#     mp_dist$so_valid <- mp_dist$dist <= dist_threshold
-#
-#     # Create a data frame for syntenic orthologs
-#     syn_og <- .makeSynogDF(rbh = mp_dist, h5 = h5)
-#     syn_og$rbbh <- TRUE
-#
-#     # Add Reciprocal Best BLAST Hits (RBBH) and filter
-#     rbbh_og <- .addRBBH(rbbh = subset(mp_dist, !is.infinite(dist)),
-#                         syn_og = syn_og)
-#     rbbh_og <- subset(rbbh_og, select = c(qseqid,
-#                                           sseqid,
-#                                           qgeneid,
-#                                           sgeneid))
-#     rbbh_og$rbbh <- TRUE
-#     rbbh_og$syntenic <- FALSE
-#
-#     # Combine the syntenic orthologs with the RBBH orthologs
-#     syn_og <- rbind(subset(syn_og, select = c(qseqid,
-#                                               sseqid,
-#                                               syntenic,
-#                                               rbbh,
-#                                               qgeneid,
-#                                               sgeneid)),
-#                     rbbh_og)
-#     syn_og$pair_id <- paste(syn_og$qseqid, syn_og$sseqid, sep = "_")
-#     syn_og$class <- NA
-#     syn_og$mutual_e <- NA
-#     syn_og$mutual_ci <- NA
-#     old_syn_og <- subset(h5$synog_tx$orthopairs, select = -OG)
-#     old_syn_og$pair_id <- paste(old_syn_og$qseqid, old_syn_og$sseqid, sep = "_")
-#     syn_og <- rbind(syn_og, old_syn_og)
-#     syn_og$class <- .classifySO(ortho = syn_og)
-#
-#     # Identify orphan genes
-#     orphan <- .getOrphan(gff_ls = gff_ls, syn_og = syn_og)
-#
-#     # Create the final output
-#     out <- .makeOutput(syn_og = syn_og, orphan = orphan)
-#
-#     # Save results to the HDF5 file
-#     .h5creategroup(object$h5,"synog_tx")
-#     .h5overwrite(obj = out$syn_og, file = object$h5, "synog_tx/orthopairs")
-#     .h5overwrite(obj = out$summary, file = object$h5, "synog_tx/summary")
-#     .h5overwrite(obj = out$orphan, file = object$h5, "synog_tx/orphan")
-#     .h5overwrite(obj = dist_threshold, file = object$h5, "synog_tx/dist_threshold")
+    out <- .filterGFF(object = object, gff_ls = gff_ls)
 
     # Export the final GFF results to output files
-    export.gff3(out$gff_ls$query_gff, as.vector(h5$protmap$s2q_gff))
-    export.gff3(out$gff_ls$subject_gff, as.vector(h5$protmap$q2s_gff))
+    export.gff3(out$gff_ls$query_gff, as.vector(h5$miniprot$s2q_gff))
+    export.gff3(out$gff_ls$subject_gff, as.vector(h5$miniprot$q2s_gff))
 
     hit <- names(out$query_cds) %in% out$gff_ls$query_gff$ID
-    writeXStringSet(out$query_cds[hit], h5$protmap$s2q_cds)
+    writeXStringSet(out$query_cds[hit], h5$miniprot$s2q_cds)
     hit <- names(out$subject_cds) %in% out$gff_ls$subject_gff$ID
-    writeXStringSet(out$subject_cds[hit], h5$protmap$q2s_cds)
+    writeXStringSet(out$subject_cds[hit], h5$miniprot$q2s_cds)
 }
 
 
@@ -1020,7 +982,7 @@ mapProt <- function(object,
 #     return(df)
 # }
 
-.filterGFF <- function(object, gff_ls, h5){
+.filterGFF <- function(object, gff_ls){
     query_cds <- readDNAStringSet(object$query_cds)
     subject_cds <- readDNAStringSet(object$subject_cds)
 
