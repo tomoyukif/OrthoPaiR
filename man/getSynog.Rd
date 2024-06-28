@@ -4,10 +4,12 @@
 \alias{getSynog}
 \title{Get Synog information}
 \usage{
-getSynog(object, gene = FALSE, split = FALSE)
+getSynog(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE)
 }
 \arguments{
 \item{object}{A SynogDB object.}
+
+\item{h5_fn}{A path to a hdf5 file storing Synog results.}
 
 \item{gene}{Logical, whether to get genewise orthology information (default is FALSE).}
 

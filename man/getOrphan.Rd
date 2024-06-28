@@ -4,7 +4,7 @@
 \alias{getOrphan}
 \title{Get orphan information}
 \usage{
-getOrphan(object, gene = FALSE, split = FALSE)
+getOrphan(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE)
 }
 \arguments{
 \item{object}{A SynogDB object.}
