@@ -161,10 +161,10 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     on.exit(H5Fclose(h5))
 
     if(gene){
-            if(!H5Lexists(h5, "synog_gene")){
-                stop("Run syntenicOrtho() to obtain genewise ortholog info.")
-            }
-            out <- h5$synog_gene
+        if(!H5Lexists(h5, "synog_gene")){
+            stop("Run syntenicOrtho() to obtain genewise ortholog info.")
+        }
+        out <- h5$synog_gene
 
     } else {
         if(!H5Lexists(h5, "synog_tx")){
@@ -196,11 +196,11 @@ getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE){
         h5 <- H5Fopen(object$h5)
     }
     on.exit(H5Fclose(h5))
-            if(!H5Lexists(h5, "orphan_query")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
-            }
-            out <- list(query = h5$orphan_query,
-                        subject = h5$orphan_subject)
+    if(!H5Lexists(h5, "orphan_query")){
+        stop("Run geneOrtho to obtain genewise ortholog info.")
+    }
+    out <- list(query = h5$orphan_query,
+                subject = h5$orphan_subject)
 
     return(out)
 }
