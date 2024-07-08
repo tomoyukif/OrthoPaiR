@@ -29,9 +29,14 @@ rbh <- function(object,
     # Check if the input object is of class "SynogDB"
     stopifnot(inherits(x = object, "SynogDB"))
 
+    # Open the HDF5 file
+    h5 <- H5Fopen(object$h5)
+    # Ensure the HDF5 file is closed when the function exits
+    on.exit(H5Fclose(h5))
+
     # Generate FASTA files from the CDS sequences
-    fa1 <- .makeFASTA(cds_fn = object$query_cds)
-    fa2 <- .makeFASTA(cds_fn = object$subject_cds)
+    fa1 <- .makeFASTA(cds_fn = as.vector(h5$files$query_cds))
+    fa2 <- .makeFASTA(cds_fn = as.vector(h5$files$subject_cds))
 
     # Create BLAST databases if necessary
     if(makedb | is.null(db1) | is.null(db2)){

@@ -11,8 +11,7 @@ mapProt(
   conda = "conda",
   condaenv = NULL,
   n_threads,
-  len_diff = 0.5,
-  overlap = TRUE
+  len_diff = 0.2
 )
 }
 \arguments{
@@ -22,7 +21,7 @@ mapProt(
 
 \item{n_threads}{An integer specifying the number of cores to use for the mapping.}
 
-\item{len_diff}{A numeric value specifying the maximum allowable length difference for proteins. Default is 0.5.}
+\item{len_diff}{A numeric value specifying the maximum allowable length difference for proteins. Default is 0.2.}
 
 \item{out_prefix}{A character string specifying the prefix for the output files.}
 }

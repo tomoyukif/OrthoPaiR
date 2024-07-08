@@ -24,9 +24,14 @@ runSibeliaZ <- function(object, out_dir,
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
 
     if(run_sibeliaz){
+        # Open the HDF5 file
+        h5 <- H5Fopen(object$h5)
+        # Ensure the HDF5 file is closed when the function exits
+        on.exit(H5Fclose(h5))
+
         # Prepare query and subject genome files for SibeliaZ
-        q_fn <- .prepGenome(genome = object$query_genome, label = "query")
-        s_fn <- .prepGenome(genome = object$subject_genome, label = "subject")
+        q_fn <- .prepGenome(genome = h5$files$query_genome, label = "query")
+        s_fn <- .prepGenome(genome = h5$files$subject_genome, label = "subject")
 
         # Run SibeliaZ and maf2synteny with or without conda environment
         if(!is.null(condaenv)){

@@ -44,7 +44,8 @@ runSynog <- function(query_genome,
                           subject_cds = subject_cds,
                           query_prot = query_prot,
                           subject_prot = subject_prot,
-                          hdf5_path = hdf5_path)
+                          hdf5_path = hdf5_path,
+                          overwrite = FALSE)
 
     if(verbose){
         message("Running SibeliaZ for local collinear block (LCB) detection.")
@@ -107,28 +108,29 @@ runSynog <- function(query_genome,
 
     rbh(object = object, n_threads = n_threads)
 
-    if(verbose){
-        message("Find anchor orthologs.")
-    }
-
-    anchorOrtho(object = object)
+    # if(verbose){
+    #     message("Find anchor orthologs.")
+    # }
+    #
+    # anchorOrtho(object = object)
 
     if(verbose){
         message("Pairing orthologs.")
     }
-
-    syntenyOrtho(object = object, omit_chr = omit_chr)
-
-    if(verbose){
-        message("Sammarize genewise orthology information.")
-    }
-
-    geneOrtho(object = object)
-
-    if(verbose){
-        message("Split chemric annotations based on the ortholog pairing result.")
-    }
-
-    splitGenes(object = object)
+    syntenicOrtho(object = object)
+    #
+    # syntenyOrtho(object = object, omit_chr = omit_chr)
+    #
+    # if(verbose){
+    #     message("Sammarize genewise orthology information.")
+    # }
+    #
+    # geneOrtho(object = object)
+    #
+    # if(verbose){
+    #     message("Split chemric annotations based on the ortholog pairing result.")
+    # }
+    #
+    # splitGenes(object = object)
     return(object)
 }

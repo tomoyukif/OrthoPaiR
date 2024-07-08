@@ -4,7 +4,7 @@
 \alias{getSynog}
 \title{Get Synog information}
 \usage{
-getSynog(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE)
+getSynog(object = NULL, h5_fn = NULL, gene = FALSE)
 }
 \arguments{
 \item{object}{A SynogDB object.}
