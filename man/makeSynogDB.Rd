@@ -13,7 +13,8 @@ makeSynogDB(
   subject_cds,
   query_prot,
   subject_prot,
-  hdf5_path = "./synog.h5"
+  hdf5_path = "./synog.h5",
+  overwrite = FALSE
 )
 }
 \arguments{

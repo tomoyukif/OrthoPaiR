@@ -20,23 +20,46 @@ makeSynogDB <- function(query_genome, subject_genome,
                         query_gff, subject_gff,
                         query_cds, subject_cds,
                         query_prot, subject_prot,
-                        hdf5_path = "./synog.h5"){
+                        hdf5_path = "./synog.h5",
+                        overwrite = FALSE){
+
     # Create a list containing all input file paths
-    out <- list(query_genome = query_genome,
-                subject_genome = subject_genome,
-                query_gff = query_gff,
-                subject_gff = subject_gff,
-                query_cds = query_cds,
-                subject_cds = subject_cds,
-                query_prot = query_prot,
-                subject_prot = subject_prot)
+    files <- list(query_genome = query_genome,
+                  subject_genome = subject_genome,
+                  query_gff = query_gff,
+                  subject_gff = subject_gff,
+                  query_cds = query_cds,
+                  subject_cds = subject_cds,
+                  query_prot = query_prot,
+                  subject_prot = subject_prot)
 
     # Check if all input files exist
-    for(i in seq_along(out)){
-        if(!file.exists(out[[i]])){
-            stop(out[[i]], " do not exists!")
+    for(i in seq_along(files)){
+        if(!file.exists(files[[i]])){
+            stop(files[[i]], " do not exists!")
         }
     }
+
+    out <- NULL
+    out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
+
+    .h5creategroup(out$h5,"files")
+    .h5overwrite(obj = query_genome,
+                 file = out$h5, "files/query_genome")
+    .h5overwrite(obj = subject_genome,
+                 file = out$h5, "files/subject_genome")
+    .h5overwrite(obj = query_gff,
+                 file = out$h5, "files/query_gff")
+    .h5overwrite(obj = subject_gff,
+                 file = out$h5, "files/subject_gff")
+    .h5overwrite(obj = query_cds,
+                 file = out$h5, "files/query_cds")
+    .h5overwrite(obj = subject_cds,
+                 file = out$h5, "files/subject_cds")
+    .h5overwrite(obj = query_prot,
+                 file = out$h5, "files/query_prot")
+    .h5overwrite(obj = subject_prot,
+                 file = out$h5, "files/subject_prot")
 
     # Summarize the query and subject genomes
     out$genome$query <- .genomeSummary(genome = query_genome)
@@ -44,7 +67,6 @@ makeSynogDB <- function(query_genome, subject_genome,
 
     # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "SynogDB")
-    out$h5 <- .makeHDF5(hdf5_path = hdf5_path)
     return(out)
 }
 
@@ -73,15 +95,13 @@ makeSynogDB <- function(query_genome, subject_genome,
 #'
 #' @param object A SynogDB object.
 #' @param h5_fn A path to a hdf5 file storing Synog results.
-#' @param gene Logical, whether to summarize genewise orthology information (default is FALSE).
-#' @param split Logical, whether to summarize split genewise orthology information (default is FALSE).
 #'
 #' @return A summary dataframe.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #'
 #' @export
 #'
-summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 
@@ -89,26 +109,26 @@ summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALS
         h5 <- H5Fopen(object$h5)
     }
 
-    if(gene){
-        if(split){
-            if(!H5Lexists(h5, "synog_gene_split/summary")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
-            }
-            df <- h5$synog_gene_split$summary
-
-        } else {
-            if(!H5Lexists(h5, "synog_gene/summary")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
-            }
-            df <- h5$synog_gene$summary
-        }
-
-    } else {
-        if(!H5Lexists(h5, "synog_tx/summary")){
-            stop("Run syntenyOrtho to obtain ortholog info.")
-        }
-        df <- h5$synog_tx$summary
+    if(!H5Lexists(h5, "synog_gene")){
+        stop("Run syntenicOrtho() to obtain genewise ortholog info.")
     }
+    synog <- h5$synog_gene
+    query <- subset(synog, subset = !duplicated(synog$query_gene))
+    query_summary <- table(query$class)
+    subject <- subset(synog, subset = !duplicated(synog$subject_gene))
+    subject_summary <- table(subject$class)
+    query_orphan <- length(h5$orphan_query)
+    subject_orphan <- length(h5$orphan_subject)
+    query_total <- sum(query_summary) + query_orphan
+    subject_total <- sum(subject_summary) + subject_orphan
+    df <- data.frame(Query = c(query_total,
+                               query_total - query_orphan,
+                               query_summary,
+                               query_orphan),
+                     Subject = c(subject_total,
+                                 subject_total - subject_orphan,
+                                 subject_summary,
+                                 subject_orphan))
     rownames(df) <- c("Total",
                       "Classified",
                       "1to1",
@@ -131,7 +151,7 @@ summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALS
 #' @return A dataframe containing ortholog pairs.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
-getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 
@@ -141,42 +161,16 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
     on.exit(H5Fclose(h5))
 
     if(gene){
-        if(split){
-            if(!H5Lexists(h5, "synog_gene_split/orthopairs")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
+            if(!H5Lexists(h5, "synog_gene")){
+                stop("Run syntenicOrtho() to obtain genewise ortholog info.")
             }
-            out <- h5$synog_gene_split$orthopairs
-            out <- out[, c(12:11, 6:5, 1:2, 9:10, 3:4)]
-            names(out) <- c("OG", "class", "rbbh", "syntenic",
-                            "query_txID", "subject_txID",
-                            "query_geneID", "subject_geneID",
-                            "mutual_e", "mutual_covidt")
-            out <- out[order(out$OG), ]
-
-        } else {
-            if(!H5Lexists(h5, "synog_gene/orthopairs")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
-            }
-            out <- h5$synog_gene$orthopairs
-            out <- out[, c(12:11, 6:5, 1:2, 9:10, 3:4)]
-            names(out) <- c("OG", "class", "rbbh", "syntenic",
-                            "query_txID", "subject_txID",
-                            "query_geneID", "subject_geneID",
-                            "mutual_e", "mutual_covidt")
-            out <- out[order(out$OG), ]
-        }
+            out <- h5$synog_gene
 
     } else {
-        if(!H5Lexists(h5, "synog_tx/orthopairs")){
-            stop("Run syntenyOrtho to obtain ortholog info.")
+        if(!H5Lexists(h5, "synog_tx")){
+            stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
-        out <- h5$synog_tx$orthopairs
-        out <- out[, c(8:5, 1:2, 9:10, 3:4)]
-        names(out) <- c("OG", "class", "rbbh", "syntenic",
-                        "query_txID", "subject_txID",
-                        "query_geneID", "subject_geneID",
-                        "mutual_e", "mutual_covidt")
-        out <- out[order(out$OG), ]
+        out <- h5$synog_tx
     }
     return(out)
 }
@@ -194,7 +188,7 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
 #'
-getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
+getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 
@@ -202,31 +196,11 @@ getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE, split = FALSE){
         h5 <- H5Fopen(object$h5)
     }
     on.exit(H5Fclose(h5))
-    if(gene){
-        if(split){
-            if(!H5Lexists(h5, "synog_gene_split/orphan")){
+            if(!H5Lexists(h5, "orphan_query")){
                 stop("Run geneOrtho to obtain genewise ortholog info.")
             }
-            out <- h5$synog_gene_split$orphan
-            names(out$query) <- "query_geneID"
-            names(out$subject) <- "subject_geneID"
+            out <- list(query = h5$orphan_query,
+                        subject = h5$orphan_subject)
 
-        } else {
-            if(!H5Lexists(h5, "synog_gene/orphan")){
-                stop("Run geneOrtho to obtain genewise ortholog info.")
-            }
-            out <- h5$synog_gene$orphan
-            names(out$query) <- "query_geneID"
-            names(out$subject) <- "subject_geneID"
-        }
-
-    } else {
-        if(!H5Lexists(h5, "synog_tx/orphan")){
-            stop("Run syntenyOrtho to obtain ortholog info.")
-        }
-        out <- h5$synog_tx$orphan
-        names(out$query) <- "query_txID"
-        names(out$subject) <- "subject_txID"
-    }
     return(out)
 }

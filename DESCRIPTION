@@ -11,7 +11,8 @@ License: GPL (>= 3)
 Encoding: UTF-8
 Imports: Biobase, txdbmaker, BiocGenerics, GenomeInfoDb, GenomicFeatures,
     GenomicRanges, IRanges, S4Vectors, dplyr, ggplot2, parallel, rBLAST,
-    rhdf5, rtracklayer, BSgenome, Biostrings
+    rhdf5, rtracklayer, BSgenome, Biostrings, Rcpp (>= 1.0.6), igraph (>= 1.2.6)
+LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.1
 URL: https://github.com/tomoyukif/Synog
