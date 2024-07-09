@@ -24,7 +24,8 @@ runSynog(
   miniprot_out_dir = "./miniprot_out/",
   n_threads = NULL,
   omit_chr = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  overwrite = FALSE
 )
 }
 \description{
