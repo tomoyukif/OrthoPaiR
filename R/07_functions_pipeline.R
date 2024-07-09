@@ -25,8 +25,7 @@ runSynog <- function(query_genome,
                      miniprot_out_dir = "./miniprot_out/",
                      n_threads = NULL,
                      omit_chr = NULL,
-                     verbose = TRUE,
-                     overwrite = FALSE){
+                     verbose = TRUE){
 
     if(is.null(n_threads)){
         core <- detectCores()
@@ -46,7 +45,7 @@ runSynog <- function(query_genome,
                           query_prot = query_prot,
                           subject_prot = subject_prot,
                           hdf5_path = hdf5_path,
-                          overwrite = overwrite)
+                          overwrite = FALSE)
 
     if(verbose){
         message("Running SibeliaZ for local collinear block (LCB) detection.")
@@ -67,30 +66,30 @@ runSynog <- function(query_genome,
     sibeliaLCB2DF(object = object)
     lcbClassify(object = object)
     getLCBpairs(object = object)
-    #
-    #     if(verbose){
-    #         message("Performinig reciprocal BLAST.")
-    #     }
-    #
-    #     rbh(object = object, n_threads = n_threads)
-    #
-    #     if(verbose){
-    #         message("Find anchor orthologs.")
-    #     }
-    #
-    #     anchorOrtho(object = object)
-    #
-    #     if(verbose){
-    #         message("Pairing orthologs.")
-    #     }
-    #
-    #     syntenyOrtho(object = object, omit_chr = omit_chr)
-    #
-    #     if(verbose){
-    #         message("Sammarize genewise orthology information.")
-    #     }
-    #
-    #     geneOrtho(object = object)
+#
+#     if(verbose){
+#         message("Performinig reciprocal BLAST.")
+#     }
+#
+#     rbh(object = object, n_threads = n_threads)
+#
+#     if(verbose){
+#         message("Find anchor orthologs.")
+#     }
+#
+#     anchorOrtho(object = object)
+#
+#     if(verbose){
+#         message("Pairing orthologs.")
+#     }
+#
+#     syntenyOrtho(object = object, omit_chr = omit_chr)
+#
+#     if(verbose){
+#         message("Sammarize genewise orthology information.")
+#     }
+#
+#     geneOrtho(object = object)
 
     if(verbose){
         message("Gene modeling by Miniprot to find missing genes.")

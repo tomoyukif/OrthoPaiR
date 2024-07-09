@@ -2,7 +2,18 @@
 % Please edit documentation in R/05_functions_orthology.R
 \name{syntenicOrtho}
 \alias{syntenicOrtho}
-\title{Filter ortholog pairs based on Locally Collinear Blocks (LCBs)}
+\title{#' Filter ortholog pairs based on Locally Collinear Blocks (LCBs)
+#'
+#' This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
+#'
+#' @param object A SynogDB object.
+#' @param non1to1 Logical indicating whether to include non-1-to-1 LCB pairs (default is TRUE).
+#' @export
+#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+anchorOrtho <- function(object,
+non1to1 = TRUE){
+# Check if the input object is of class "SynogDB"
+stopifnot(inherits(x = object, "SynogDB"))}
 \usage{
 syntenicOrtho(object)
 }
@@ -10,5 +21,12 @@ syntenicOrtho(object)
 \item{object}{A SynogDB object.}
 }
 \description{
-This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
+\if{html}{\out{<div class="sourceCode">}}\preformatted{# Open the HDF5 file
+h5 <- H5Fopen(object$h5)
+# Ensure the HDF5 file is closed when the function exits
+on.exit(H5Fclose(h5))
+}\if{html}{\out{</div>}}
+}
+\details{
+
 }
