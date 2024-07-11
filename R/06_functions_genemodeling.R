@@ -20,19 +20,8 @@ mapProt <- function(object,
                     len_diff = 0.2){
     stopifnot(inherits(x = object, "SynogDB"))
 
-    # Open the HDF5 file
-    h5 <- H5Fopen(object$h5)
-    # Ensure the HDF5 file is closed when the function exits
-    on.exit(H5Fclose(h5))
-
-    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
-        stop("Run getLCBpairs to obtain LCB pair info.")
-    }
-
     # Call the mapping engine function with specified parameters
     .mapEngine(object = object,
-               subject_prot = as.vector(h5$files$subject_prot),
-               query_prot = as.vector(h5$files$query_prot),
                out_dir = out_dir,
                miniprot_bin = miniprot_bin,
                conda = conda,
@@ -57,6 +46,15 @@ mapProt <- function(object,
                        out_dir, miniprot_bin, conda,
                        condaenv, n_threads,
                        overlap, len_diff){
+    # Open the HDF5 file
+    h5 <- H5Fopen(object$h5)
+    # Ensure the HDF5 file is closed when the function exits
+    on.exit(H5Fclose(h5))
+
+    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
+        stop("Run getLCBpairs to obtain LCB pair info.")
+    }
+
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
 
     # Define output file paths for both directions of mapping
@@ -64,14 +62,14 @@ mapProt <- function(object,
     q2s_out <- file.path(out_dir, "subject_miniprot_out")
 
     # Run miniprot mapping from subject to query genome
-    .miniprot(query_fn = subject_prot,
+    .miniprot(query_fn = as.vector(h5$files$subject_prot),
               genome_fn = as.vector(h5$files$query_genome),
               out_prefix = s2q_out, miniprot_bin = miniprot_bin,
               conda = conda, condaenv = condaenv,
               n_threads = n_threads)
 
     # Run miniprot mapping from query to subject genome
-    .miniprot(query_fn = query_prot,
+    .miniprot(query_fn = as.vector(h5$files$query_prot),
               genome_fn = as.vector(h5$files$subject_genome),
               out_prefix = q2s_out, miniprot_bin = miniprot_bin,
               conda = conda, condaenv = condaenv,

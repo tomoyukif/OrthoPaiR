@@ -188,7 +188,7 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
 #'
-getOrphan <- function(object = NULL, h5_fn = NULL, gene = FALSE){
+getOrphan <- function(object = NULL, h5_fn = NULL){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 

@@ -30,8 +30,8 @@ syntenicOrtho <- function(object){
                            g2g_graph = g2g_graph)
 
     t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
-    synog <- .findSyntenicOrtho(h5 = h5, t2a_graph = t2a_graph)
-    synog <- .pickNonSyntenicOrtho(h5 = h5, synog = synog, g2g_graph = g2g_graph)
+    synog <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph)
+    # synog <- .pickNonSyntenicOrtho(h5 = h5, synog = synog, g2g_graph = g2g_graph)
     synog <- .sortSyntenicOrtho(synog = synog, g2g_graph = g2g_graph)
 
     .h5overwrite(obj = synog, file = object$h5, "synog_tx")
@@ -60,6 +60,7 @@ syntenicOrtho <- function(object){
     synog_gene <- .classifySynog(synog = synog_gene)
     synog_gene <- subset(synog_gene, select = -gene_pair_id)
     orphan <- .getOrphan(synog_gene = synog_gene, g2g_graph = g2g_graph)
+    .h5overwrite(obj = synog_gene, file = object$h5, "synog_gene")
     .h5overwrite(obj = orphan$query, file = object$h5, "orphan_query")
     .h5overwrite(obj = orphan$subject, file = object$h5, "orphan_subject")
 }
@@ -248,6 +249,22 @@ syntenicOrtho <- function(object){
     return(gff)
 }
 
+.mRNA2transcript <- function(gff){
+    type <- as.character(gff$type)
+    type[type == "mRNA"] <- "transcript"
+    gff$type <- factor(type)
+    return(gff)
+}
+
+.setIDforElements <- function(gff){
+    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
+    gff$ID[element_i] <- paste(unlist(gff$Parent[element_i]),
+                               as.character(gff$type[element_i]),
+                               sep = ":")
+    gff$Name <- gff$ID
+    return(gff)
+}
+
 #' @importFrom dplyr left_join
 .findAnchors <- function(h5, genome_graph, g2g_graph){
     rbbh <- h5$blast$rbbh
@@ -265,6 +282,7 @@ syntenicOrtho <- function(object){
 }
 
 #' @importFrom dplyr left_join
+#' @importFrom GenomicRanges precede follow
 .linkTx2Anchor <- function(g2g_graph, anchor){
     tx2gene <- data.frame(root = g2g_graph$query_tx$id,
                           query_anchor = g2g_graph$query_gene$id)
@@ -280,10 +298,20 @@ syntenicOrtho <- function(object){
     query_anchor_gff <- query_gff[query_gff$gene_id %in% query_anchor_gene]
     hit <- match(query_anchor_gff$gene_id, g2g_graph$query_gene$gene)
     query_anchor_gff$node_id <- g2g_graph$query_gene$id[hit]
-    query_tx2anchor <- nearest(query_gff, query_anchor_gff)
-    hit <- match(query_gff$ID, g2g_graph$query_tx$tx)
-    query_tx2anchor <- data.frame(root = g2g_graph$query_tx$id[hit],
-                                  query_anchor = query_anchor_gff$node_id[query_tx2anchor])
+    query_non_anchor_gff <- query_gff[!query_gff$gene_id %in% query_anchor_gene]
+    hit <- match(query_non_anchor_gff$gene_id, g2g_graph$query_gene$gene)
+    query_non_anchor_gff$node_id <- g2g_graph$query_gene$id[hit]
+    query_tx2anchor_precede <- precede(query_non_anchor_gff, query_anchor_gff, ignore.strand = TRUE)
+    query_tx2anchor_follow <- follow(query_non_anchor_gff, query_anchor_gff, ignore.strand = TRUE)
+    nonanchor_hit <- match(query_non_anchor_gff$ID, g2g_graph$query_tx$tx)
+    anchor_hit <- match(query_anchor_gff$ID, g2g_graph$query_tx$tx)
+    query_tx2anchor <- data.frame(root = c(g2g_graph$query_tx$id[nonanchor_hit],
+                                           g2g_graph$query_tx$id[nonanchor_hit],
+                                           g2g_graph$query_tx$id[anchor_hit]),
+                                  query_anchor = c(query_anchor_gff$node_id[query_tx2anchor_precede],
+                                                   query_anchor_gff$node_id[query_tx2anchor_follow],
+                                                   query_anchor_gff$node_id))
+    query_tx2anchor <- unique(query_tx2anchor[order(query_tx2anchor$root), ])
 
     subject_anchor_gene_i <- which(g2g_graph$subject_gene$id %in% anchor$subject_anchor)
     subject_anchor_gene <- unique(g2g_graph$subject_gene$gene[subject_anchor_gene_i])
@@ -292,10 +320,21 @@ syntenicOrtho <- function(object){
     subject_anchor_gff <- subject_gff[subject_gff$gene_id %in% subject_anchor_gene]
     hit <- match(subject_anchor_gff$gene_id, g2g_graph$subject_gene$gene)
     subject_anchor_gff$node_id <- g2g_graph$subject_gene$id[hit]
-    subject_tx2anchor <- nearest(subject_gff, subject_anchor_gff)
-    hit <- match(subject_gff$ID, g2g_graph$subject_tx$tx)
-    subject_tx2anchor <- data.frame(subject_anchor = subject_anchor_gff$node_id[subject_tx2anchor],
-                                    leaf = g2g_graph$subject_tx$id[hit])
+    subject_non_anchor_gff <- subject_gff[!subject_gff$gene_id %in% subject_anchor_gene]
+    hit <- match(subject_non_anchor_gff$gene_id, g2g_graph$subject_gene$gene)
+    subject_non_anchor_gff$node_id <- g2g_graph$subject_gene$id[hit]
+    subject_tx2anchor_precede <- precede(subject_non_anchor_gff, subject_anchor_gff, ignore.strand = TRUE)
+    subject_tx2anchor_follow <- follow(subject_non_anchor_gff, subject_anchor_gff, ignore.strand = TRUE)
+    nonanchor_hit <- match(subject_non_anchor_gff$ID, g2g_graph$subject_tx$tx)
+    anchor_hit <- match(subject_anchor_gff$ID, g2g_graph$subject_tx$tx)
+    subject_tx2anchor <- data.frame(leaf = c(g2g_graph$subject_tx$id[nonanchor_hit],
+                                           g2g_graph$subject_tx$id[nonanchor_hit],
+                                           g2g_graph$subject_tx$id[anchor_hit]),
+                                  subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_precede],
+                                                   subject_anchor_gff$node_id[subject_tx2anchor_follow],
+                                                   subject_anchor_gff$node_id))
+    subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
+
     out <- list(anchor = anchor,
                 query_tx2anchor = query_tx2anchor,
                 subject_tx2anchor = subject_tx2anchor,
@@ -307,7 +346,7 @@ syntenicOrtho <- function(object){
 }
 
 #' @importFrom dplyr left_join
-.findSyntenicOrtho <- function(h5, t2a_graph){
+.findSyntenicOrtho <- function(h5, g2g_graph, t2a_graph){
     rbh <- h5$blast$rbh
     rbh_score <- .getRBHscore(rbh = rbh)
 
@@ -315,7 +354,8 @@ syntenicOrtho <- function(object){
     leaf_hit <- match(rbh$sseqid, t2a_graph$subject_tx$tx)
     rbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
                       expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
-    rbh <- left_join(rbh, t2a_graph$query_tx2anchor, "root")
+    rbh <- left_join(rbh, t2a_graph$query_tx2anchor, "root",
+                     relationship = "many-to-many")
     rbh <- left_join(rbh,
                      unique(subset(t2a_graph$anchor,
                                    select = query_anchor:subject_anchor)),
@@ -332,7 +372,7 @@ syntenicOrtho <- function(object){
     synog <- left_join(synog, rbh_score, c("query_tx", "subject_tx"))
     synog$gene_pair_id <- paste(synog$query_gene, synog$subject_gene, sep = "_")
     synog <- synog[order(synog$gene_pair_id), ]
-
+    synog <- unique(synog)
     return(synog)
 }
 
@@ -357,14 +397,19 @@ syntenicOrtho <- function(object){
     rbbh$qgeneid <- g2g_graph$query_gene$gene[hit]
     hit <- match(rbbh$sseqid, g2g_graph$subject_tx$tx)
     rbbh$sgeneid <- g2g_graph$subject_gene$gene[hit]
+    rbbh$gene_pair_id <- paste(rbbh$qgeneid, rbbh$sgeneid, sep = "_")
+    synog$rbbh <- FALSE
+    synog$rbbh[synog$gene_pair_id %in% rbbh$gene_pair_id] <- TRUE
+    synog$syntenic <- TRUE
     query_orphan <- !rbbh$qgeneid %in% synog$query_gene
     subject_orphan <- !rbbh$sgeneid %in% synog$subject_gene
     rbbh <- subset(rbbh, subset = query_orphan & subject_orphan)
     rbbh_score <- .getRBHscore(rbh = rbbh)
-    rbbh <- subset(rbbh, select = c(qgeneid, qseqid, sgeneid, sseqid))
-    rbbh$mutal_ci <- rbbh_score$mutual_ci
-    names(rbbh) <- c("query_gene", "query_tx", "subject_gene", "subject_tx", "mutual_ci")
-    rbbh$gene_pair_id <- paste(rbbh$query_gene, rbbh$subject_gene, sep = "_")
+    rbbh <- subset(rbbh, select = c(qgeneid, qseqid, sgeneid, sseqid, gene_pair_id))
+    names(rbbh) <- c("query_gene", "query_tx", "subject_gene", "subject_tx", "gene_pair_id")
+    rbbh$mutual_ci <- rbbh_score$mutual_ci
+    rbbh$rbbh <- TRUE
+    rbbh$syntenic <- FALSE
     synog <- rbind(synog, rbbh)
     return(synog)
 }
