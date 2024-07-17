@@ -56,6 +56,7 @@ syntenicOrtho <- function(object){
         }
     }
     synog_gene <- split_synog$splited
+    synog_gene <- .pickBestPair(synog_gene = synog_gene)
     synog_gene <- .sortSyntenicOrtho(synog = synog_gene, g2g_graph = g2g_graph)
     synog_gene <- .classifySynog(synog = synog_gene)
     synog_gene <- subset(synog_gene, select = -gene_pair_id)
@@ -328,11 +329,11 @@ syntenicOrtho <- function(object){
     nonanchor_hit <- match(subject_non_anchor_gff$ID, g2g_graph$subject_tx$tx)
     anchor_hit <- match(subject_anchor_gff$ID, g2g_graph$subject_tx$tx)
     subject_tx2anchor <- data.frame(leaf = c(g2g_graph$subject_tx$id[nonanchor_hit],
-                                           g2g_graph$subject_tx$id[nonanchor_hit],
-                                           g2g_graph$subject_tx$id[anchor_hit]),
-                                  subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_precede],
-                                                   subject_anchor_gff$node_id[subject_tx2anchor_follow],
-                                                   subject_anchor_gff$node_id))
+                                             g2g_graph$subject_tx$id[nonanchor_hit],
+                                             g2g_graph$subject_tx$id[anchor_hit]),
+                                    subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_precede],
+                                                       subject_anchor_gff$node_id[subject_tx2anchor_follow],
+                                                       subject_anchor_gff$node_id))
     subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
 
     out <- list(anchor = anchor,
@@ -643,5 +644,16 @@ syntenicOrtho <- function(object){
         tmp <- subset(tmp, select = -c(tx_pair_id:split))
         out <- list(split_gene = tmp, non_split_gene = NULL)
     }
+    return(out)
+}
+
+.pickBestPair <- function(synog_gene){
+    out <- tapply(seq_along(synog_gene$gene_pair_id),
+                  synog_gene$gene_pair_id,
+                  function(i){
+                      best_pair <- which.max(synog_gene$mutual_ci[i])
+                      return(synog_gene[i[best_pair], ])
+                  })
+    out <- do.call("rbind", out)
     return(out)
 }
