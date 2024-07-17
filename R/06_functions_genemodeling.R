@@ -219,12 +219,12 @@ mapProt <- function(object,
 
     gff_ls$mp_query_filt <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$query_gff,
                                                         mp_gff = gff_ls$mp_query_gff,
-                                                        originla_cds = cds_ls$query_cds,
+                                                        original_cds = cds_ls$query_cds,
                                                         mp_cds = cds_ls$mp_query_cds)
 
     gff_ls$mp_subject_filt <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$subject_gff,
                                                           mp_gff = gff_ls$mp_subject_gff,
-                                                          originla_cds = cds_ls$subject_cds,
+                                                          original_cds = cds_ls$subject_cds,
                                                           mp_cds = cds_ls$mp_subject_cds)
 
     mp_query_novel <- .filterMiniprotTxOnNovelLoci(mp_gff = gff_ls$mp_query_filt$rest_mp_gff,
@@ -424,7 +424,7 @@ mapProt <- function(object,
 
 .filterMiniprotTxOnGeneLoci <- function(original_gff,
                                         mp_gff,
-                                        originla_cds,
+                                        original_cds,
                                         mp_cds){
 
     # Find overlapping Miniprot Tx on original Tx
@@ -447,14 +447,14 @@ mapProt <- function(object,
     ol <- subset(ol, subset = !queryHits %in% chimeric_tx)
 
     # Check initial and terminal codons of Tx
-    originla_tx_init <- .checkInitCodon(cds = originla_cds)
+    original_tx_init <- .checkInitCodon(cds = original_cds)
     mp_tx_init <- .checkInitCodon(cds = mp_cds)
-    originla_tx_term <- .checkTermCodon(cds = originla_cds)
+    original_tx_term <- .checkTermCodon(cds = original_cds)
     mp_tx_term <- .checkTermCodon(cds = mp_cds)
-    oiriginal_tx_hit <- match(ol$subjectHits, names(originla_tx_init))
+    oiriginal_tx_hit <- match(ol$subjectHits, names(original_tx_init))
     mp_tx_hit <- match(ol$queryHits, names(mp_tx_init))
     ol$mp_valid <- mp_tx_init[mp_tx_hit] & mp_tx_term[mp_tx_hit]
-    ol$original_valid <- originla_tx_init[oiriginal_tx_hit] & originla_tx_term[oiriginal_tx_hit]
+    ol$original_valid <- original_tx_init[oiriginal_tx_hit] & original_tx_term[oiriginal_tx_hit]
     ol <- subset(ol, subset = mp_valid)
 
     # Pick up if Miniprot Tx is only valid
@@ -470,10 +470,10 @@ mapProt <- function(object,
 
     # Check Tx lengths
     mp_tx_len <- width(mp_cds)
-    original_tx_len <- width(originla_cds)
+    original_tx_len <- width(original_cds)
     mp_tx_hit <- match(ol$queryHits, names(mp_cds))
     ol$mp_tx_len <- mp_tx_len[mp_tx_hit]
-    original_tx_hit <- match(ol$subjectHits, names(originla_cds))
+    original_tx_hit <- match(ol$subjectHits, names(original_cds))
     ol$original_tx_len <- original_tx_len[original_tx_hit]
     mp_valid_tx_max_len <- tapply(X = ol$mp_tx_len[ol$mp_valid],
                                   INDEX = ol$subject_gene[ol$mp_valid],
