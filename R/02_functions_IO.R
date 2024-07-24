@@ -160,17 +160,41 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     }
     on.exit(H5Fclose(h5))
 
+    check <- H5Lexists(h5, "blast") | H5Lexists(h5, "files") |
+        H5Lexists(h5, "miniprot") | H5Lexists(h5, "sibeliaz")
+
     if(gene){
         if(!H5Lexists(h5, "synog_gene")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
-        out <- h5$synog_gene
+        if(!any(check)){
+            out <- NULL
+            name <- names(h5$synog_gene)
+            for(i in seq_along(name)){
+                out <- c(out, list(h5$synog_gene[[i]]))
+            }
+            names(out) <- name
+
+        } else {
+            out <- h5$synog_gene
+        }
 
     } else {
         if(!H5Lexists(h5, "synog_tx")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
-        out <- h5$synog_tx
+
+        if(!any(check)){
+            out <- NULL
+            name <- names(h5$synog_tx)
+            for(i in seq_along(name)){
+                out <- c(out, list(h5$synog_tx[[i]]))
+            }
+            names(out) <- name
+
+        } else {
+            out <- h5$synog_tx
+        }
     }
     return(out)
 }
