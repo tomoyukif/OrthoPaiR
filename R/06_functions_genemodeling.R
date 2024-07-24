@@ -203,11 +203,11 @@ mapProt <- function(object,
     # Get the CDS lists
     cds_ls <- .getCDSlist(h5 = h5, mp = TRUE)
 
-    gff_ls$mp_query_gff <- .filterIndenticalMiniprotTx(original_gff = gff_ls$query_gff,
-                                                       mp_gff = gff_ls$mp_query_gff)
+    gff_ls$mp_query_gff <- .filterIdenticalMiniprotTx(original_gff = gff_ls$query_gff,
+                                                      mp_gff = gff_ls$mp_query_gff)
 
-    gff_ls$mp_subject_gff <- .filterIndenticalMiniprotTx(original_gff = gff_ls$subject_gff,
-                                                         mp_gff = gff_ls$mp_subject_gff)
+    gff_ls$mp_subject_gff <- .filterIdenticalMiniprotTx(original_gff = gff_ls$subject_gff,
+                                                        mp_gff = gff_ls$mp_subject_gff)
 
     gff_ls$mp_query_gff <- .filterLongMiniprotTx(mp_gff = gff_ls$mp_query_gff,
                                                  original_gff = gff_ls$subject_gff,
@@ -217,28 +217,32 @@ mapProt <- function(object,
                                                    original_gff = gff_ls$query_gff,
                                                    len_diff = len_diff)
 
-    gff_ls$mp_query_filt <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$query_gff,
-                                                        mp_gff = gff_ls$mp_query_gff,
-                                                        original_cds = cds_ls$query_cds,
-                                                        mp_cds = cds_ls$mp_query_cds)
-
-    gff_ls$mp_subject_filt <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$subject_gff,
-                                                          mp_gff = gff_ls$mp_subject_gff,
-                                                          original_cds = cds_ls$subject_cds,
-                                                          mp_cds = cds_ls$mp_subject_cds)
-
-    mp_query_novel <- .filterMiniprotTxOnNovelLoci(mp_gff = gff_ls$mp_query_filt$rest_mp_gff,
+    mp_query_novel <- .filterMiniprotTxOnNovelLoci(original_gff = gff_ls$query_gff,
+                                                   mp_gff = gff_ls$mp_query_gff,
                                                    mp_cds = cds_ls$mp_query_cds)
 
-    mp_subject_novel <- .filterMiniprotTxOnNovelLoci(mp_gff = gff_ls$mp_subject_filt$rest_mp_gff,
+    mp_subject_novel <- .filterMiniprotTxOnNovelLoci(original_gff = gff_ls$subject_gff,
+                                                     mp_gff = gff_ls$mp_subject_gff,
                                                      mp_cds = cds_ls$mp_subject_cds)
 
-    out <- list(query = c(gff_ls$query_gff,
-                          gff_ls$mp_query_filt$valid_longer_mp_gff,
-                          mp_query_novel),
-                subject = c(gff_ls$subject_gff,
-                            gff_ls$mp_subject_filt$valid_longer_mp_gff,
-                            mp_subject_novel))
+    gff_ls$query_gff <- c(gff_ls$query_gff, mp_query_novel)
+    cds_ls$query_cds <- c(cds_ls$query_cds,
+                          cds_ls$mp_query_cds[names(cds_ls$mp_query_cds) %in% mp_query_novel$ID])
+    valid_longer_query_mp_gff <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$query_gff,
+                                                             mp_gff = gff_ls$mp_query_gff,
+                                                             original_cds = cds_ls$query_cds,
+                                                             mp_cds = cds_ls$mp_query_cds)
+
+    gff_ls$subject_gff <- c(gff_ls$subject_gff, mp_subject_novel)
+    cds_ls$subject_cds <- c(cds_ls$subject_cds,
+                            cds_ls$mp_subject_cds[names(cds_ls$mp_subject_cds) %in% mp_subject_novel$ID])
+    valid_longer_subject_mp_gff <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$subject_gff,
+                                                               mp_gff = gff_ls$mp_subject_gff,
+                                                               original_cds = cds_ls$subject_cds,
+                                                               mp_cds = cds_ls$mp_subject_cds)
+
+    out <- list(query = c(gff_ls$query_gff, valid_longer_query_mp_gff),
+                subject = c(gff_ls$subject_gff, valid_longer_subject_mp_gff))
 
     return(out)
 }
@@ -266,7 +270,7 @@ mapProt <- function(object,
     return(out)
 }
 
-.filterIndenticalMiniprotTx <- function(original_gff, mp_gff){
+.filterIdenticalMiniprotTx <- function(original_gff, mp_gff){
     mp_gff_block <- .getCDSblock(gff = mp_gff)
     mp_gff_block_uniq <- mp_gff_block[!duplicated(mp_gff_block)]
 
@@ -434,8 +438,6 @@ mapProt <- function(object,
     ol <- findOverlaps(mp_gff[mp_gff_cds_i], original_gff[original_gff_cds_i])
     ol <- as.data.frame(ol)
     ol$queryHits <- unlist(mp_gff$Parent[mp_gff_cds_i][ol$queryHits])
-    tx_id <- mp_gff$ID[mp_gff_tx_i]
-    non_ol_mp_tx <- tx_id[!tx_id %in% ol$queryHits]
     ol$subject_gene <- original_gff$gene_id[original_gff_cds_i][ol$subjectHits]
     ol$subjectHits <- unlist(original_gff$Parent[original_gff_cds_i][ol$subjectHits])
     ol <- unique(ol)
@@ -500,16 +502,7 @@ mapProt <- function(object,
     valid_longer_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% valid_longer_mp_tx_gff$ID]
     valid_longer_mp_gff <- c(valid_longer_mp_tx_gff, valid_longer_mp_tx_element)
 
-    if(length(non_ol_mp_tx) != 0){
-        rest_mp_tx_gff <- mp_gff[mp_gff$ID %in% non_ol_mp_tx]
-        mp_gff_element_i <- !mp_gff$type %in% c("transcript", "mRNA")
-        rest_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% rest_mp_tx_gff$ID]
-        rest_mp_gff <- c(rest_mp_tx_gff, rest_mp_tx_element)
-
-    } else {
-        rest_mp_gff <- NULL
-    }
-    return(list(valid_longer_mp_gff = valid_longer_mp_gff, rest_mp_gff = rest_mp_gff))
+    return(valid_longer_mp_gff)
 }
 
 .checkInitCodon <- function(cds){
@@ -521,18 +514,39 @@ mapProt <- function(object,
     return(substr(cds, len - 2, len) %in% c("TAA", "TGA", "TAG"))
 }
 
-.filterMiniprotTxOnNovelLoci <- function(mp_gff,
+.filterMiniprotTxOnNovelLoci <- function(original_gff,
+                                         mp_gff,
                                          mp_cds){
     if(is.null(mp_gff)){
         return(NULL)
     }
 
+    # Find overlapping Miniprot Tx on original Tx
+    original_gff_cds_i <- original_gff$type %in% c("CDS")
+    mp_gff_cds_i <- mp_gff$type %in% c("CDS")
+    mp_gff_tx_i <- mp_gff$type %in% c("transcript", "mRNA")
+    ol <- findOverlaps(mp_gff[mp_gff_cds_i], original_gff[original_gff_cds_i])
+    ol <- as.data.frame(ol)
+    ol$queryHits <- unlist(mp_gff$Parent[mp_gff_cds_i][ol$queryHits])
+    tx_id <- mp_gff$ID[mp_gff_tx_i]
+    non_ol_mp_tx <- tx_id[!tx_id %in% ol$queryHits]
+
+    if(length(non_ol_mp_tx) == 0){
+        return(NULL)
+
+    } else {
+        non_ol_mp_tx_gff <- mp_gff[mp_gff$ID %in% non_ol_mp_tx]
+        mp_gff_element_i <- !mp_gff$type %in% c("transcript", "mRNA")
+        non_ol_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% non_ol_mp_tx_gff$ID]
+        non_ol_mp_gff <- c(non_ol_mp_tx_gff, non_ol_mp_tx_element)
+    }
+
     # Check if Tx is fully included in another Tx
-    rest_mp_gff <- .filterTxWithinTx(gff = mp_gff)
+    non_ol_mp_gff <- .filterTxWithinTx(gff = non_ol_mp_gff)
 
     # Group Tx based on overlaps
-    mp_gff_tx_i <- rest_mp_gff$type %in% c("transcript", "mRNA")
-    rest_mp_tx_gff <- rest_mp_gff[mp_gff_tx_i]
+    mp_gff_tx_i <- non_ol_mp_gff$type %in% c("transcript", "mRNA")
+    rest_mp_tx_gff <- non_ol_mp_gff[mp_gff_tx_i]
     init <- .checkInitCodon(cds = mp_cds) # Check initial codons of Tx
     term <- .checkTermCodon(cds = mp_cds) # Check terminal codons of Tx
     grp <- .groupOverlaps(gff = rest_mp_tx_gff, init = init, term = term)
@@ -540,7 +554,7 @@ mapProt <- function(object,
     # Find non-overlapping Tx
     non_ol_tx_id <- rest_mp_tx_gff$ID[grp$members[grp$n_member == 1]]
     if(length(non_ol_tx_id) != 0){
-        non_ol_gff <- .orgMiniprotFilteredGFF(gff = rest_mp_gff,
+        non_ol_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
                                               tx_id = non_ol_tx_id)
         out <- non_ol_gff
     }
@@ -552,7 +566,7 @@ mapProt <- function(object,
     single_valid_members <- grp$members[grp$rep %in% single_valid_rep & grp$cds_valid]
     single_valid_tx <- rest_mp_tx_gff$ID[single_valid_members]
     if(length(single_valid_tx) != 0){
-        single_valid_gff <- .orgMiniprotFilteredGFF(gff = rest_mp_gff, tx_id = single_valid_tx)
+        single_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff, tx_id = single_valid_tx)
         if(is.null(out)){
             out <- single_valid_gff
 
@@ -566,9 +580,9 @@ mapProt <- function(object,
     non_valid_members <- grp$members[grp$rep %in% non_valid_rep]
     non_valid_tx_rep <- rest_mp_tx_gff$ID[non_valid_rep]
     if(length(non_valid_tx_rep) != 0){
-        non_valid_gff <- .orgMiniprotFilteredGFF(gff = rest_mp_gff,
+        non_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
                                                  tx_id = non_valid_tx_rep)
-        non_valid_member_gff <- .orgMembersGFF(gff = rest_mp_gff,
+        non_valid_member_gff <- .orgMembersGFF(gff = non_ol_mp_gff,
                                                grp = grp,
                                                rep = non_valid_rep)
         if(is.null(out)){
@@ -584,11 +598,11 @@ mapProt <- function(object,
     multiple_valid_members <- grp$members[grp$rep %in% multiple_valid_rep]
     multiple_valid_tx_rep <- rest_mp_tx_gff$ID[multiple_valid_rep]
     if(length(multiple_valid_tx_rep) != 0){
-        multiple_valid_gff <- .orgMiniprotFilteredGFF(gff = rest_mp_gff,
-                                                 tx_id = multiple_valid_tx_rep)
-        multiple_valid_member_gff <- .orgMembersGFF(gff = rest_mp_gff,
-                                               grp = grp,
-                                               rep = multiple_valid_rep)
+        multiple_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
+                                                      tx_id = multiple_valid_tx_rep)
+        multiple_valid_member_gff <- .orgMembersGFF(gff = non_ol_mp_gff,
+                                                    grp = grp,
+                                                    rep = multiple_valid_rep)
         if(is.null(out)){
             out <- c(multiple_valid_gff, multiple_valid_member_gff)
 
