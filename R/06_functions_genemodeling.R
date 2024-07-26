@@ -498,10 +498,9 @@ mapProt <- function(object,
 
     valid_longer_mp_tx_gff <- mp_gff[mp_gff$ID %in% valid_longer_mp_tx]
     valid_longer_mp_tx_gff$Parent <- lapply(valid_longer_mp_tx_locus, c)
-    mp_gff_element_i <- !mp_gff$type %in% c("transcript", "mRNA")
+    mp_gff_element_i <- !mp_gff$type %in% c("gene", "transcript", "mRNA")
     valid_longer_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% valid_longer_mp_tx_gff$ID]
     valid_longer_mp_gff <- c(valid_longer_mp_tx_gff, valid_longer_mp_tx_element)
-
     return(valid_longer_mp_gff)
 }
 
@@ -536,7 +535,7 @@ mapProt <- function(object,
 
     } else {
         non_ol_mp_tx_gff <- mp_gff[mp_gff$ID %in% non_ol_mp_tx]
-        mp_gff_element_i <- !mp_gff$type %in% c("transcript", "mRNA")
+        mp_gff_element_i <- !mp_gff$type %in% c("gene", "transcript", "mRNA")
         non_ol_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% non_ol_mp_tx_gff$ID]
         non_ol_mp_gff <- c(non_ol_mp_tx_gff, non_ol_mp_tx_element)
     }
@@ -554,35 +553,21 @@ mapProt <- function(object,
     # Find non-overlapping Tx
     non_ol_tx_id <- rest_mp_tx_gff$ID[grp$members[grp$n_member == 1]]
     if(length(non_ol_tx_id) != 0){
-        non_ol_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
+        non_ol_gff <- .orgMiniprotFilteredGFF(gff = mp_gff,
                                               tx_id = non_ol_tx_id)
         out <- non_ol_gff
     }
     grp <- subset(grp, subset = n_member != 1)
 
-    # Find single valid Tx
-    n_valid_member <- tapply(grp$cds_valid, grp$rep, sum)
-    single_valid_rep <- as.numeric(names(n_valid_member)[n_valid_member == 1])
-    single_valid_members <- grp$members[grp$rep %in% single_valid_rep & grp$cds_valid]
-    single_valid_tx <- rest_mp_tx_gff$ID[single_valid_members]
-    if(length(single_valid_tx) != 0){
-        single_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff, tx_id = single_valid_tx)
-        if(is.null(out)){
-            out <- single_valid_gff
-
-        } else {
-            out <- c(out, single_valid_gff)
-        }
-    }
-
     # Pick non valid Tx groups
+    n_valid_member <- tapply(grp$cds_valid, grp$rep, sum)
     non_valid_rep <- as.numeric(names(n_valid_member)[n_valid_member == 0])
     non_valid_members <- grp$members[grp$rep %in% non_valid_rep]
     non_valid_tx_rep <- rest_mp_tx_gff$ID[non_valid_rep]
     if(length(non_valid_tx_rep) != 0){
-        non_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
+        non_valid_gff <- .orgMiniprotFilteredGFF(gff = mp_gff,
                                                  tx_id = non_valid_tx_rep)
-        non_valid_member_gff <- .orgMembersGFF(gff = non_ol_mp_gff,
+        non_valid_member_gff <- .orgMembersGFF(gff = mp_gff,
                                                grp = grp,
                                                rep = non_valid_rep)
         if(is.null(out)){
@@ -593,14 +578,35 @@ mapProt <- function(object,
         }
     }
 
+    # Regrouping
+    grp <- subset(grp, subset = cds_valid)
+    valid_rep <- as.numeric(names(n_valid_member)[n_valid_member != 0])
+    grp <- subset(grp, subset = rep %in% valid_rep)
+    rest_mp_tx_gff <- rest_mp_tx_gff[rest_mp_tx_gff$ID %in% grp$member_id]
+    grp <- .groupOverlaps(gff = rest_mp_tx_gff, init = init, term = term)
+    n_valid_member <- tapply(grp$cds_valid, grp$rep, sum)
+
+    # Find single valid Tx
+    single_valid_rep <- as.numeric(names(n_valid_member)[n_valid_member == 1])
+    single_valid_members <- grp$members[grp$rep %in% single_valid_rep & grp$cds_valid]
+    single_valid_tx <- rest_mp_tx_gff$ID[single_valid_members]
+    if(length(single_valid_tx) != 0){
+        single_valid_gff <- .orgMiniprotFilteredGFF(gff = mp_gff, tx_id = single_valid_tx)
+        if(is.null(out)){
+            out <- single_valid_gff
+
+        } else {
+            out <- c(out, single_valid_gff)
+        }
+    }
+
     # Pick multiple valid Tx groups
     multiple_valid_rep <- as.numeric(names(n_valid_member)[n_valid_member > 1])
-    multiple_valid_members <- grp$members[grp$rep %in% multiple_valid_rep]
     multiple_valid_tx_rep <- rest_mp_tx_gff$ID[multiple_valid_rep]
     if(length(multiple_valid_tx_rep) != 0){
-        multiple_valid_gff <- .orgMiniprotFilteredGFF(gff = non_ol_mp_gff,
+        multiple_valid_gff <- .orgMiniprotFilteredGFF(gff = mp_gff,
                                                       tx_id = multiple_valid_tx_rep)
-        multiple_valid_member_gff <- .orgMembersGFF(gff = non_ol_mp_gff,
+        multiple_valid_member_gff <- .orgMembersGFF(gff = mp_gff,
                                                     grp = grp,
                                                     rep = multiple_valid_rep)
         if(is.null(out)){
@@ -609,6 +615,10 @@ mapProt <- function(object,
         } else {
             out <- c(out, multiple_valid_gff, multiple_valid_member_gff)
         }
+    }
+
+    if(!is.null(out)){
+        out <- .setGeneID(gff = out)
     }
 
     return(out)
@@ -658,8 +668,9 @@ mapProt <- function(object,
 
 .orgMiniprotFilteredGFF <- function(gff, tx_id){
     gff_tx_i <- gff$type %in% c("transcript", "mRNA")
-    out_tx <-  gff[gff_tx_i][gff$ID[gff_tx_i] %in% tx_id]
-    out_element <- gff[!gff_tx_i][unlist(gff$Parent[!gff_tx_i]) %in% out_tx$ID]
+    gff_element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
+    out_tx <-  gff[gff$ID %in% tx_id]
+    out_element <- gff[gff_element_i][unlist(gff$Parent[gff_element_i]) %in% out_tx$ID]
     out_gene <- out_tx
     out_gene$type <- "gene"
     out_gene$ID <- paste(out_gene$ID, "gene", sep = ":")
@@ -671,13 +682,14 @@ mapProt <- function(object,
 .orgMembersGFF <- function(gff, grp, rep){
     member_i <- grp$members[grp$rep %in% rep]
     member_i <- member_i[!member_i %in% rep]
-    member_gff <- gff[member_i]
+    member_tx <- grp$member_id[grp$members %in% member_i]
+    member_gff <- gff[gff$ID %in% member_tx]
     hit <- match(member_gff$ID, grp$member_id)
     member_gff$Parent <- lapply(paste0(grp$rep_id[hit], ":gene"), c)
     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-    element <- gff[element_i][unlist(gff$Parent[element_i]) %in% member_gff$ID]
-    member_gff <- c(member_gff, element)
-    return(member_gff)
+    element_gff <- gff[element_i][unlist(gff$Parent[element_i]) %in% member_gff$ID]
+    out <- c(member_gff, element_gff)
+    return(out)
 }
 ################################################################################
 
