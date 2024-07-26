@@ -91,6 +91,7 @@ orgMPgenes <- function(hdf5_fn,
         i_comb_id <- target_data$comb_id[i]
         i_target_data <- target_data$target[i]
         h5 <- H5Fopen(hdf5_fn[i_comb_id])
+        on.exit(H5Fclose(h5))
         i_synog <- h5$synog_gene
 
         if(i_target_data == "query"){
@@ -349,6 +350,7 @@ orgMPgenes <- function(hdf5_fn,
     out_gene <- NULL
     for(i in genomewise_list$comb_id){
         h5 <- H5Fopen(name = hdf5_fn[i])
+        on.exit(H5Fclose(h5))
         synog_tx <- h5$synog_tx
         synog_tx <- .renameMPsynog(df = synog_tx, genome = genomewise_list[i, ])
 
@@ -408,24 +410,50 @@ orgMPgenes <- function(hdf5_fn,
             df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
         }
 
-    } else {
         id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
         hit <- match(df$subject_tx, id2id$mp_tx_id)
         if(any(!is.na(hit))){
             df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
             df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
         }
+
+    } else {
+        id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
+        hit <- match(df$subject_tx, id2id$mp_tx_id)
+        if(any(!is.na(hit))){
+            df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        }
+
+        id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
+        hit <- match(df$query_tx, id2id$mp_tx_id)
+        if(any(!is.na(hit))){
+            df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        }
     }
 
-    id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
     if(genome$target == "query"){
+        id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
         hit <- match(df$query_tx, id2id$mp_tx_id)
         if(any(!is.na(hit))){
             df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
         }
 
+        id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
+        hit <- match(df$subject_tx, id2id$mp_tx_id)
+        if(any(!is.na(hit))){
+            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        }
+
     } else {
         id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
+        hit <- match(df$query_tx, id2id$mp_tx_id)
+        if(any(!is.na(hit))){
+            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        }
+
+        id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
         hit <- match(df$subject_tx, id2id$mp_tx_id)
         if(any(!is.na(hit))){
             df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]

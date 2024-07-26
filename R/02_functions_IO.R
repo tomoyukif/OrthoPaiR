@@ -110,8 +110,9 @@ summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     }
 
     if(!H5Lexists(h5, "synog_gene")){
-        stop("Run syntenicOrtho() to obtain genewise ortholog info.")
+        stop("No genewise ortholog info.")
     }
+
     synog <- h5$synog_gene
     query <- subset(synog, subset = !duplicated(synog$query_gene))
     query_summary <- table(query$class)

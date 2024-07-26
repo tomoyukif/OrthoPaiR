@@ -146,7 +146,8 @@ runPairwiseSynog <- function(in_list,
                            miniprot_bin = miniprot_bin,
                            miniprot_condaenv = miniprot_condaenv,
                            miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
-                           n_threads = n_threads)
+                           n_threads = n_threads,
+                           overwrite = overwrite)
         hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
     }
     names(hdf5_fn) <- names(pairwise_input)
