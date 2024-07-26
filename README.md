@@ -1,9 +1,9 @@
-# Synog
+# OrthoPaiR
 
 [![R](https://img.shields.io/badge/R-4.1.0-blue)](https://www.r-project.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**Synog** is an R package for conducting syntenic orthologous gene pairing between given genomes. It provides tools to identify, filter, and analyze orthologous gene pairs, facilitating comparative genomic studies.
+**OrthoPaiR** is an R package for conducting syntenic orthologous gene pairing between given genomes. It provides tools to identify, filter, and analyze orthologous gene pairs, facilitating comparative genomic studies.
 
 ## Table of Contents
 
@@ -25,14 +25,14 @@
 
 ## Installation
 
-To install the Synog package, use the following commands in R:
+To install the OrthoPaiR package, use the following commands in R:
 
 ```r
 # Install the devtools package if not already installed
 install.packages("devtools")
 
 # Install Synog from GitHub
-devtools::install_github("tomoyukif/Synog")
+devtools::install_github("tomoyukif/OrthoPaiR")
 ```
 
 ## Prerequisites
@@ -58,7 +58,7 @@ Here is a basic example of how to use Synog for syntenic orthologous gene pairin
 You can go through the Synog pipeline using the `runSynog()` function, which is a wrapper that executes a series of functions to complete the Synog pipeline.
 
 ```r
-library(Synog)
+library(OrthoPaiR)
 
 # Define file paths
 query_genome <- "input/nb_genome.fa"
