@@ -7,7 +7,7 @@
 getOrphan(object = NULL, h5_fn = NULL)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{gene}{Logical, whether to get orphan gene information.
 Orphan transcript information will be returned if FALSE. (default is FALSE).}
@@ -18,5 +18,5 @@ Orphan transcript information will be returned if FALSE. (default is FALSE).}
 A dataframe containing orphan genes or transcripts.
 }
 \description{
-This function retrieves orphan genes or transcripts information from the SynogDB object.
+This function retrieves orphan genes or transcripts information from the OrthoPairDB object.
 }

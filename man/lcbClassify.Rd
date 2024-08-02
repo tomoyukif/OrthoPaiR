@@ -7,7 +7,7 @@
 lcbClassify(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \description{
 This function classifies Locally Collinear Blocks (LCBs) based on their genome origin (query or subject).

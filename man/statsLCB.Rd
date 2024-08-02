@@ -7,8 +7,8 @@
 statsLCB(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \description{
-This function calculates and summarizes statistics for LCBs (Locally Collinear Blocks) in the SynogDB object.
+This function calculates and summarizes statistics for LCBs (Locally Collinear Blocks) in the OrthoPairDB object.
 }

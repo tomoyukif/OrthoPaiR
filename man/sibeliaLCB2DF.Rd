@@ -7,7 +7,7 @@
 sibeliaLCB2DF(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \value{
 A data.frame containing LCB information.

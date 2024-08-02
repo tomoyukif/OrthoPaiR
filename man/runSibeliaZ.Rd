@@ -15,7 +15,7 @@ runSibeliaZ(
 )
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{out_dir}{Output directory for SibeliaZ results.}
 
@@ -31,5 +31,5 @@ runSibeliaZ(
 }
 \description{
 This function runs SibeliaZ to detect synteny blocks between the query and subject genomes
-and processes the output to store in the SynogDB object.
+and processes the output to store in the OrthoPairDB object.
 }

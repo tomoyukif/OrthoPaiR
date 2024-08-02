@@ -7,10 +7,10 @@
 .createFASTA(object, out_dir, merge)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{out_dir}{Output directory for FASTA files.}
 }
 \description{
-This function generates FASTA files for query and subject CDS from the SynogDB object.
+This function generates FASTA files for query and subject CDS from the OrthoPairDB object.
 }

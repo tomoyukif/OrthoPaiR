@@ -1,6 +1,6 @@
-#' Create a SynogDB object
+#' Create a OrthoPairDB object
 #'
-#' This function creates a SynogDB object containing genome, GFF, CDS, and protein information
+#' This function creates a OrthoPairDB object containing genome, GFF, CDS, and protein information
 #' for query and subject genomes. It also initializes an HDF5 file to store related data.
 #'
 #' @param query_genome Path to the query genome file.
@@ -11,16 +11,16 @@
 #' @param subject_cds Path to the subject CDS file.
 #' @param query_prot Path to the query protein file.
 #' @param subject_prot Path to the subject protein file.
-#' @param hdf5_path Path to the HDF5 file (default is "./synog.h5").
+#' @param hdf5_path Path to the HDF5 file (default is "./orthopair.h5").
 #'
-#' @return A SynogDB object.
+#' @return A OrthoPairDB object.
 #' @export
 #'
-makeSynogDB <- function(query_genome, subject_genome,
+makeOrthoPairDB <- function(query_genome, subject_genome,
                         query_gff, subject_gff,
                         query_cds, subject_cds,
                         query_prot, subject_prot,
-                        hdf5_path = "./synog.h5",
+                        hdf5_path = "./orthopair.h5",
                         overwrite = FALSE){
 
     # Create a list containing all input file paths
@@ -66,7 +66,7 @@ makeSynogDB <- function(query_genome, subject_genome,
     out$genome$subject <- .genomeSummary(genome = subject_genome)
 
     # Assign class and initialize HDF5 file
-    class(out) <- c(class(out), "SynogDB")
+    class(out) <- c(class(out), "OrthoPairDB")
     return(out)
 }
 
@@ -89,19 +89,19 @@ makeSynogDB <- function(query_genome, subject_genome,
     return(out)
 }
 
-#' Summarize SynogDB object
+#' Summarize OrthoPairDB object
 #'
-#' This function provides a summary of the SynogDB object, optionally for gene or transcript information.
+#' This function provides a summary of the OrthoPairDB object, optionally for gene or transcript information.
 #'
-#' @param object A SynogDB object.
-#' @param h5_fn A path to a hdf5 file storing Synog results.
+#' @param object A OrthoPairDB object.
+#' @param h5_fn A path to a hdf5 file storing OrthoPaiR results.
 #'
 #' @return A summary dataframe.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #'
 #' @export
 #'
-summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
+summaryOrthoPair <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 
@@ -109,14 +109,14 @@ summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
         h5 <- H5Fopen(object$h5)
     }
 
-    if(!H5Lexists(h5, "synog_gene")){
+    if(!H5Lexists(h5, "orthopair_gene")){
         stop("No genewise ortholog info.")
     }
 
-    synog <- h5$synog_gene
-    query <- subset(synog, subset = !duplicated(synog$query_gene))
+    orthopair <- h5$orthopair_gene
+    query <- subset(orthopair, subset = !duplicated(orthopair$query_gene))
     query_summary <- table(query$class)
-    subject <- subset(synog, subset = !duplicated(synog$subject_gene))
+    subject <- subset(orthopair, subset = !duplicated(orthopair$subject_gene))
     subject_summary <- table(subject$class)
     query_orphan <- length(h5$orphan_query)
     subject_orphan <- length(h5$orphan_subject)
@@ -140,19 +140,19 @@ summarySynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     return(df)
 }
 
-#' Get Synog information
+#' Get OrthoPair information
 #'
-#' This function retrieves ortholog pairs information from the SynogDB object.
+#' This function retrieves ortholog pairs information from the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
-#' @param h5_fn A path to a hdf5 file storing Synog results.
+#' @param object A OrthoPairDB object.
+#' @param h5_fn A path to a hdf5 file storing OrthoPaiR results.
 #' @param gene Logical, whether to get genewise orthology information (default is FALSE).
 #' @param split Logical, whether to get split genewise orthology information (default is FALSE).
 #'
 #' @return A dataframe containing ortholog pairs.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
-getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
+getOrthoPair <- function(object = NULL, h5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(h5_fn)
 
@@ -165,36 +165,36 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
         H5Lexists(h5, "miniprot") | H5Lexists(h5, "sibeliaz")
 
     if(gene){
-        if(!H5Lexists(h5, "synog_gene")){
+        if(!H5Lexists(h5, "orthopair_gene")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
         if(!any(check)){
             out <- NULL
-            name <- names(h5$synog_gene)
+            name <- names(h5$orthopair_gene)
             for(i in seq_along(name)){
-                out <- c(out, list(h5$synog_gene[[i]]))
+                out <- c(out, list(h5$orthopair_gene[[i]]))
             }
             names(out) <- name
 
         } else {
-            out <- h5$synog_gene
+            out <- h5$orthopair_gene
         }
 
     } else {
-        if(!H5Lexists(h5, "synog_tx")){
+        if(!H5Lexists(h5, "orthopair_tx")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
 
         if(!any(check)){
             out <- NULL
-            name <- names(h5$synog_tx)
+            name <- names(h5$orthopair_tx)
             for(i in seq_along(name)){
-                out <- c(out, list(h5$synog_tx[[i]]))
+                out <- c(out, list(h5$orthopair_tx[[i]]))
             }
             names(out) <- name
 
         } else {
-            out <- h5$synog_tx
+            out <- h5$orthopair_tx
         }
     }
     return(out)
@@ -202,9 +202,9 @@ getSynog <- function(object = NULL, h5_fn = NULL, gene = FALSE){
 
 #' Get orphan information
 #'
-#' This function retrieves orphan genes or transcripts information from the SynogDB object.
+#' This function retrieves orphan genes or transcripts information from the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param gene Logical, whether to get orphan gene information.
 #' Orphan transcript information will be returned if FALSE. (default is FALSE).
 #' @param split Logical, whether to obtain split orphan gene information (default is FALSE).

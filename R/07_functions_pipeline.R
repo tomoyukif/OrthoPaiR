@@ -1,56 +1,56 @@
-#' Function to go through the Synog pipeline
+#' Function to go through the OrthoPair pipeline
 #'
 #' This is a wrapper function to execute the series of functions to go through
-#' the Synog pipeline.
+#' the OrthoPair pipeline.
 #'
 #' @export
 #'
 #' @importFrom parallel detectCores
-runSynog <- function(query_genome,
-                     subject_genome,
-                     query_gff,
-                     subject_gff,
-                     query_cds,
-                     subject_cds,
-                     query_prot,
-                     subject_prot,
-                     hdf5_path = "./synog.h5",
-                     sibeliaz_out_dir = "./sibeliaz_out",
-                     sibeliaz_bin = "sibeliaz",
-                     maf2synteny_bin = "maf2synteny",
-                     conda = "conda",
-                     sibeliaz_condaenv = "sibeliaz",
-                     miniprot_bin = "miniprot",
-                     miniprot_condaenv = "miniprot",
-                     miniprot_out_dir = "./miniprot_out/",
-                     n_threads = NULL,
-                     verbose = TRUE,
-                     overwrite = FALSE){
-
+runOrthoPair <- function(query_genome,
+                         subject_genome,
+                         query_gff,
+                         subject_gff,
+                         query_cds,
+                         subject_cds,
+                         query_prot,
+                         subject_prot,
+                         hdf5_path = "./orthopair.h5",
+                         sibeliaz_out_dir = "./sibeliaz_out",
+                         sibeliaz_bin = "sibeliaz",
+                         maf2synteny_bin = "maf2synteny",
+                         conda = "conda",
+                         sibeliaz_condaenv = "sibeliaz",
+                         miniprot_bin = "miniprot",
+                         miniprot_condaenv = "miniprot",
+                         miniprot_out_dir = "./miniprot_out/",
+                         n_threads = NULL,
+                         verbose = TRUE,
+                         overwrite = FALSE){
+    
     if(is.null(n_threads)){
         core <- detectCores()
         n_threads <- core - 1
     }
-
+    
     if(verbose){
-        message("Preparing a SynogDB class object.")
+        message("Preparing a OrthoPairDB class object.")
     }
-
-    object <- makeSynogDB(query_genome = query_genome,
-                          subject_genome = subject_genome,
-                          query_gff = query_gff,
-                          subject_gff = subject_gff,
-                          query_cds = query_cds,
-                          subject_cds = subject_cds,
-                          query_prot = query_prot,
-                          subject_prot = subject_prot,
-                          hdf5_path = hdf5_path,
-                          overwrite = overwrite)
-
+    
+    object <- makeOrthoPairDB(query_genome = query_genome,
+                              subject_genome = subject_genome,
+                              query_gff = query_gff,
+                              subject_gff = subject_gff,
+                              query_cds = query_cds,
+                              subject_cds = subject_cds,
+                              query_prot = query_prot,
+                              subject_prot = subject_prot,
+                              hdf5_path = hdf5_path,
+                              overwrite = overwrite)
+    
     if(verbose){
         message("Running SibeliaZ for local collinear block (LCB) detection.")
     }
-
+    
     runSibeliaZ(object = object,
                 out_dir = sibeliaz_out_dir,
                 sibeliaz_bin = sibeliaz_bin,
@@ -58,32 +58,32 @@ runSynog <- function(query_genome,
                 conda = conda,
                 condaenv = sibeliaz_condaenv,
                 run_sibeliaz = TRUE)
-
+    
     if(verbose){
         message("Summarize the results for the LCB detection.")
     }
-
+    
     sibeliaLCB2DF(object = object)
     lcbClassify(object = object)
     getLCBpairs(object = object)
-
+    
     if(verbose){
         message("Gene modeling by Miniprot to find missing genes.")
     }
-
+    
     mapProt(object = object,
             miniprot_bin = miniprot_bin,
             conda = conda,
             condaenv = miniprot_condaenv,
             n_threads = n_threads,
             out_dir = miniprot_out_dir)
-
+    
     if(verbose){
         message("Performinig reciprocal BLAST.")
     }
-
+    
     rbh(object = object, n_threads = n_threads)
-
+    
     if(verbose){
         message("Pairing orthologs.")
     }
@@ -92,72 +92,77 @@ runSynog <- function(query_genome,
 }
 
 
-#' Function to go through the Synog pipeline for all combinations of genomes
+#' Function to go through the OrthoPair pipeline for all combinations of genomes
 #'
 #' This is a wrapper function to execute the series of functions to go through
-#' the Synog pipeline for all combinations of genomes.
+#' the OrthoPair pipeline for all combinations of genomes.
 #'
 #' @export
 #'
 #' @importFrom parallel detectCores
-runPairwiseSynog <- function(in_list,
-                             hdf5_out_dir = "./hdf5",
-                             sibeliaz_out_dir = "./sibeliaz_out",
-                             sibeliaz_bin = "sibeliaz",
-                             maf2synteny_bin = "maf2synteny",
-                             conda = "conda",
-                             sibeliaz_condaenv = "sibeliaz",
-                             miniprot_bin = "miniprot",
-                             miniprot_condaenv = "miniprot",
-                             miniprot_out_dir = "./miniprot_out/",
-                             n_threads = NULL,
-                             verbose = TRUE,
-                             overwrite = FALSE){
-
+runPairwiseOrthoPair <- function(in_list,
+                                 hdf5_out_dir = "./hdf5",
+                                 sibeliaz_out_dir = "./sibeliaz_out",
+                                 sibeliaz_bin = "sibeliaz",
+                                 maf2synteny_bin = "maf2synteny",
+                                 conda = "conda",
+                                 sibeliaz_condaenv = "sibeliaz",
+                                 miniprot_bin = "miniprot",
+                                 miniprot_condaenv = "miniprot",
+                                 miniprot_out_dir = "./miniprot_out/",
+                                 n_threads = NULL,
+                                 verbose = TRUE,
+                                 overwrite = FALSE){
+    
     if(is.null(n_threads)){
         core <- detectCores()
         n_threads <- core - 1
     }
-
+    
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
-
+    
     .validateInput(in_list = in_list)
-
+    
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
                                  sibeliaz_out_dir = sibeliaz_out_dir,
                                  miniprot_out_dir = miniprot_out_dir)
     hdf5_fn <- NULL
     for(i in seq_along(pairwise_input)){
-        object <- runSynog(query_genome = pairwise_input[[i]]$query_genome,
-                           subject_genome = pairwise_input[[i]]$subject_genome,
-                           query_gff = pairwise_input[[i]]$query_gff,
-                           subject_gff = pairwise_input[[i]]$subject_gff,
-                           query_cds = pairwise_input[[i]]$query_cds,
-                           subject_cds = pairwise_input[[i]]$subject_cds,
-                           query_prot = pairwise_input[[i]]$query_prot,
-                           subject_prot = pairwise_input[[i]]$subject_prot,
-                           hdf5_path = pairwise_input[[i]]$hdf5_path,
-                           sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
-                           sibeliaz_bin = sibeliaz_bin,
-                           maf2synteny_bin = maf2synteny_bin,
-                           conda = conda,
-                           sibeliaz_condaenv = sibeliaz_condaenv,
-                           miniprot_bin = miniprot_bin,
-                           miniprot_condaenv = miniprot_condaenv,
-                           miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
-                           n_threads = n_threads,
-                           overwrite = overwrite)
+        object <- runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
+                               subject_genome = pairwise_input[[i]]$subject_genome,
+                               query_gff = pairwise_input[[i]]$query_gff,
+                               subject_gff = pairwise_input[[i]]$subject_gff,
+                               query_cds = pairwise_input[[i]]$query_cds,
+                               subject_cds = pairwise_input[[i]]$subject_cds,
+                               query_prot = pairwise_input[[i]]$query_prot,
+                               subject_prot = pairwise_input[[i]]$subject_prot,
+                               hdf5_path = pairwise_input[[i]]$hdf5_path,
+                               sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
+                               sibeliaz_bin = sibeliaz_bin,
+                               maf2synteny_bin = maf2synteny_bin,
+                               conda = conda,
+                               sibeliaz_condaenv = sibeliaz_condaenv,
+                               miniprot_bin = miniprot_bin,
+                               miniprot_condaenv = miniprot_condaenv,
+                               miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
+                               n_threads = n_threads,
+                               overwrite = overwrite)
         hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
     }
     names(hdf5_fn) <- names(pairwise_input)
-
-    out <- orgMPgenes(hdf5_fn = hdf5_fn,
-                      out_dir = hdf5_out_dir,
-                      out_fn = "reorg_synog.h5",
-                      makeFASTA = TRUE,
-                      overwrite = TRUE)
-    return(out)
+    
+    hdf5_fn <- orgMPgenes(hdf5_fn = hdf5_fn,
+                          out_dir = hdf5_out_dir,
+                          out_fn = "reorg_orthopair.h5",
+                          makeFASTA = TRUE,
+                          overwrite = TRUE)
+    
+    ortho_graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
+    df <- graph2df(graph = ortho_graph)
+    csv_fn <- file.path(hdf5_out_dir, "orthopair_list.csv")
+    write.csv(x = df, file = csv_fn, row.names = FALSE)
+    return(c(hdf5_fn = hdf5_fn, csv_fn = csv_fn))
 }
 
 .prepPairs <- function(in_list,
@@ -172,7 +177,7 @@ runPairwiseSynog <- function(in_list,
     }
     comb_names <- matrix(data = in_list$name[combs], nrow = 2)
     comb_id <- apply(X = comb_names, MARGIN = 2, FUN = paste, collapse = "_")
-
+    
     out <- NULL
     for(i in seq_along(comb_id)){
         prefix <- comb_id[i]
@@ -196,52 +201,52 @@ runPairwiseSynog <- function(in_list,
 #' @export
 #'
 #' @importFrom parallel detectCores
-run1toManySynog <- function(in_list,
-                            hdf5_out_dir = "./hdf5",
-                            sibeliaz_out_dir = "./sibeliaz_out",
-                            sibeliaz_bin = "sibeliaz",
-                            maf2synteny_bin = "maf2synteny",
-                            conda = "conda",
-                            sibeliaz_condaenv = "sibeliaz",
-                            miniprot_bin = "miniprot",
-                            miniprot_condaenv = "miniprot",
-                            miniprot_out_dir = "./miniprot_out/",
-                            n_threads = NULL,
-                            verbose = TRUE,
-                            overwrite = FALSE){
-
+run1toManyOrthoPair <- function(in_list,
+                                hdf5_out_dir = "./hdf5",
+                                sibeliaz_out_dir = "./sibeliaz_out",
+                                sibeliaz_bin = "sibeliaz",
+                                maf2synteny_bin = "maf2synteny",
+                                conda = "conda",
+                                sibeliaz_condaenv = "sibeliaz",
+                                miniprot_bin = "miniprot",
+                                miniprot_condaenv = "miniprot",
+                                miniprot_out_dir = "./miniprot_out/",
+                                n_threads = NULL,
+                                verbose = TRUE,
+                                overwrite = FALSE){
+    
     if(is.null(n_threads)){
         core <- detectCores()
         n_threads <- core - 1
     }
-
+    
     .validateInput(in_list = in_list)
-
+    
     pairwise_input <- .prepPairs(in_list = in_list, one_to_many = TRUE)
     hdf5_fn <- NULL
     for(i in seq_along(pairwise_input)){
-        object <- runSynog(query_genome = pairwise_input[[i]]$query_genome,
-                           subject_genome = pairwise_input[[i]]$subject_genome,
-                           query_gff = pairwise_input[[i]]$query_gff,
-                           subject_gff = pairwise_input[[i]]$subject_gff,
-                           query_cds = pairwise_input[[i]]$query_cds,
-                           subject_cds = pairwise_input[[i]]$subject_cds,
-                           query_prot = pairwise_input[[i]]$query_prot,
-                           subject_prot = pairwise_input[[i]]$subject_prot,
-                           hdf5_path = pairwise_input[[i]]$hdf5_path,
-                           sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
-                           sibeliaz_bin = sibeliaz_bin,
-                           maf2synteny_bin = maf2synteny_bin,
-                           conda = conda,
-                           sibeliaz_condaenv = sibeliaz_condaenv,
-                           miniprot_bin = miniprot_bin,
-                           miniprot_condaenv = miniprot_condaenv,
-                           miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
-                           n_threads = n_threads)
+        object <- runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
+                               subject_genome = pairwise_input[[i]]$subject_genome,
+                               query_gff = pairwise_input[[i]]$query_gff,
+                               subject_gff = pairwise_input[[i]]$subject_gff,
+                               query_cds = pairwise_input[[i]]$query_cds,
+                               subject_cds = pairwise_input[[i]]$subject_cds,
+                               query_prot = pairwise_input[[i]]$query_prot,
+                               subject_prot = pairwise_input[[i]]$subject_prot,
+                               hdf5_path = pairwise_input[[i]]$hdf5_path,
+                               sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
+                               sibeliaz_bin = sibeliaz_bin,
+                               maf2synteny_bin = maf2synteny_bin,
+                               conda = conda,
+                               sibeliaz_condaenv = sibeliaz_condaenv,
+                               miniprot_bin = miniprot_bin,
+                               miniprot_condaenv = miniprot_condaenv,
+                               miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
+                               n_threads = n_threads)
         hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
     }
     names(hdf5_fn) <- names(pairwise_input)
-
+    
     return(hdf5_fn)
 }
 
@@ -252,18 +257,18 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
                    gff = gff,
                    cds = cds,
                    prot = prot)
-
+    
     if(is.null(object)){
         object <- list(name = name,
                        genome = genome,
                        gff = gff,
                        cds = cds,
                        prot = prot)
-        class(object) <- c(class(object), "PairwiseSynogInput")
-
+        class(object) <- c(class(object), "PairwiseOrthoPairInput")
+        
     } else {
-        if(!inherits(x = object, what = "PairwiseSynogInput")){
-            stop("The input object must be a PairwiseSynogInput class object.",
+        if(!inherits(x = object, what = "PairwiseOrthoPairInput")){
+            stop("The input object must be a PairwiseOrthoPairInput class object.",
                  call. = FALSE)
         }
         object$name <- c(object$name, name)
@@ -281,27 +286,27 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
         if(check){
             stop("Empty name is not allowed.", call. = FALSE)
         }
-
+        
         check <- !file.exists(genome)
         if(check){
             stop('The file "genome" does not exist.', call. = FALSE)
         }
-
+        
         check <- !file.exists(gff)
         if(check){
             stop('The file "gff" does not exist.', call. = FALSE)
         }
-
+        
         check <- !file.exists(cds)
         if(check){
             stop('The file "cds" does not exist.', call. = FALSE)
         }
-
+        
         check <- !file.exists(prot)
         if(check){
             stop('The file "prot" does not exist.', call. = FALSE)
         }
-
+        
     } else {
         check <- !c("name", "genome", "gff", "cds", "prot") %in% names(in_list)
         if(any(check)){

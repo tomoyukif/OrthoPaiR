@@ -7,8 +7,8 @@
 showLCB(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \description{
-This function displays information about the Locally Collinear Blocks (LCBs) in the SynogDB object.
+This function displays information about the Locally Collinear Blocks (LCBs) in the OrthoPairDB object.
 }

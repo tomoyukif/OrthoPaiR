@@ -14,7 +14,7 @@ plotLCBpairs(
 )
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{class}{The class of LCB pairs to plot ("1to1", "non1to1", or "both").}
 
