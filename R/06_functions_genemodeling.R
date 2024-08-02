@@ -2,7 +2,7 @@
 #'
 #' This function maps proteins between the query and subject genomes using the specified miniprot binary and number of cores.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param out_prefix A character string specifying the prefix for the output files.
 #' @param miniprot_bin A character string specifying the path to the miniprot binary.
 #' @param n_threads An integer specifying the number of cores to use for the mapping.
@@ -18,7 +18,7 @@ mapProt <- function(object,
                     condaenv = NULL,
                     n_threads,
                     len_diff = 0.2){
-    stopifnot(inherits(x = object, "SynogDB"))
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Call the mapping engine function with specified parameters
     .mapEngine(object = object,
@@ -897,9 +897,9 @@ mapProt <- function(object,
 
 #' Create FASTA files
 #'
-#' This function generates FASTA files for query and subject CDS from the SynogDB object.
+#' This function generates FASTA files for query and subject CDS from the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param out_dir Output directory for FASTA files.
 #'
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
@@ -1641,13 +1641,13 @@ mapProt <- function(object,
 #'     return(cds)
 #' }
 #'
-#' #' Update SynogDB files
+#' #' Update OrthoPairDB files
 #' #'
-#' #' This function updates the GFF and CDS files in a SynogDB object from the HDF5 file.
+#' #' This function updates the GFF and CDS files in a OrthoPairDB object from the HDF5 file.
 #' #'
-#' #' @param object A SynogDB object.
+#' #' @param object A OrthoPairDB object.
 #' #'
-#' #' @return The updated SynogDB object.
+#' #' @return The updated OrthoPairDB object.
 #' #' @importFrom rhdf5 H5Fopen H5Fclose
 #' .updateFiles <- function(object){
 #'     h5 <- H5Fopen(object$h5)
@@ -1732,11 +1732,11 @@ mapProt <- function(object,
 #' #
 #' # .getNewAnchors <- function(df1, df2, h5, lcb_gr, gff_ls){
 #' #     df1 <- .omitPairedGenes(df = df1,
-#' #                             geneid = h5$synog_gene$orthopairs$sgeneid,
-#' #                             syntenic = h5$synog_gene$orthopairs$syntenic)
+#' #                             geneid = h5$orthopair_gene$orthopairs$sgeneid,
+#' #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
 #' #     df2 <- .omitPairedGenes(df = df2,
-#' #                             geneid = h5$synog_gene$orthopairs$qgeneid,
-#' #                             syntenic = h5$synog_gene$orthopairs$syntenic)
+#' #                             geneid = h5$orthopair_gene$orthopairs$qgeneid,
+#' #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
 #' #
 #' #     rbbh <- data.frame(qseqid = c(df1$tx, df2$target_tx),
 #' #                        sseqid = c(df1$target_tx, df2$tx))
@@ -1764,9 +1764,9 @@ mapProt <- function(object,
 #' #     hit <- match(df$target_gene, geneid)
 #' #     df$paired[!is.na(hit)] <- TRUE
 #' #     df$syntenic <- as.logical(syntenic[hit])
-#' #     df$synog <- df$paired & df$syntenic
-#' #     df$synog[is.na(df$synog)] <- FALSE
-#' #     df <- subset(df, subset = !synog)
+#' #     df$orthopair <- df$paired & df$syntenic
+#' #     df$orthopair[is.na(df$orthopair)] <- FALSE
+#' #     df <- subset(df, subset = !orthopair)
 #' #     return(df)
 #' # }
 #'

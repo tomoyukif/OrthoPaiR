@@ -2,7 +2,7 @@
 #'
 #' This function performs a Reciprocal BLAST Hits (RBH) search between query and subject genomes.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param db1 Path to the BLAST database for query genome (default is NULL).
 #' @param db2 Path to the BLAST database for subject genome (default is NULL).
 #' @param n_threads Number of threads to use for BLAST (default is 1).
@@ -26,8 +26,8 @@ rbh <- function(object,
                 qcovs = 0,
                 evalue = 1e-10
 ){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)

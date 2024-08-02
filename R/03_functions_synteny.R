@@ -1,9 +1,9 @@
 #' Run SibeliaZ
 #'
 #' This function runs SibeliaZ to detect synteny blocks between the query and subject genomes
-#' and processes the output to store in the SynogDB object.
+#' and processes the output to store in the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param out_dir Output directory for SibeliaZ results.
 #' @param sibeliaz_bin Path to the SibeliaZ binary (default is "sibeliaz").
 #' @param maf2synteny_bin Path to the maf2synteny binary (default is "maf2synteny").
@@ -19,7 +19,7 @@ runSibeliaZ <- function(object, out_dir,
                         conda = "conda",
                         condaenv = NULL,
                         run_sibeliaz = TRUE){
-    stopifnot(inherits(x = object, "SynogDB"))
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -98,14 +98,14 @@ runSibeliaZ <- function(object, out_dir,
 #' This function processes the raw output of SibeliaZ and converts it into a data.frame
 #' containing information about Locally Collinear Blocks (LCBs).
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @return A data.frame containing raw LCB information.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom rtracklayer import.gff3
 sibeliaRAW2DF <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -167,12 +167,12 @@ sibeliaRAW2DF <- function(object){
 #' This function processes the output of SibeliaZ and converts it into a data.frame
 #' containing information about Locally Collinear Blocks (LCBs).
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @return A data.frame containing LCB information.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 sibeliaLCB2DF <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -233,14 +233,14 @@ sibeliaLCB2DF <- function(object){
 
 #' Show LCB information
 #'
-#' This function displays information about the Locally Collinear Blocks (LCBs) in the SynogDB object.
+#' This function displays information about the Locally Collinear Blocks (LCBs) in the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 showLCB <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -277,12 +277,12 @@ showLCB <- function(object){
 #'
 #' This function classifies Locally Collinear Blocks (LCBs) based on their genome origin (query or subject).
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 lcbClassify <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -317,15 +317,15 @@ lcbClassify <- function(object){
 
 #' Summarize LCB statistics
 #'
-#' This function calculates and summarizes statistics for LCBs (Locally Collinear Blocks) in the SynogDB object.
+#' This function calculates and summarizes statistics for LCBs (Locally Collinear Blocks) in the OrthoPairDB object.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #'
 statsLCB <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -415,12 +415,12 @@ statsLCB <- function(object){
 #'
 #' This function generates a table showing all pairs of blocks between the query and subject genomes.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 getLCBpairs <- function(object){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
@@ -533,7 +533,7 @@ getLCBpairs <- function(object){
 #'
 #' This function plots pairs of blocks between the query genome and the subject genome.
 #'
-#' @param object A SynogDB object.
+#' @param object A OrthoPairDB object.
 #' @param class The class of LCB pairs to plot ("1to1", "non1to1", or "both").
 #' @param size Point size for the plot (default is 0.5).
 #' @param color_1to1 Color for 1-to-1 pairs (default is "darkgreen").
@@ -549,8 +549,8 @@ plotLCBpairs <- function(object,
                          color_1to1 = "darkgreen",
                          color_non1to1 = "blue",
                          chr_border_color = "gray60"){
-    # Check if the input object is of class "SynogDB"
-    stopifnot(inherits(x = object, "SynogDB"))
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
 
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)

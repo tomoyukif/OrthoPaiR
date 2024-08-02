@@ -7,7 +7,7 @@
 getLCBpairs(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \description{
 This function generates a table showing all pairs of blocks between the query and subject genomes.

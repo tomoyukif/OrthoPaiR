@@ -18,7 +18,7 @@ rbh(
 )
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{db1}{Path to the BLAST database for query genome (default is NULL).}
 

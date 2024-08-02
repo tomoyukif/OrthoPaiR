@@ -15,7 +15,7 @@ mapProt(
 )
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 
 \item{miniprot_bin}{A character string specifying the path to the miniprot binary.}
 

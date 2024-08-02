@@ -7,7 +7,7 @@
 syntenicOrtho(object)
 }
 \arguments{
-\item{object}{A SynogDB object.}
+\item{object}{A OrthoPairDB object.}
 }
 \description{
 This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
