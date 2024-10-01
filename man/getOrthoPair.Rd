@@ -4,12 +4,12 @@
 \alias{getOrthoPair}
 \title{Get OrthoPair information}
 \usage{
-getOrthoPair(object = NULL, h5_fn = NULL, gene = FALSE)
+getOrthoPair(object = NULL, hdf5_fn = NULL, gene = FALSE)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}
 
-\item{h5_fn}{A path to a hdf5 file storing OrthoPaiR results.}
+\item{hdf5_fn}{A path to a hdf5 file storing OrthoPaiR results.}
 
 \item{gene}{Logical, whether to get genewise orthology information (default is FALSE).}
 

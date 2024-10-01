@@ -64,6 +64,10 @@ syntenicOrtho <- function(object){
     .h5overwrite(obj = orthopair_gene, file = object$h5, "orthopair_gene")
     .h5overwrite(obj = orphan$query, file = object$h5, "orphan_query")
     .h5overwrite(obj = orphan$subject, file = object$h5, "orphan_subject")
+    
+    .h5overwrite(obj = "orthopair",
+                 file = object$h5,
+                 name = "data_type")
 }
 
 .getOrphan <- function(orthopair_gene, g2g_graph){
