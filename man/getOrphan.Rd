@@ -4,7 +4,7 @@
 \alias{getOrphan}
 \title{Get orphan information}
 \usage{
-getOrphan(object = NULL, h5_fn = NULL)
+getOrphan(object = NULL, hdf5_fn = NULL)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}

@@ -4,12 +4,12 @@
 \alias{summaryOrthoPair}
 \title{Summarize OrthoPairDB object}
 \usage{
-summaryOrthoPair(object = NULL, h5_fn = NULL, gene = FALSE)
+summaryOrthoPair(object = NULL, hdf5_fn = NULL, gene = FALSE)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}
 
-\item{h5_fn}{A path to a hdf5 file storing OrthoPaiR results.}
+\item{hdf5_fn}{A path to a hdf5 file storing OrthoPaiR results.}
 }
 \value{
 A summary dataframe.
