@@ -1,4 +1,4 @@
-Changes in version 0.3.1 (2024-9-30)
+Changes in version 0.3.2 (2024-9-30)
 + Replace wrapper functions with a single wrapper function that covers all 
 + functions that had been provided by the removed wrapper functions.
 + Minor bug fixes in the core algorithm.

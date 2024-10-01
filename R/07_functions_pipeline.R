@@ -73,9 +73,10 @@ orthopair <- function(in_list,
     
     orphan <- getOrphan(hdf5_fn = hdf5_fn)
     orphan <- lapply(seq_along(orphan), function(i){
-        i_out <- data.frame(orphan[[i]])
-        fill_na <- matrix(data = NA, nrow = nrow(i_out), ncol = length(orphan) - 1)
-        i_out <- cbind(i_out, fill_na)
+        i_orphan <- orphan[[i]]
+        i_out <- matrix(data = NA, nrow = length(i_orphan), ncol = length(orphan))
+        i_out[, i] <- i_orphan
+        i_out <- data.frame(i_out)
         names(i_out) <- names(orphan)
         return(i_out)
     })
