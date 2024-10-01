@@ -71,7 +71,7 @@ orthopair <- function(in_list,
     orthopair_fn <- file.path(hdf5_out_dir, "orthopair_list.csv")
     write.csv(x = df, file = orthopair_fn, row.names = FALSE)
     
-    orphan <- getOrphan(hdf5_fn = out)
+    orphan <- getOrphan(hdf5_fn = hdf5_fn)
     orphan <- lapply(seq_along(orphan), function(i){
         i_out <- data.frame(orphan[[i]])
         fill_na <- matrix(data = NA, nrow = nrow(i_out), ncol = length(orphan) - 1)

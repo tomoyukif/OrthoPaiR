@@ -83,6 +83,11 @@ reorgOrthopiars <- function(hdf5_fn,
                                       old_gene_id = ref_gff$oldGeneID[ref_gff$type %in% c("transcript", "mRNA")],
                                       tx_id = ref_gff$ID[ref_gff$type %in% c("transcript", "mRNA")]))
     }
+    
+    names(genome_fn) <- names(genomewise_list)
+    if(!is.null(id2id_list)){
+        names(id2id_list) <- names(genomewise_list)
+    }
     orthopair_list <- .renameOrthoPair(id2id_list = id2id_list,
                                        gene_list = gene_list,
                                        hdf5_fn = hdf5_fn,
