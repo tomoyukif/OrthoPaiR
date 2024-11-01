@@ -21,7 +21,10 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                         query_cds, subject_cds,
                         query_prot, subject_prot,
                         hdf5_path = "./orthopair.h5",
-                        overwrite = FALSE){
+                        overwrite = FALSE,
+                        resume = FALSE,
+                        redo = NULL,
+                        param_list = NULL){
 
     # Create a list containing all input file paths
     files <- list(query_genome = query_genome,
@@ -42,32 +45,67 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
 
     out <- NULL
     out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
-
-    .h5creategroup(out$h5,"files")
-    .h5overwrite(obj = query_genome,
-                 file = out$h5, "files/query_genome")
-    .h5overwrite(obj = subject_genome,
-                 file = out$h5, "files/subject_genome")
-    .h5overwrite(obj = query_gff,
-                 file = out$h5, "files/query_gff")
-    .h5overwrite(obj = subject_gff,
-                 file = out$h5, "files/subject_gff")
-    .h5overwrite(obj = query_cds,
-                 file = out$h5, "files/query_cds")
-    .h5overwrite(obj = subject_cds,
-                 file = out$h5, "files/subject_cds")
-    .h5overwrite(obj = query_prot,
-                 file = out$h5, "files/query_prot")
-    .h5overwrite(obj = subject_prot,
-                 file = out$h5, "files/subject_prot")
+    
+    resume <- .checkResumePoint(hdf5_path = out$h5,
+                                resume = resume,
+                                redo = redo)
+    
+    out$resume <- resume
+    if(out$resume$miniprot){
+        reset <- TRUE
+        
+    } else {
+        reset <- FALSE
+    }
+    
+    if(reset){
+        .h5creategroup(out$h5,"files")
+        .h5overwrite(obj = query_genome,
+                     file = out$h5, "files/query_genome")
+        .h5overwrite(obj = subject_genome,
+                     file = out$h5, "files/subject_genome")
+        .h5overwrite(obj = query_gff,
+                     file = out$h5, "files/query_gff")
+        .h5overwrite(obj = subject_gff,
+                     file = out$h5, "files/subject_gff")
+        .h5overwrite(obj = query_cds,
+                     file = out$h5, "files/query_cds")
+        .h5overwrite(obj = subject_cds,
+                     file = out$h5, "files/subject_cds")
+        .h5overwrite(obj = query_prot,
+                     file = out$h5, "files/query_prot")
+        .h5overwrite(obj = subject_prot,
+                     file = out$h5, "files/subject_prot")
+    }
 
     # Summarize the query and subject genomes
     out$genome$query <- .genomeSummary(genome = query_genome)
     out$genome$subject <- .genomeSummary(genome = subject_genome)
-
+    
+    out$param_list <- .validateParamList(param_list = param_list)
+    
     # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "OrthoPairDB")
+    
+    .h5creategroup(out$h5, "timestamp")
+    .h5overwrite(obj = as.character(Sys.time()), file = out$h5, "timestamp/makedb")
+    
     return(out)
+}
+
+.validateParamList <- function(param_list){
+    out <- list(len_diff = 0.2,
+                pident = 90,
+                qcovs = 0,
+                evalue = 1e-10)
+    if(!is.null(param_list)){
+        check <- names(param_list) %in% names(out)
+        if(!all(check)){
+            stop("The param_list object must be a named list with the following names:",
+                 "\n'len_diff', 'pident', 'qcovs', 'evalue'.")
+        }
+    }
+    return(param_list)
 }
 
 #' Summarize genome information

@@ -18,7 +18,10 @@ orthopair(
   n_threads = NULL,
   one_to_many = FALSE,
   verbose = TRUE,
-  overwrite = FALSE
+  overwrite = FALSE,
+  resume = FALSE,
+  redo = NULL,
+  param_list = NULL
 )
 }
 \description{

@@ -59,6 +59,8 @@ runSibeliaZ <- function(object, out_dir,
                  file = object$h5, "sibeliaz/raw")
     .h5overwrite(obj = file.path(out_dir, "5000/blocks_coords.txt"),
                  file = object$h5, "sibeliaz/blocks")
+    
+    .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/sibeliaz")
 }
 
 #' Prepare genome for SibeliaZ
@@ -449,6 +451,8 @@ getLCBpairs <- function(object){
 
     # Overwrite the "sibeliaz/lcb_pairs" group in the HDF5 file with the new LCB pairs
     .h5overwrite(obj = lcb_pairs, file = object$h5, "sibeliaz/lcb_pairs")
+    
+    .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/lcbpair")
 }
 
 #' Get 1-to-1 LCB pairs

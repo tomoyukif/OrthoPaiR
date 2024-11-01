@@ -1,3 +1,12 @@
+Changes in version 0.3.6 (2024-11-1)
++ Add function to fix genome and GFF files to meet the demand of OrthoPaiR.
+
+Changes in version 0.3.5 (2024-10-30)
++ Add function to validate whether sequence levels, CDS, and protein names match
++ IDs in GFF.
++ Add function to validate entry types and gene_id in GFF.
++ Add function to resume the process.
+
 Changes in version 0.3.2 (2024-9-30)
 + Replace wrapper functions with a single wrapper function that covers all 
 + functions that had been provided by the removed wrapper functions.
