@@ -137,7 +137,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         if(verbose){
             message("Preparing a promoter FASTA file for the query genome.")
         }
-        out_fn <- file.path(dirname(gff1), 
+        out_fn <- file.path(dirname(gff1),
                             paste0(query_id, "_orthopair.promoter"))
         .getPromoterSeq(gff = gff1, genome = genome1, out_fn = out_fn)
     }

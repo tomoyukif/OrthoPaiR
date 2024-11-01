@@ -110,6 +110,7 @@ rbh <- function(object,
     # Save RBBH and RBH results to HDF5 file
     .h5overwrite(obj = rbbh_out, file = object$h5, "blast/rbbh")
     .h5overwrite(obj = rbh_out, file = object$h5, "blast/rbh")
+    .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/blast")
 }
 
 #' Merge CDS files into a single FASTA file

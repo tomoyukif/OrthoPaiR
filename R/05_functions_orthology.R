@@ -9,12 +9,12 @@
 syntenicOrtho <- function(object){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
-
+    
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
-
+    
     # Check if the necessary groups exist in the HDF5 file
     if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
         stop("Run getLCBpairs to obtain LCB pair info.")
@@ -22,36 +22,36 @@ syntenicOrtho <- function(object){
     if(!H5Lexists(h5, "blast/rbbh")){
         stop("Run rbh with `best = TRUE` to obtain RBBH info.")
     }
-
+    
     genome_graph <- .prepGenomeGraph(h5 = h5)
     g2g_graph <- .linkGene2Genome(h5 = h5, genome_graph = genome_graph)
     anchor <- .findAnchors(h5 = h5,
                            genome_graph = genome_graph,
                            g2g_graph = g2g_graph)
-
+    
     t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
     orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph)
     # orthopair <- .pickNonSyntenicOrtho(h5 = h5, orthopair = orthopair, g2g_graph = g2g_graph)
     orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
-
+    
     .h5overwrite(obj = orthopair, file = object$h5, "orthopair_tx")
-
+    
     orthopair <- .classifyOrthoPair(orthopair = orthopair)
-
+    
     split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
     rest_orthopair <- split_orthopair$rest
-
+    
     while(TRUE){
         rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
         rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
         if(is.null(rest_orthopair$rest)){
             split_orthopair$splited <- rbind(split_orthopair$splited,
-                                         rest_orthopair$rest)
+                                             rest_orthopair$rest)
             break
-
+            
         } else {
             split_orthopair$splited <- rbind(split_orthopair$splited,
-                                         rest_orthopair$splited)
+                                             rest_orthopair$splited)
             rest_orthopair <- rest_orthopair$rest
         }
     }
@@ -68,6 +68,7 @@ syntenicOrtho <- function(object){
     .h5overwrite(obj = "orthopair",
                  file = object$h5,
                  name = "data_type")
+    .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/pairing")
 }
 
 .getOrphan <- function(orthopair_gene, g2g_graph){
@@ -99,7 +100,7 @@ syntenicOrtho <- function(object){
     query_blocks$node <- paste0("q_", query_blocks$node)
     subject_blocks$node <- apply(subject_blocks, 1, paste, collapse = "_")
     subject_blocks$node <- paste0("s_", subject_blocks$node)
-
+    
     # Graph for LCBs
     genome_edge <- data.frame(query_genome = query_blocks$node,
                               subject_genome = subject_blocks$node)
@@ -107,12 +108,12 @@ syntenicOrtho <- function(object){
     subject_blocks <- unique(subject_blocks)
     query_blocks$node_id <- seq_along(query_blocks$node)
     subject_blocks$node_id <- seq_along(subject_blocks$node)
-
+    
     hit <- match(genome_edge$query_genome, query_blocks$node)
     genome_edge$query_genome <- query_blocks$node_id[hit]
     hit <- match(genome_edge$subject_genome, subject_blocks$node)
     genome_edge$subject_genome <- subject_blocks$node_id[hit]
-
+    
     out <- list(query_blocks = query_blocks,
                 subject_blocks = subject_blocks,
                 genome_edge = genome_edge)
@@ -139,7 +140,7 @@ syntenicOrtho <- function(object){
     query_gr$node_id <- genome_graph$query_blocks$node_id
     subject_gr <- .makeGRanges(df = genome_graph$subject_blocks, genome = "subject")
     subject_gr$node_id <- genome_graph$subject_blocks$node_id
-
+    
     q_tx_i <- gff_ls$query_gff$type %in% c("transcript", "mRNA")
     query_gff <- gff_ls$query_gff[q_tx_i]
     q_g2b <- nearest(query_gff, query_gr)
@@ -150,7 +151,7 @@ syntenicOrtho <- function(object){
                              id = as.numeric(factor(query_gene)))
     query_g2b_edge <- data.frame(root = query_tx$id,
                                  query_genome = query_gr$node_id[q_g2b])
-
+    
     s_tx_i <- gff_ls$subject_gff$type %in% c("transcript", "mRNA")
     subject_gff <- gff_ls$subject_gff[s_tx_i]
     s_g2b <- nearest(subject_gff, subject_gr)
@@ -182,20 +183,20 @@ syntenicOrtho <- function(object){
         tmp <- df$query_start[minus]
         df$query_start[minus] <- df$query_end[minus]
         df$query_end[minus] <- tmp
-
+        
         # Create GRanges object for query genome
         gr <- GRanges(seqnames = df$query_chr,
                       ranges = IRanges(start = df$query_start,
                                        end = df$query_end),
                       strand = "*")
-
+        
     } else {
         # Handle cases where start position is greater than end position
         minus <- df$subject_start > df$subject_end
         tmp <- df$subject_start[minus]
         df$subject_start[minus] <- df$subject_end[minus]
         df$subject_end[minus] <- tmp
-
+        
         # Create GRanges object for subject genome
         gr <- GRanges(seqnames = df$subject_chr,
                       ranges = IRanges(start = df$subject_start,
@@ -213,38 +214,54 @@ syntenicOrtho <- function(object){
         mp_query_gff <- .importAllGFF(as.vector(h5$miniprot$s2q_gff))
         subject_gff <- .importAllGFF(as.vector(h5$files$subject_gff))
         mp_subject_gff <- .importAllGFF(as.vector(h5$miniprot$q2s_gff))
-
+        
         # Order the GFF data
         query_gff <- .orderGFF(gff = query_gff)
         subject_gff <- .orderGFF(gff = subject_gff)
         mp_query_gff <- .orderGFF(gff = mp_query_gff)
         mp_subject_gff <- .orderGFF(gff = mp_subject_gff)
-
+        
         query_gff <- .mRNA2transcript(gff = query_gff)
         subject_gff <- .mRNA2transcript(gff = subject_gff)
         mp_query_gff <- .mRNA2transcript(gff = mp_query_gff)
         mp_subject_gff <- .mRNA2transcript(gff = mp_subject_gff)
-
+        
         mp_query_gff <- .setIDforElements(gff = mp_query_gff)
         mp_subject_gff <- .setIDforElements(gff = mp_subject_gff)
-
+        
         # Return the ordered GFF data as a list
-        out <- list(query_gff = query_gff, subject_gff = subject_gff,
-                    mp_query_gff = mp_query_gff, mp_subject_gff = mp_subject_gff)
-
+        out <- list(query_gff = .checkGFFentiry(query_gff), 
+                    subject_gff = .checkGFFentiry(subject_gff),
+                    mp_query_gff = mp_query_gff,
+                    mp_subject_gff = mp_subject_gff)
+        
     } else {
         query_gff <- .importAllGFF(as.vector(h5$files$query_gff))
         subject_gff <- .importAllGFF(as.vector(h5$files$subject_gff))
-
+        
         # Order the GFF data
         query_gff <- .orderGFF(gff = query_gff)
         subject_gff <- .orderGFF(gff = subject_gff)
-
+        
         # Return the ordered GFF data as a list
-        out <- list(query_gff = query_gff, subject_gff = subject_gff)
+        out <- list(query_gff = .checkGFFentiry(query_gff),
+                    subject_gff = .checkGFFentiry(subject_gff))
     }
-
+    
     return(out)
+}
+
+.checkGFFentiry <- function(gff){
+    entry_type <-  c("gene", "transcript", "mRNA", "five_prime_UTR", "exon",
+                     "CDS", "three_prime_UTR")
+    gff <- gff[gff$type %in% entry_type]
+    if(!is.null(gff$gene_id)){
+        if(all(!is.na(gff$gene_id))){
+            return(gff)
+        }
+    }
+    gff <- .setGeneID(gff = gff)
+    return(gff)
 }
 
 .orderGFF <- function(gff){
@@ -295,7 +312,7 @@ syntenicOrtho <- function(object){
     tx2gene <- data.frame(leaf = g2g_graph$subject_tx$id,
                           subject_anchor = g2g_graph$subject_gene$id)
     anchor <- left_join(anchor, tx2gene, "leaf")
-
+    
     query_anchor_gene_i <- which(g2g_graph$query_gene$id %in% anchor$query_anchor)
     query_anchor_gene <- unique(g2g_graph$query_gene$gene[query_anchor_gene_i])
     q_tx_i <- g2g_graph$query_gff$type %in% c("transcript", "mRNA")
@@ -317,7 +334,7 @@ syntenicOrtho <- function(object){
                                                    query_anchor_gff$node_id[query_tx2anchor_follow],
                                                    query_anchor_gff$node_id))
     query_tx2anchor <- unique(query_tx2anchor[order(query_tx2anchor$root), ])
-
+    
     subject_anchor_gene_i <- which(g2g_graph$subject_gene$id %in% anchor$subject_anchor)
     subject_anchor_gene <- unique(g2g_graph$subject_gene$gene[subject_anchor_gene_i])
     s_tx_i <- g2g_graph$subject_gff$type %in% c("transcript", "mRNA")
@@ -339,7 +356,7 @@ syntenicOrtho <- function(object){
                                                        subject_anchor_gff$node_id[subject_tx2anchor_follow],
                                                        subject_anchor_gff$node_id))
     subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
-
+    
     out <- list(anchor = anchor,
                 query_tx2anchor = query_tx2anchor,
                 subject_tx2anchor = subject_tx2anchor,
@@ -354,7 +371,7 @@ syntenicOrtho <- function(object){
 .findSyntenicOrtho <- function(h5, g2g_graph, t2a_graph){
     rbh <- h5$blast$rbh
     rbh_score <- .getRBHscore(rbh = rbh)
-
+    
     root_hit <- match(rbh$qseqid, t2a_graph$query_tx$tx)
     leaf_hit <- match(rbh$sseqid, t2a_graph$subject_tx$tx)
     rbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
@@ -370,10 +387,10 @@ syntenicOrtho <- function(object){
                      relationship = "many-to-many")
     orthopair <- subset(rbh, subset = leaf == expected_leaf)
     orthopair <- data.frame(query_gene = t2a_graph$query_gene$gene[orthopair$root],
-                        query_tx = t2a_graph$query_tx$tx[orthopair$root],
-                        subject_gene = t2a_graph$subject_gene$gene[orthopair$leaf],
-                        subject_tx = t2a_graph$subject_tx$tx[orthopair$leaf])
-
+                            query_tx = t2a_graph$query_tx$tx[orthopair$root],
+                            subject_gene = t2a_graph$subject_gene$gene[orthopair$leaf],
+                            subject_tx = t2a_graph$subject_tx$tx[orthopair$leaf])
+    
     orthopair <- left_join(orthopair, rbh_score, c("query_tx", "subject_tx"))
     orthopair$gene_pair_id <- paste(orthopair$query_gene, orthopair$subject_gene, sep = "_")
     orthopair <- orthopair[order(orthopair$gene_pair_id), ]
@@ -385,14 +402,14 @@ syntenicOrtho <- function(object){
     # Calculate coverage identity for query to subject (q2s) and subject to query (s2q)
     q2s_covident <- rbh$q2s_pident * rbh$q2s_qcovs * 1e-4
     s2q_covident <- rbh$s2q_pident * rbh$s2q_qcovs * 1e-4
-
+    
     # Calculate mutual coverage identity as the Euclidean distance of the individual coverage identities
     mutual_ci <- sqrt(q2s_covident^2 + s2q_covident^2) / sqrt(2)
-
+    
     rbh_score <- data.frame(query_tx = rbh$qseqid,
                             subject_tx = rbh$sseqid,
                             mutual_ci = mutual_ci)
-
+    
     return(rbh_score)
 }
 
@@ -437,7 +454,7 @@ syntenicOrtho <- function(object){
     names(grp) <- paste0(names(grp), "_")
     grp <- unlist(grp)
     grp <- data.frame(grp = names(grp), gene_id = grp)
-    grp$grp <- as.numeric(sub("_.+", "", grp$grp))
+    grp$grp <- as.numeric(sub("_.?", "", grp$grp))
     grp$query <- grp$gene_id %in% query_gene_list
     grp$subject <- grp$gene_id %in% subject_gene_list
     n_query <- tapply(grp$query, grp$grp, sum)
@@ -446,7 +463,7 @@ syntenicOrtho <- function(object){
     n_subject <- tapply(grp$subject, grp$grp, sum)
     hit <- match(grp$grp, as.numeric(names(n_subject)))
     grp$n_subject <- n_subject[hit]
-
+    
     sog_1to1 <- which(grp$n_query == 1 & grp$n_subject == 1)
     sog_1toM <- which(grp$n_query == 1 & grp$n_subject != 1)
     sog_Mto1 <- which(grp$n_query != 1 & grp$n_subject == 1)
@@ -460,10 +477,10 @@ syntenicOrtho <- function(object){
     orthopair$class[hit] <- "Mto1"
     hit <- orthopair$query_gene %in% grp$gene_id[sog_MtoM]
     orthopair$class[hit] <- "MtoM"
-
+    
     hit <- match(orthopair$query_gene, grp$gene_id)
     orthopair$SOG <- grp$grp[hit]
-
+    
     return(orthopair)
 }
 
@@ -487,7 +504,7 @@ syntenicOrtho <- function(object){
     }
     if(!is.null(split_MtoM$non_split_gene)){
         rest <- split_MtoM$non_split_gene
-
+        
     } else {
         rest <- NULL
     }
@@ -533,7 +550,7 @@ syntenicOrtho <- function(object){
                         })
     best_pair <- do.call("rbind", best_pair)
     best_pair <- best_pair[order(best_pair$SOG), ]
-
+    
     best_pair_split <- tapply(seq_along(best_pair$SOG), best_pair$SOG, function(i){
         tmp_i <- best_pair[i, ]
         if(length(unique(tmp_i$query_tx)) == 1){
@@ -547,14 +564,14 @@ syntenicOrtho <- function(object){
         return(!best_pair_ol)
     })
     best_pair$split <- unlist(best_pair_split)
-
+    
     if(any(best_pair$split)){
         split_gene <- subset(best_pair, subset = split)
         split_gene$query_gene <- paste0(split_gene$query_tx, ":split_gene")
         non_split_gene <- subset(best_pair,
                                  subset = !subject_gene %in% split_gene$subject_gene)
         out <- rbind(split_gene, non_split_gene)
-
+        
     } else {
         out <- best_pair
     }
@@ -582,7 +599,7 @@ syntenicOrtho <- function(object){
                         })
     best_pair <- do.call("rbind", best_pair)
     best_pair <- best_pair[order(best_pair$SOG), ]
-
+    
     best_pair_split <- tapply(seq_along(best_pair$SOG), best_pair$SOG, function(i){
         tmp_i <- best_pair[i, ]
         if(length(unique(tmp_i$subject_tx)) == 1){
@@ -596,14 +613,14 @@ syntenicOrtho <- function(object){
         return(!best_pair_ol)
     })
     best_pair$split <- unlist(best_pair_split)
-
+    
     if(any(best_pair$split)){
         split_gene <- subset(best_pair, subset = split)
         split_gene$subject_gene <- paste0(split_gene$subject_tx, ":split_gene")
         non_split_gene <- subset(best_pair,
                                  subset = !query_gene %in% split_gene$query_gene)
         out <- rbind(split_gene, non_split_gene)
-
+        
     } else {
         out <- best_pair
     }
@@ -627,10 +644,10 @@ syntenicOrtho <- function(object){
     hit <- match(tmp$tx_pair_id, split_Mto1$tx_pair_id)
     tmp$split_Mto1 <- split_Mto1$split[hit]
     tmp <- tmp[order(tmp$SOG), ]
-
+    
     tmp$split <- tmp$split_1toM & tmp$split_Mto1
     tmp$split[is.na(tmp$split)] <- FALSE
-
+    
     if(any(tmp$split)){
         split_gene <- subset(tmp, subset = split)
         push_back <- lapply(seq_along(split_gene$query_gene),
@@ -649,7 +666,7 @@ syntenicOrtho <- function(object){
                                      !subject_gene %in% split_gene$subject_gene,
                                  select = -c(tx_pair_id:split))
         out <- list(split_gene = split_gene, non_split_gene = non_split_gene)
-
+        
     } else {
         tmp <- subset(tmp, select = -c(tx_pair_id:split))
         out <- list(split_gene = tmp, non_split_gene = NULL)

@@ -19,7 +19,14 @@ orthopair <- function(in_list,
                       n_threads = NULL,
                       one_to_many = FALSE,
                       verbose = TRUE,
-                      overwrite = FALSE){
+                      overwrite = FALSE,
+                      resume = FALSE,
+                      redo = NULL,
+                      param_list = NULL){
+    if(!inherits(x = in_list, what = "PairwiseOrthoPairInput")){
+        stop("The input object must be a PairwiseOrthoPairInput class object.",
+             call. = FALSE)
+    }
     
     if(is.null(n_threads)){
         core <- detectCores()
@@ -28,7 +35,8 @@ orthopair <- function(in_list,
     
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
     
-    .validateInput(in_list = in_list)
+    # message("Validating input data...")
+    # .validateInput(in_list = in_list)
     
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
@@ -36,36 +44,62 @@ orthopair <- function(in_list,
                                  miniprot_out_dir = miniprot_out_dir,
                                  one_to_many = one_to_many)
     hdf5_fn <- NULL
+    on.exit({return(hdf5_fn)})
+    error <- FALSE
     for(i in seq_along(pairwise_input)){
-        object <- .runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
-                                subject_genome = pairwise_input[[i]]$subject_genome,
-                                query_gff = pairwise_input[[i]]$query_gff,
-                                subject_gff = pairwise_input[[i]]$subject_gff,
-                                query_cds = pairwise_input[[i]]$query_cds,
-                                subject_cds = pairwise_input[[i]]$subject_cds,
-                                query_prot = pairwise_input[[i]]$query_prot,
-                                subject_prot = pairwise_input[[i]]$subject_prot,
-                                hdf5_path = pairwise_input[[i]]$hdf5_path,
-                                sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
-                                sibeliaz_bin = sibeliaz_bin,
-                                maf2synteny_bin = maf2synteny_bin,
-                                conda = conda,
-                                sibeliaz_condaenv = sibeliaz_condaenv,
-                                miniprot_bin = miniprot_bin,
-                                miniprot_condaenv = miniprot_condaenv,
-                                miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
-                                n_threads = n_threads,
-                                overwrite = overwrite)
-        hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
+        message("Start proccessing the ", names(pairwise_input)[i], " pair")
+        
+        object <- try(expr = {.runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
+                                            subject_genome = pairwise_input[[i]]$subject_genome,
+                                            query_gff = pairwise_input[[i]]$query_gff,
+                                            subject_gff = pairwise_input[[i]]$subject_gff,
+                                            query_cds = pairwise_input[[i]]$query_cds,
+                                            subject_cds = pairwise_input[[i]]$subject_cds,
+                                            query_prot = pairwise_input[[i]]$query_prot,
+                                            subject_prot = pairwise_input[[i]]$subject_prot,
+                                            hdf5_path = pairwise_input[[i]]$hdf5_path,
+                                            sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
+                                            sibeliaz_bin = sibeliaz_bin,
+                                            maf2synteny_bin = maf2synteny_bin,
+                                            conda = conda,
+                                            sibeliaz_condaenv = sibeliaz_condaenv,
+                                            miniprot_bin = miniprot_bin,
+                                            miniprot_condaenv = miniprot_condaenv,
+                                            miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
+                                            n_threads = n_threads,
+                                            overwrite = overwrite,
+                                            resume = resume,
+                                            redo = redo,
+                                            param_list = param_list)},
+                      silent = TRUE)
+        if(inherits(x = object, what = "try-error")){
+            hdf5_fn <- c(hdf5_fn, object)
+            print(object)
+            message("\n")
+            error <- TRUE
+            
+        } else {
+            hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
+        }
     }
     names(hdf5_fn) <- names(pairwise_input)
     
+    if(error){
+        message("Error occured in process(es).", 
+                "\nStop the pipeline and output the file paths for no-error",
+                " processes and error messages for error processes.")
+        on.exit()
+        return(hdf5_fn)
+    }
+    
+    message("Start reorganizing orthopairs ...")
     hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
                                out_dir = hdf5_out_dir,
                                out_fn = "reorg_orthopair.h5",
                                makeFASTA = TRUE,
                                overwrite = TRUE)
     
+    message("Summarizing orthopairs into a spreadsheat ...")
     graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
     df <- graph2df(graph = graph)
     orthopair_fn <- file.path(hdf5_out_dir, "orthopair_list.csv")
@@ -84,7 +118,9 @@ orthopair <- function(in_list,
     orphan_fn <- file.path(hdf5_out_dir, "orphan_list.csv")
     write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
     
+    on.exit()
     out <- c(hdf5_fn = hdf5_fn, orthopair_fn = orthopair_fn, orphan_fn = orphan_fn)
+    message("Finished all processes in the pipeline!")
     return(out)
 }
 
@@ -141,11 +177,21 @@ orthopair <- function(in_list,
                           miniprot_out_dir = "./miniprot_out/",
                           n_threads = NULL,
                           verbose = TRUE,
-                          overwrite = FALSE){
+                          overwrite = FALSE,
+                          resume = FALSE,
+                          redo = NULL,
+                          param_list = NULL){
     
     if(is.null(n_threads)){
         core <- detectCores()
         n_threads <- core - 1
+    }
+    
+    if(resume){
+        if(overwrite){
+            stop("Set 'overwrite = FALSE', if you wanna resume the process.", 
+                 call. = FALSE)
+        }
     }
     
     if(verbose){
@@ -161,50 +207,151 @@ orthopair <- function(in_list,
                               query_prot = query_prot,
                               subject_prot = subject_prot,
                               hdf5_path = hdf5_path,
-                              overwrite = overwrite)
+                              overwrite = overwrite,
+                              resume = resume,
+                              redo = redo,
+                              param_list = param_list)
     
-    if(verbose){
-        message("Running SibeliaZ for local collinear block (LCB) detection.")
+    if(object$resume$sibeliaz){
+        if(verbose){
+            message("Running SibeliaZ for local collinear block (LCB) detection.")
+        }
+        runSibeliaZ(object = object,
+                    out_dir = sibeliaz_out_dir,
+                    sibeliaz_bin = sibeliaz_bin,
+                    maf2synteny_bin = maf2synteny_bin,
+                    conda = conda,
+                    condaenv = sibeliaz_condaenv,
+                    run_sibeliaz = TRUE)
+        
+    } else {
+        if(verbose){
+            message("redo running SibeliaZ.")
+        }
     }
     
-    runSibeliaZ(object = object,
-                out_dir = sibeliaz_out_dir,
-                sibeliaz_bin = sibeliaz_bin,
-                maf2synteny_bin = maf2synteny_bin,
+    if(object$resume$lcbpair){
+        if(verbose){
+            message("Runnig LCB pairing.")
+        }
+        sibeliaLCB2DF(object = object)
+        lcbClassify(object = object)
+        getLCBpairs(object = object)
+        
+    } else {
+        if(verbose){
+            message("redo LCB pairing.")
+        }   
+    }
+    
+    if(object$resume$miniprot){
+        if(verbose){
+            message("Gene modeling by Miniprot to find missing genes.")
+        }
+        mapProt(object = object,
+                miniprot_bin = miniprot_bin,
                 conda = conda,
-                condaenv = sibeliaz_condaenv,
-                run_sibeliaz = TRUE)
-    
-    if(verbose){
-        message("Summarize the results for the LCB detection.")
+                condaenv = miniprot_condaenv,
+                n_threads = n_threads,
+                out_dir = miniprot_out_dir,
+                len_diff = object$param_list$len_diff)
+        
+    } else {
+        if(verbose){
+            message("redo gene modeling.")
+        }
     }
     
-    sibeliaLCB2DF(object = object)
-    lcbClassify(object = object)
-    getLCBpairs(object = object)
-    
-    if(verbose){
-        message("Gene modeling by Miniprot to find missing genes.")
+    if(object$resume$blast){
+        if(verbose){
+            message("Performinig reciprocal BLAST.")
+        }
+        rbh(object = object,
+            n_threads = n_threads, 
+            pident = object$param_list$pident, 
+            qcovs = object$param_list$qcovs, 
+            evalue = object$param_list$evalue)
+        
+    } else {
+        if(verbose){
+            message("redo performinig reciprocal BLAST.")
+        }
     }
     
-    mapProt(object = object,
-            miniprot_bin = miniprot_bin,
-            conda = conda,
-            condaenv = miniprot_condaenv,
-            n_threads = n_threads,
-            out_dir = miniprot_out_dir)
-    
-    if(verbose){
-        message("Performinig reciprocal BLAST.")
+    if(object$resume$pairing){
+        if(verbose){
+            message("Pairing orthologs.")
+        }
+        syntenicOrtho(object = object)
+        
+    } else {
+        if(verbose){
+            message("redo pairing orthologs.")
+        }
     }
     
-    rbh(object = object, n_threads = n_threads)
-    
-    if(verbose){
-        message("Pairing orthologs.")
-    }
-    syntenicOrtho(object = object)
+    message("Finish processing.\n")
     return(object)
+}
+
+#' @importFrom rhdf5 H5Lexists
+.checkResumePoint <- function(hdf5_path, resume, redo){
+    out <- list(sibeliaz = TRUE, 
+                lcbpair = TRUE,
+                miniprot = TRUE,
+                blast = TRUE,
+                pairing = TRUE)
+    if(!resume){
+        return(out)
+    }
+    h5 <- H5Fopen(hdf5_path)
+    # Ensure the HDF5 file is closed when the function exits
+    on.exit(H5Fclose(h5))
+    if(!is.null(redo)){
+        check <- names(redo) %in% names(out)
+        if(!all(check)){
+            stop("The redo object must be a named list with the following names:",
+                 "\n'sibeliaz', 'lcbpair', 'miniprot', 'blast', 'pairing'.")
+        }
+    }
+    
+    if(H5Lexists(h5, "timestamp/sibeliaz")){
+        out$sibeliaz <- FALSE
+        if(!is.null(redo$sibeliaz)){
+            out$sibeliaz <- redo$sibeliaz
+        }
+    }
+    if(H5Lexists(h5, "timestamp/lcbpair")){
+        out$lcbpair <- FALSE
+        if(!is.null(redo$lcbpair)){
+            out$lcbpair <- redo$lcbpair
+        }
+    }
+    if(H5Lexists(h5, "timestamp/miniprot")){
+        out$miniprot <- FALSE
+        if(!is.null(redo$miniprot)){
+            out$miniprot <- redo$miniprot
+            if(out$miniprot){
+                redo$pairing <- redo$blast <- TRUE
+            }
+        }
+    }
+    if(H5Lexists(h5, "timestamp/blast")){
+        out$blast <- FALSE
+        if(!is.null(redo$blast)){
+            out$blast <- redo$blast
+            if(out$blast){
+                redo$pairing <- TRUE
+            }
+        }
+    }
+    if(H5Lexists(h5, "timestamp/pairing")){
+        out$pairing <- FALSE
+        if(!is.null(redo$pairing)){
+            out$pairing <- redo$pairing
+        }
+    }
+    return(out)
 }
 
 #' @export
@@ -228,15 +375,37 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
             stop("The input object must be a PairwiseOrthoPairInput class object.",
                  call. = FALSE)
         }
-        object$name <- c(object$name, name)
-        object$genome <- c(object$genome, genome)
-        object$gff <- c(object$gff, gff)
-        object$cds <- c(object$cds, cds)
-        object$prot <- c(object$prot, prot)
+        name_hit <- name %in% object$name
+        if(name_hit){
+            message(name, " exsits in the input file list.")
+            while(TRUE){
+                check <- readline(prompt = "Overwrite?(y/n): ")
+                if(check == "y"){
+                    break
+                    
+                } else if(check == "n"){
+                    stop("Use another name.", call. = FALSE)
+                }
+            }
+            object$genome[name_hit] <- genome
+            object$gff[name_hit] <- gff
+            object$cds[name_hit] <- cds
+            object$prot[name_hit] <- prot
+            
+        } else {
+            object$name <- c(object$name, name)
+            object$genome <- c(object$genome, genome)
+            object$gff <- c(object$gff, gff)
+            object$cds <- c(object$cds, cds)
+            object$prot <- c(object$prot, prot)
+        }
     }
     return(object)
 }
 
+#' @importFrom GenomeInfoDb seqlevels
+#' @importFrom Biostrings readDNAStringSet
+#' @importFrom rtracklayer import.gff
 .validateInput <- function(in_list = NULL, name, genome, gff, cds, prot){
     if(is.null(in_list)){
         check <- is.na(name) | name == ""
@@ -262,6 +431,38 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
         check <- !file.exists(prot)
         if(check){
             stop('The file "prot" does not exist.', call. = FALSE)
+        }
+        
+        genome <- readDNAStringSet(filepath = genome)
+        gff <- import.gff(con = gff)
+        cds <- readDNAStringSet(filepath = cds)
+        prot <- readAAStringSet(filepath = prot)
+        gff_seq_lev <- seqlevels(gff)
+        genome_seq_name <- names(genome)
+        check <-  gff_seq_lev %in% genome_seq_name
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the GFF but not in the genome:",
+                 paste(head(gff_seq_lev[!gff_seq_lev %in% genome_seq_name]),
+                       collapse = ", "), call. = FALSE)
+        }
+        
+        cds_names <- names(cds)
+        check <- cds_names %in% gff$Name
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the CDS but not in the GFF:",
+                 paste(head(cds_names[!cds_names %in% genome_seq_name]),
+                       collapse = ", "), call. = FALSE)
+        }
+        
+        prot_names <- names(prot)
+        check <- cds_names %in% gff$Name
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the protein but not in the GFF:",
+                 paste(head(prot_names[!prot_names %in% genome_seq_name]),
+                       collapse = ", "), call. = FALSE)
         }
         
     } else {

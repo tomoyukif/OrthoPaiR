@@ -14,7 +14,10 @@ makeOrthoPairDB(
   query_prot,
   subject_prot,
   hdf5_path = "./orthopair.h5",
-  overwrite = FALSE
+  overwrite = FALSE,
+  resume = FALSE,
+  redo = NULL,
+  param_list = NULL
 )
 }
 \arguments{
