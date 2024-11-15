@@ -248,6 +248,9 @@ reorgOrthopiars <- function(hdf5_fn,
     }
     
     splited_gene <- subset(df, subset = grepl("split_gene", df[[target_gene]]))
+    if(nrow(splited_gene) == 0){
+        return(gff)
+    }
     mp <- grep("^MP[0-9]+", splited_gene[[target_tx]])
     splited_gene[[target_tx]][mp] <- paste(prefix, splited_gene[[target_tx]][mp], sep = "_")
     mp <- grep("^MP[0-9]+", splited_gene[[target_gene]])
@@ -255,6 +258,9 @@ reorgOrthopiars <- function(hdf5_fn,
     
     splited_gene <- splited_gene[!splited_gene[[target_gene]] %in% gff$ID, ]
     splited_gene_gene <- splited_gene_tx <- gff[gff$ID %in% splited_gene[[target_tx]]]
+    if(length(splited_gene_tx) == 0){
+        return(gff)
+    }
     splited_gene_tx$Parent <- lapply(paste0(splited_gene_tx$ID, ":split_gene"), c)
     splited_gene_tx$gene_id <- paste0(splited_gene_tx$ID, ":split_gene")
     splited_gene_gene$type <- "gene"
@@ -669,7 +675,7 @@ reorgOrthopiars <- function(hdf5_fn,
 }
 
 ################################################################################
-#' @importFrom igraph graph_from_data_frame V E E<- components union
+#' @importFrom igraph make_empty_graph add_edges add_vertices V<-
 #' @export
 #' 
 makeOrthoGraph <- function(hdf5_fn){
@@ -682,35 +688,34 @@ makeOrthoGraph <- function(hdf5_fn){
              " by the reorgOrthopiars() function.")
     }
     files <- names(h5$orthopair_gene)
+    gene_list <- as.vector(h5$gene_list$gene)
+    gene_list <- unique(gene_list)
+    graph <- make_empty_graph(n = length(gene_list), directed = FALSE)
+    V(graph)$name <- gene_list
     for(i in seq_along(files)){
         orthopair_gene <- h5$orthopair_gene[[i]]
-        if(i == 1){
-            graph <- graph_from_data_frame(d = subset(orthopair_gene,
-                                                      select = c(query_gene, 
-                                                                 subject_gene)),
-                                           directed = FALSE)
-            E(graph)$mutual_ci <- orthopair_gene$mutual_ci
-            E(graph)$class <- orthopair_gene$class
-            
-        } else {
-            tmp <- graph_from_data_frame(d = subset(orthopair_gene,
-                                                    select = c(query_gene, 
-                                                               subject_gene)),
-                                         directed = FALSE)
-            E(tmp)$mutual_ci <- orthopair_gene$mutual_ci
-            E(tmp)$class <- orthopair_gene$class
-            graph <- igraph::union(graph, tmp)
+        edges <- subset(orthopair_gene, select = c(query_gene, subject_gene))
+        edges <- as.vector(t(edges))
+        check <- !edges %in% V(graph)$name
+        if(any(check)){
+            warning("Some gene IDs are not found in the gene list for the reorganized orthopair data.\n",
+                    paste(head(edges[check]), collapse = ", "))
+            vertices <- unique(edges[check])
+            graph <- add_vertices(graph = graph, nv = length(vertices), name = vertices)
         }
+        graph <- add_edges(graph = graph,
+                           edges = edges, 
+                           attr = list(mutual_ci = orthopair_gene$mutual_ci,
+                                       class = orthopair_gene$class))
     }
-    gene_list <- h5$gene_list
-    attributes(graph) <- c(attributes(graph), list(gene_list = gene_list))
     return(graph)
 }
 
 #' @importFrom igraph components ego V subgraph vcount
 #' @export
-graph2df <- function(graph){
+graph2df <- function(graph, orthopair_fn){
     gene_list <- attributes(graph)$gene_list
+    gene_list$assign <- FALSE
     genomes <- sort(unique(gene_list$genome))
     graph_grp <- .groupGraph(graph = graph)
     
@@ -735,6 +740,7 @@ graph2df <- function(graph){
                                       gene_list = gene_list,
                                       n_len = n_len,
                                       full = full)
+        .writeEntries(x = full_con$full_con, file = orthopair_fn)
         
         if(is.null(full_con$rest_genes)){
             full_mem <- list(rest_genes = NULL)
@@ -746,6 +752,7 @@ graph2df <- function(graph){
                                          gene_list = gene_list,
                                          n_len = n_len,
                                          full = full)
+            .writeEntries(x = full_mem$full_mem, file = orthopair_fn)
         }
         
         if(is.null(full_mem$rest_genes)){
@@ -758,10 +765,10 @@ graph2df <- function(graph){
                                           gene_list = gene_list,
                                           n_len = n_len,
                                           full = full)
+            .writeEntries(x = full_chain$full_chain, file = orthopair_fn)
         }
         
-        out <- rbind(out,
-                     full_con$full_con, 
+        out <- rbind(full_con$full_con, 
                      full_mem$full_mem,
                      full_chain$full_chain)
         check <- all(full_chain$rest_genes %in% unlist(out))
@@ -786,6 +793,27 @@ graph2df <- function(graph){
     out <- out[order(out$SOG), ]
     out <- .setTxID(out = out, gene_list = gene_list)
     return(out)
+}
+
+.writeEntries <- function(x, file){
+    if(file.exists(file)){
+        write.table(x = x, 
+                    file = file,
+                    append = TRUE, 
+                    quote = FALSE,
+                    sep = ",", 
+                    col.names = FALSE,
+                    row.names = FALSE)
+        
+    } else {
+        write.table(x = x, 
+                    file = file,
+                    append = FALSE, 
+                    quote = FALSE,
+                    sep = ",", 
+                    col.names = TRUE,
+                    row.names = FALSE)
+    }
 }
 
 .is_mult_mp_in_grp <- function(x){

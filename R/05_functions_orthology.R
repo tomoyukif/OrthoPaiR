@@ -16,17 +16,19 @@ syntenicOrtho <- function(object){
     on.exit(H5Fclose(h5))
     
     # Check if the necessary groups exist in the HDF5 file
-    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
-        stop("Run getLCBpairs to obtain LCB pair info.")
-    }
+    # if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
+    #     stop("Run getLCBpairs to obtain LCB pair info.")
+    # }
     if(!H5Lexists(h5, "blast/rbbh")){
         stop("Run rbh with `best = TRUE` to obtain RBBH info.")
     }
     
-    genome_graph <- .prepGenomeGraph(h5 = h5)
-    g2g_graph <- .linkGene2Genome(h5 = h5, genome_graph = genome_graph)
+    # genome_graph <- .prepGenomeGraph(h5 = h5)
+    # genome_graph <- h5$sibeliaz$lcbgraph
+    # g2g_graph <- .linkGene2Genome(h5 = h5, genome_graph = genome_graph)
+    g2g_graph <- .linkGene2Genome(h5 = h5)
     anchor <- .findAnchors(h5 = h5,
-                           genome_graph = genome_graph,
+                           # genome_graph = genome_graph,
                            g2g_graph = g2g_graph)
     
     t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
@@ -133,43 +135,96 @@ syntenicOrtho <- function(object){
     return(df)
 }
 
-#' @importFrom GenomicRanges nearest
-.linkGene2Genome <- function(h5, genome_graph){
+# #' @importFrom GenomicRanges nearest
+# .linkGene2Genome <- function(h5, genome_graph){
+.linkGene2Genome <- function(h5){
+    # query_gr <- unique(subset(genome_graph, 
+    #                           select = c(query_genome, query_chr:query_end)))
+    # query_gr_id <- query_gr$query_genome
+    # query_gr <- .makeGRanges(df = query_gr, genome = "query")
+    # query_gr$query_genome <- query_gr_id
+    # 
+    # subject_gr <- unique(subset(genome_graph, 
+    #                             select = c(subject_genome, subject_chr:subject_end)))
+    # subject_gr_id <- subject_gr$subject_genome
+    # subject_gr <- .makeGRanges(df = subject_gr, genome = "subject")
+    # subject_gr$subject_genome <- subject_gr_id
+    # 
     gff_ls <- .getGFFlist(h5 = h5)
-    query_gr <- .makeGRanges(df = genome_graph$query_blocks, genome = "query")
-    query_gr$node_id <- genome_graph$query_blocks$node_id
-    subject_gr <- .makeGRanges(df = genome_graph$subject_blocks, genome = "subject")
-    subject_gr$node_id <- genome_graph$subject_blocks$node_id
-    
     q_tx_i <- gff_ls$query_gff$type %in% c("transcript", "mRNA")
     query_gff <- gff_ls$query_gff[q_tx_i]
-    q_g2b <- nearest(query_gff, query_gr)
+    # q_g2b_precede <- precede(query_gff, query_gr, ignore.strand = TRUE)
+    # q_g2b_follow <- follow(query_gff, query_gr, ignore.strand = TRUE)
     query_tx <- query_gff$ID
     query_tx <- data.frame(tx = query_tx, id = seq_along(query_tx))
     query_gene <- query_gff$gene_id
     query_gene <- data.frame(gene = query_gene,
                              id = as.numeric(factor(query_gene)))
-    query_g2b_edge <- data.frame(root = query_tx$id,
-                                 query_genome = query_gr$node_id[q_g2b])
+    # query_g2b_edge <- data.frame(root = c(query_tx$id, query_tx$id),
+    #                              query_genome = c(query_gr$query_genome[q_g2b_precede], 
+    #                                               query_gr$query_genome[q_g2b_follow]))
+    # query_g2b_edge <- unique(query_g2b_edge[order(query_g2b_edge$root), ])
+    # query_g2b_edge <- subset(query_g2b_edge, subset = !is.na(query_g2b_edge))
     
     s_tx_i <- gff_ls$subject_gff$type %in% c("transcript", "mRNA")
     subject_gff <- gff_ls$subject_gff[s_tx_i]
-    s_g2b <- nearest(subject_gff, subject_gr)
+    # s_g2b_precede <- precede(subject_gff, subject_gr, ignore.strand = TRUE)
+    # s_g2b_follow <- follow(subject_gff, subject_gr, ignore.strand = TRUE)
     subject_tx <- subject_gff$ID
     subject_tx <- data.frame(tx = subject_tx, id = seq_along(subject_tx))
     subject_gene <- subject_gff$gene_id
     subject_gene <- data.frame(gene = subject_gene,
                                id = as.numeric(factor(subject_gene)))
-    subject_g2b_edge <- data.frame(subject_genome = subject_gr$node_id[s_g2b],
-                                   leaf = subject_tx$id)
+    # subject_g2b_edge <- data.frame(subject_genome = c(subject_gr$subject_genome[s_g2b_precede], 
+    #                                                   subject_gr$subject_genome[s_g2b_follow]),
+    #                                leaf = c(subject_tx$id, subject_tx$id))
+    # subject_g2b_edge <- unique(subject_g2b_edge[order(subject_g2b_edge$leaf), ])
+    # subject_g2b_edge <- subset(subject_g2b_edge, subset = !is.na(subject_g2b_edge))
+    
     out <- list(query_tx = query_tx,
                 subject_tx = subject_tx,
-                query_g2b_edge = query_g2b_edge,
-                subject_g2b_edge = subject_g2b_edge,
+                # query_g2b_edge = query_g2b_edge,
+                # subject_g2b_edge = subject_g2b_edge,
                 query_gene = query_gene,
                 subject_gene = subject_gene,
                 query_gff = gff_ls$query_gff,
                 subject_gff = gff_ls$subject_gff)
+    
+    # gff_ls <- .getGFFlist(h5 = h5)
+    # query_gr <- .makeGRanges(df = genome_graph, genome = "query")
+    # query_gr$node_id <- genome_graph$query_blocks$node_id
+    # subject_gr <- .makeGRanges(df = genome_graph$subject_blocks, genome = "subject")
+    # subject_gr$node_id <- genome_graph$subject_blocks$node_id
+    # 
+    # q_tx_i <- gff_ls$query_gff$type %in% c("transcript", "mRNA")
+    # query_gff <- gff_ls$query_gff[q_tx_i]
+    # q_g2b <- nearest(query_gff, query_gr)
+    # query_tx <- query_gff$ID
+    # query_tx <- data.frame(tx = query_tx, id = seq_along(query_tx))
+    # query_gene <- query_gff$gene_id
+    # query_gene <- data.frame(gene = query_gene,
+    #                          id = as.numeric(factor(query_gene)))
+    # query_g2b_edge <- data.frame(root = query_tx$id,
+    #                              query_genome = query_gr$node_id[q_g2b])
+    # 
+    # s_tx_i <- gff_ls$subject_gff$type %in% c("transcript", "mRNA")
+    # subject_gff <- gff_ls$subject_gff[s_tx_i]
+    # s_g2b <- nearest(subject_gff, subject_gr)
+    # subject_tx <- subject_gff$ID
+    # subject_tx <- data.frame(tx = subject_tx, id = seq_along(subject_tx))
+    # subject_gene <- subject_gff$gene_id
+    # subject_gene <- data.frame(gene = subject_gene,
+    #                            id = as.numeric(factor(subject_gene)))
+    # subject_g2b_edge <- data.frame(subject_genome = subject_gr$node_id[s_g2b],
+    #                                leaf = subject_tx$id)
+    # out <- list(query_tx = query_tx,
+    #             subject_tx = subject_tx,
+    #             query_g2b_edge = query_g2b_edge,
+    #             subject_g2b_edge = subject_g2b_edge,
+    #             query_gene = query_gene,
+    #             subject_gene = subject_gene,
+    #             query_gff = gff_ls$query_gff,
+    #             subject_gff = gff_ls$subject_gff)
     return(out)
 }
 
@@ -288,18 +343,28 @@ syntenicOrtho <- function(object){
 }
 
 #' @importFrom dplyr left_join
-.findAnchors <- function(h5, genome_graph, g2g_graph){
+.findAnchors <- function(h5, 
+                         # genome_graph,
+                         g2g_graph){
     rbbh <- h5$blast$rbbh
+    score <- .getRBHscore(rbh = rbbh)
+    mutual_ci_threashold <- quantile(x = score$mutual_ci, probs = 0.1)
+    rbbh <- subset(rbbh, subset = score$mutual_ci >= mutual_ci_threashold)
+    # genome_graph <- subset(genome_graph, 
+    #                        select = c(query_genome, subject_genome))
     root_hit <- match(rbbh$qseqid, g2g_graph$query_tx$tx)
     leaf_hit <- match(rbbh$sseqid, g2g_graph$subject_tx$tx)
-    rbbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
-                       expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
-    rbbh <- left_join(rbbh, g2g_graph$query_g2b_edge, "root")
-    rbbh <- left_join(rbbh, genome_graph$genome_edge, "query_genome",
-                      relationship = "many-to-many")
-    rbbh <- left_join(rbbh, g2g_graph$subject_g2b_edge, "subject_genome",
-                      relationship = "many-to-many")
-    anchor <- subset(rbbh, subset = leaf == expected_leaf)
+    anchor <- data.frame(root = g2g_graph$query_tx$id[root_hit],
+                         leaf = g2g_graph$subject_tx$id[leaf_hit])
+    # rbbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
+    #                    expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
+    # rbbh <- left_join(x = rbbh, y = g2g_graph$query_g2b_edge, by = "root")
+    # rbbh <- left_join(x = rbbh, y = genome_graph, by = "query_genome",
+    #                   relationship = "many-to-many")
+    # rbbh <- left_join(x = rbbh, y = g2g_graph$subject_g2b_edge, 
+    #                   by = "subject_genome", relationship = "many-to-many")
+    # anchor <- subset(rbbh, subset = leaf == expected_leaf, select = c(root, leaf))
+    anchor <- unique(anchor)
     return(anchor)
 }
 
@@ -334,6 +399,7 @@ syntenicOrtho <- function(object){
                                                    query_anchor_gff$node_id[query_tx2anchor_follow],
                                                    query_anchor_gff$node_id))
     query_tx2anchor <- unique(query_tx2anchor[order(query_tx2anchor$root), ])
+    query_tx2anchor <- subset(query_tx2anchor, subset = !is.na(query_tx2anchor))
     
     subject_anchor_gene_i <- which(g2g_graph$subject_gene$id %in% anchor$subject_anchor)
     subject_anchor_gene <- unique(g2g_graph$subject_gene$gene[subject_anchor_gene_i])
@@ -356,6 +422,7 @@ syntenicOrtho <- function(object){
                                                        subject_anchor_gff$node_id[subject_tx2anchor_follow],
                                                        subject_anchor_gff$node_id))
     subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
+    subject_tx2anchor <- subset(subject_tx2anchor, subset = !is.na(subject_anchor))
     
     out <- list(anchor = anchor,
                 query_tx2anchor = query_tx2anchor,
@@ -485,6 +552,8 @@ syntenicOrtho <- function(object){
 }
 
 .splitGene <- function(orthopair, g2g_graph){
+    orthopair$original_query_gene <- orthopair$query_gene
+    orthopair$original_subject_gene <- orthopair$subject_gene
     best_1to1 <- .best1to1(orthopair = orthopair)
     split_1toM <- .split1toM(orthopair, gff = g2g_graph$query_gff)
     split_Mto1 <- .splitMto1(orthopair, gff = g2g_graph$subject_gff)
@@ -565,15 +634,19 @@ syntenicOrtho <- function(object){
     })
     best_pair$split <- unlist(best_pair_split)
     
+    out <- best_pair
     if(any(best_pair$split)){
         split_gene <- subset(best_pair, subset = split)
-        split_gene$query_gene <- paste0(split_gene$query_tx, ":split_gene")
-        non_split_gene <- subset(best_pair,
-                                 subset = !subject_gene %in% split_gene$subject_gene)
-        out <- rbind(split_gene, non_split_gene)
-        
-    } else {
-        out <- best_pair
+        check <- tapply(split_gene$query_tx, split_gene$query_gene, unique)
+        check <- sapply(check, length)
+        valid_split <- names(check[check > 1])
+        split_gene <- subset(split_gene, subset = query_gene %in% valid_split)
+        if(nrow(split_gene) > 1){
+            split_gene$query_gene <- paste0(split_gene$query_tx, ":split_gene")
+            non_split_gene <- subset(best_pair,
+                                     subset = !subject_gene %in% split_gene$subject_gene)
+            out <- rbind(split_gene, non_split_gene)
+        }
     }
     return(out)
 }
@@ -614,15 +687,19 @@ syntenicOrtho <- function(object){
     })
     best_pair$split <- unlist(best_pair_split)
     
+    out <- best_pair
     if(any(best_pair$split)){
         split_gene <- subset(best_pair, subset = split)
-        split_gene$subject_gene <- paste0(split_gene$subject_tx, ":split_gene")
-        non_split_gene <- subset(best_pair,
-                                 subset = !query_gene %in% split_gene$query_gene)
-        out <- rbind(split_gene, non_split_gene)
-        
-    } else {
-        out <- best_pair
+        check <- tapply(split_gene$subject_tx, split_gene$subject_gene, unique)
+        check <- sapply(check, length)
+        valid_split <- names(check[check > 1])
+        split_gene <- subset(split_gene, subset = subject_gene %in% valid_split)
+        if(nrow(split_gene) > 1){
+            split_gene$subject_gene <- paste0(split_gene$subject_tx, ":split_gene")
+            non_split_gene <- subset(best_pair,
+                                     subset = !query_gene %in% split_gene$query_gene)
+            out <- rbind(split_gene, non_split_gene)
+        }
     }
     return(out)
 }

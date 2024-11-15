@@ -6,22 +6,21 @@
 \usage{
 orthopair(
   in_list,
-  hdf5_out_dir = "./hdf5",
-  sibeliaz_out_dir = "./sibeliaz_out",
-  sibeliaz_bin = "sibeliaz",
-  maf2synteny_bin = "maf2synteny",
+  working_dir = ".",
   conda = "conda",
-  sibeliaz_condaenv = "sibeliaz",
   miniprot_bin = "miniprot",
   miniprot_condaenv = "miniprot",
-  miniprot_out_dir = "./miniprot_out/",
   n_threads = NULL,
-  one_to_many = FALSE,
+  target_pair = NULL,
   verbose = TRUE,
   overwrite = FALSE,
   resume = FALSE,
   redo = NULL,
-  param_list = NULL
+  param_list = NULL,
+  orthopair = TRUE,
+  reorg = TRUE,
+  makegraph = TRUE,
+  output_table = FALSE
 )
 }
 \description{

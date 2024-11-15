@@ -53,9 +53,8 @@ mapProt <- function(object,
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
     
-    if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
-        stop("Run getLCBpairs to obtain LCB pair info.")
-    }
+    # Check if the input object is of class "OrthoPairDB"
+    stopifnot(inherits(x = object, "OrthoPairDB"))
     
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
     
@@ -144,25 +143,38 @@ mapProt <- function(object,
                       n_threads = 1){
     
     if(!is.null(condaenv)){
+        log_fn <- paste0(out_prefix, ".log1")
         .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
                   args = paste("-t", n_threads,
                                "-d", paste0(out_prefix, ".mpi"),
-                               genome_fn))
+                               genome_fn),
+                  log_fn = log_fn)
+        
+        log_fn <- paste0(out_prefix, ".log2")
+        error_log_fn <- paste0(out_prefix, "_error.log2")
         .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
                   args = paste("-t", n_threads, "--gff",
                                paste0(out_prefix, ".mpi"),
-                               query_fn, ">", paste0(out_prefix, ".gff")))
+                               query_fn, ">", paste0(out_prefix, ".gff")),
+                  log_fn = log_fn)
         
     } else {
+        log_fn <- paste0(out_prefix, ".log1")
+        error_log_fn <- paste0(out_prefix, "_error.log1")
         system2(command = miniprot_bin,
                 args = paste("-t", n_threads,
                              "-d", paste0(out_prefix, ".mpi"),
-                             genome_fn))
+                             genome_fn), 
+                stderr = log_fn)
+        
+        log_fn <- paste0(out_prefix, ".log2")
+        error_log_fn <- paste0(out_prefix, "_error.log2")
         system2(command = miniprot_bin,
                 args = paste("-t", n_threads,
                              "--gff",
                              paste0(out_prefix, ".mpi"),
-                             query_fn, ">", paste0(out_prefix, ".gff")))
+                             query_fn, ">", paste0(out_prefix, ".gff")), 
+                stderr = log_fn)
     }
 }
 
