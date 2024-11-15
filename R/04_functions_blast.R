@@ -22,9 +22,9 @@ rbh <- function(object,
                 n_batch = NULL,
                 makedb = TRUE,
                 max_target_seqs = 100000,
-                pident = 90,
+                pident = 0,
                 qcovs = 0,
-                evalue = 1e-10
+                evalue = 1e-4
 ){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
@@ -40,8 +40,8 @@ rbh <- function(object,
 
     # Create BLAST databases if necessary
     if(makedb | is.null(db1) | is.null(db2)){
-        makeblastdb(file = fa1, dbtype = "nucl")
-        makeblastdb(file = fa2, dbtype = "nucl")
+        makeblastdb(file = fa1, dbtype = "nucl", verbose = FALSE)
+        makeblastdb(file = fa2, dbtype = "nucl", verbose = FALSE)
         db1 <- fa1
         db2 <- fa2
     }
@@ -75,18 +75,14 @@ rbh <- function(object,
     .h5creategroup(object$h5,"blast")
     .h5overwrite(obj = blast_out1, file = object$h5, "blast/blast_q2s")
     .h5overwrite(obj = blast_out2, file = object$h5, "blast/blast_s2q")
-
+    # blast_out1 <- h5$blast$blast_q2s
+    # blast_out2 <- h5$blast$blast_s2q
+    
     # Filter BLAST results for best hits
     blast_best1 <- .blast_filter(blast_out = blast_out1,
-                                 pident = 0,
-                                 qcovs = 0,
-                                 evalue = 1e-3,
                                  best = TRUE)
 
     blast_best2 <- .blast_filter(blast_out = blast_out2,
-                                 pident = 0,
-                                 qcovs = 0,
-                                 evalue = 1e-3,
                                  best = TRUE)
 
     # Filter BLAST results based on user-defined criteria
@@ -215,7 +211,7 @@ rbh <- function(object,
     if(best){
         # Identify the best hits for each query sequence
         n_hit <- unlist(tapply(blast_out$qseqid, blast_out$qseqid, length))
-
+        
         # Separate single-hit and multiple-hit sequences
         single_hit <- blast_out$qseqid %in% names(n_hit)[n_hit == 1]
         single_hit <- blast_out[single_hit, ]

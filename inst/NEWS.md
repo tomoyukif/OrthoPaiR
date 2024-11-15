@@ -1,4 +1,7 @@
-Changes in version 0.3.6 (2024-11-1)
+Changes in version 0.4.1 (2024-11-15)
++ Remove the LCB detection step by SibeliaZ and change the algorithm to let the anchoring step only depends on the RBBH result with filtering by the 10%-quantile of mutual-CI.
+
+Changes in version 0.3.7 (2024-11-1)
 + Add function to fix genome and GFF files to meet the demand of OrthoPaiR.
 
 Changes in version 0.3.5 (2024-10-30)

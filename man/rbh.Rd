@@ -12,9 +12,9 @@ rbh(
   n_batch = NULL,
   makedb = TRUE,
   max_target_seqs = 1e+05,
-  pident = 90,
+  pident = 0,
   qcovs = 0,
-  evalue = 1e-10
+  evalue = 1e-04
 )
 }
 \arguments{

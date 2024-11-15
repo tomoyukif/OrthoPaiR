@@ -17,15 +17,16 @@
 #' @export
 #'
 makeOrthoPairDB <- function(query_genome, subject_genome,
-                        query_gff, subject_gff,
-                        query_cds, subject_cds,
-                        query_prot, subject_prot,
-                        hdf5_path = "./orthopair.h5",
-                        overwrite = FALSE,
-                        resume = FALSE,
-                        redo = NULL,
-                        param_list = NULL){
-
+                            query_gff, subject_gff,
+                            query_cds, subject_cds,
+                            query_prot, subject_prot,
+                            hdf5_path = "./orthopair.h5",
+                            miniprot_out_dir ="./miniprot",
+                            overwrite = FALSE,
+                            resume = FALSE,
+                            redo = NULL,
+                            param_list = NULL){
+    
     # Create a list containing all input file paths
     files <- list(query_genome = query_genome,
                   subject_genome = subject_genome,
@@ -35,14 +36,14 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                   subject_cds = subject_cds,
                   query_prot = query_prot,
                   subject_prot = subject_prot)
-
+    
     # Check if all input files exist
     for(i in seq_along(files)){
         if(!file.exists(files[[i]])){
             stop(files[[i]], " do not exists!")
         }
     }
-
+    
     out <- NULL
     out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
     
@@ -76,8 +77,18 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                      file = out$h5, "files/query_prot")
         .h5overwrite(obj = subject_prot,
                      file = out$h5, "files/subject_prot")
+        
+    } else {
+        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
+                     file = out$h5, "files/query_gff")
+        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
+                     file = out$h5, "files/subject_gff")
+        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
+                     file = out$h5, "files/query_cds")
+        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
+                     file = out$h5, "files/subject_cds")
     }
-
+    
     # Summarize the query and subject genomes
     out$genome$query <- .genomeSummary(genome = query_genome)
     out$genome$subject <- .genomeSummary(genome = subject_genome)
@@ -95,17 +106,34 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
 
 .validateParamList <- function(param_list){
     out <- list(len_diff = 0.2,
-                pident = 90,
+                pident = 0,
                 qcovs = 0,
-                evalue = 1e-10)
+                evalue = 1e-4)
     if(!is.null(param_list)){
         check <- names(param_list) %in% names(out)
         if(!all(check)){
             stop("The param_list object must be a named list with the following names:",
                  "\n'len_diff', 'pident', 'qcovs', 'evalue'.")
         }
+        if(!is.null(param_list$len_diff)){
+            out$len_diff <- param_list$len_diff
+        }
+        if(!is.null(param_list$pident)){
+            out$pident <- param_list$pident
+        }
+        if(!is.null(param_list$qcovs)){
+            out$qcovs <- param_list$qcovs
+        }
+        if(!is.null(param_list$evalue)){
+            out$evalue <- param_list$evalue
+        }
     }
-    return(param_list)
+    message("Use following parameters:")
+    message("len_diff = ", out$len_diff)
+    message("pident = ", out$pident)
+    message("qcovs = ", out$qcovs)
+    message("evalue = ", out$evalue)
+    return(out)
 }
 
 #' Summarize genome information
@@ -120,7 +148,7 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
 .genomeSummary <- function(genome){
     # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(genome)
-
+    
     # Create a summary list with sequence names and lengths
     out <- list(names = names(genome),
                 length = width(genome))
@@ -142,11 +170,11 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
 summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
-
+        
     } else {
         h5 <- H5Fopen(object$h5)
     }
-
+    
     if(!H5Lexists(h5, "orthopair_gene")){
         stop("No genewise ortholog info.")
     }
@@ -157,7 +185,7 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
              "You specified a hdf5_fn for the output from the orgMPgenes() function.", 
              call. = FALSE)
     }
-
+    
     orthopair <- h5$orthopair_gene
     query <- subset(orthopair, subset = !duplicated(orthopair$query_gene))
     query_summary <- table(query$class)
@@ -200,14 +228,14 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
 getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
-
+        
     } else {
         h5 <- H5Fopen(object$h5)
     }
     on.exit(H5Fclose(h5))
-
+    
     check <- h5$data_type == "reorg_orthopair"
-
+    
     if(gene){
         if(!H5Lexists(h5, "orthopair_gene")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
@@ -219,16 +247,16 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
                 out <- c(out, list(h5$orthopair_gene[[i]]))
             }
             names(out) <- name
-
+            
         } else {
             out <- h5$orthopair_gene
         }
-
+        
     } else {
         if(!H5Lexists(h5, "orthopair_tx")){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
-
+        
         if(!any(check)){
             out <- NULL
             name <- names(h5$orthopair_tx)
@@ -236,7 +264,7 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
                 out <- c(out, list(h5$orthopair_tx[[i]]))
             }
             names(out) <- name
-
+            
         } else {
             out <- h5$orthopair_tx
         }
@@ -260,7 +288,7 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
 getOrphan <- function(object = NULL, hdf5_fn = NULL){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
-
+        
     } else {
         h5 <- H5Fopen(object$h5)
     }

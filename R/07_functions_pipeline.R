@@ -6,23 +6,25 @@
 #' @export
 #'
 #' @importFrom parallel detectCores
+#' @importFrom igraph write_graph
 orthopair <- function(in_list,
-                      hdf5_out_dir = "./hdf5",
-                      sibeliaz_out_dir = "./sibeliaz_out",
-                      sibeliaz_bin = "sibeliaz",
-                      maf2synteny_bin = "maf2synteny",
+                      working_dir = ".",
+                      # sibeliaz_bin = "sibeliaz",
                       conda = "conda",
-                      sibeliaz_condaenv = "sibeliaz",
+                      # sibeliaz_condaenv = "sibeliaz",
                       miniprot_bin = "miniprot",
                       miniprot_condaenv = "miniprot",
-                      miniprot_out_dir = "./miniprot_out/",
                       n_threads = NULL,
-                      one_to_many = FALSE,
+                      target_pair = NULL,
                       verbose = TRUE,
                       overwrite = FALSE,
                       resume = FALSE,
                       redo = NULL,
-                      param_list = NULL){
+                      param_list = NULL,
+                      orthopair = TRUE,
+                      reorg = TRUE,
+                      makegraph = TRUE,
+                      output_table = FALSE){
     if(!inherits(x = in_list, what = "PairwiseOrthoPairInput")){
         stop("The input object must be a PairwiseOrthoPairInput class object.",
              call. = FALSE)
@@ -32,7 +34,7 @@ orthopair <- function(in_list,
         core <- detectCores()
         n_threads <- core - 1
     }
-    
+    hdf5_out_dir <- file.path(working_dir, "hdf5_out")
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
     
     # message("Validating input data...")
@@ -40,15 +42,42 @@ orthopair <- function(in_list,
     
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
-                                 sibeliaz_out_dir = sibeliaz_out_dir,
-                                 miniprot_out_dir = miniprot_out_dir,
-                                 one_to_many = one_to_many)
+                                 # sibeliaz_out_dir = file.path(working_dir, "sibeliaz_out"),
+                                 miniprot_out_dir = file.path(working_dir, "miniprot_out"),
+                                 target_pair = target_pair)
     hdf5_fn <- NULL
     on.exit({return(hdf5_fn)})
     error <- FALSE
     for(i in seq_along(pairwise_input)){
+        if(!orthopair){
+            hdf5_fn <- c(hdf5_fn, pairwise_input[[i]]$hdf5_path)
+            next
+        }
         message("Start proccessing the ", names(pairwise_input)[i], " pair")
         
+        # For debug #######################################################
+        # query_genome = pairwise_input[[i]]$query_genome
+        # subject_genome = pairwise_input[[i]]$subject_genome
+        # query_gff = pairwise_input[[i]]$query_gff
+        # subject_gff = pairwise_input[[i]]$subject_gff
+        # query_cds = pairwise_input[[i]]$query_cds
+        # subject_cds = pairwise_input[[i]]$subject_cds
+        # query_prot = pairwise_input[[i]]$query_prot
+        # subject_prot = pairwise_input[[i]]$subject_prot
+        # hdf5_path = pairwise_input[[i]]$hdf5_path
+        # sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir
+        # sibeliaz_bin = sibeliaz_bin
+        # conda = conda
+        # sibeliaz_condaenv = sibeliaz_condaenv
+        # miniprot_bin = miniprot_bin
+        # miniprot_condaenv = miniprot_condaenv
+        # miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir
+        # n_threads = n_threads
+        # overwrite = overwrite
+        # resume = resume
+        # redo = redo
+        # param_list = param_list
+        #############################################################
         object <- try(expr = {.runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
                                             subject_genome = pairwise_input[[i]]$subject_genome,
                                             query_gff = pairwise_input[[i]]$query_gff,
@@ -58,11 +87,10 @@ orthopair <- function(in_list,
                                             query_prot = pairwise_input[[i]]$query_prot,
                                             subject_prot = pairwise_input[[i]]$subject_prot,
                                             hdf5_path = pairwise_input[[i]]$hdf5_path,
-                                            sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
-                                            sibeliaz_bin = sibeliaz_bin,
-                                            maf2synteny_bin = maf2synteny_bin,
+                                            # sibeliaz_out_dir = pairwise_input[[i]]$sibeliaz_out_dir,
+                                            # sibeliaz_bin = sibeliaz_bin,
                                             conda = conda,
-                                            sibeliaz_condaenv = sibeliaz_condaenv,
+                                            # sibeliaz_condaenv = sibeliaz_condaenv,
                                             miniprot_bin = miniprot_bin,
                                             miniprot_condaenv = miniprot_condaenv,
                                             miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
@@ -92,18 +120,39 @@ orthopair <- function(in_list,
         return(hdf5_fn)
     }
     
-    message("Start reorganizing orthopairs ...")
-    hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
-                               out_dir = hdf5_out_dir,
-                               out_fn = "reorg_orthopair.h5",
-                               makeFASTA = TRUE,
-                               overwrite = TRUE)
+    if(reorg){
+        message("Start reorganizing orthopairs ...")
+        hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
+                                   out_dir = file.path(working_dir, "reorg_out"),
+                                   out_fn = "reorg_orthopair.h5",
+                                   makeFASTA = TRUE,
+                                   overwrite = TRUE)
+        
+    } else {
+        hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
+    }
+    
+    if(makegraph){
+        message("Summarizing orthopairs into graphs ...")
+        graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
+        graph_fn <- file.path(working_dir, "orthopair.graphml")
+        write_graph(graph = graph, file = graph_fn, format = "graphml")
+        
+    } else {
+        graph_fn <- file.path(working_dir, "orthopair.graphml")
+    }
+    
+    if(!output_table){
+        on.exit()
+        out <- c(hdf5_fn = hdf5_fn, graph_fn = graph_fn)
+        message("Finished all processes in the pipeline!")
+        return(out)
+    }
     
     message("Summarizing orthopairs into a spreadsheat ...")
-    graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
-    df <- graph2df(graph = graph)
-    orthopair_fn <- file.path(hdf5_out_dir, "orthopair_list.csv")
-    write.csv(x = df, file = orthopair_fn, row.names = FALSE)
+    orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
+    unlink(x = orthopair_fn, force = TRUE)
+    graph2df(graph = graph, orthopair_fn = orthopair_fn)
     
     orphan <- getOrphan(hdf5_fn = hdf5_fn)
     orphan <- lapply(seq_along(orphan), function(i){
@@ -115,27 +164,39 @@ orthopair <- function(in_list,
         return(i_out)
     })
     orphan <- do.call("rbind", orphan)
-    orphan_fn <- file.path(hdf5_out_dir, "orphan_list.csv")
+    orphan_fn <- file.path(working_dir, "orphan_list.csv")
     write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
     
     on.exit()
-    out <- c(hdf5_fn = hdf5_fn, orthopair_fn = orthopair_fn, orphan_fn = orphan_fn)
+    out <- c(hdf5_fn = hdf5_fn, graph_fn = graph_fn, 
+             orthopair_fn = orthopair_fn, orphan_fn = orphan_fn)
+    
     message("Finished all processes in the pipeline!")
     return(out)
 }
 
 .prepPairs <- function(in_list,
                        hdf5_out_dir,
-                       sibeliaz_out_dir,
+                       # sibeliaz_out_dir,
                        miniprot_out_dir,
-                       one_to_many = FALSE){
+                       target_pair = NULL){
     in_list <- as.data.frame(x = in_list)
     combs <- combn(x = seq_len(nrow(in_list)), m = 2)
-    if(one_to_many){
-        combs <- combs[, combs[1, ] == 1]
-    }
     comb_names <- matrix(data = in_list$name[combs], nrow = 2)
     comb_id <- apply(X = comb_names, MARGIN = 2, FUN = paste, collapse = "_")
+    if(!is.null(target_pair)){
+        target_pair <- apply(X = comb_names, 
+                             MARGIN = 2,
+                             FUN = function(x){
+                                 any(apply(X = target_pair,
+                                           MARGIN = 1, 
+                                           FUN = function(y){
+                                               return(all(x %in% y))
+                                           }))
+                             })
+        comb_id <- comb_id[target_pair]
+        combs <- combs[, target_pair]
+    }
     
     out <- NULL
     for(i in seq_along(comb_id)){
@@ -149,7 +210,7 @@ orthopair <- function(in_list,
                       query_prot = in_list$prot[combs[1, i]],
                       subject_prot = in_list$prot[combs[2, i]],
                       hdf5_path = file.path(hdf5_out_dir, paste0(prefix, ".h5")),
-                      sibeliaz_out_dir = file.path(sibeliaz_out_dir, prefix),
+                      # sibeliaz_out_dir = file.path(sibeliaz_out_dir, prefix),
                       miniprot_out_dir = file.path(miniprot_out_dir, prefix))
         out <- c(out, list(i_out))
     }
@@ -167,14 +228,13 @@ orthopair <- function(in_list,
                           query_prot,
                           subject_prot,
                           hdf5_path = "./orthopair.h5",
-                          sibeliaz_out_dir = "./sibeliaz_out",
-                          sibeliaz_bin = "sibeliaz",
-                          maf2synteny_bin = "maf2synteny",
+                          # sibeliaz_out_dir = "./sibeliaz_out",
+                          # sibeliaz_bin = "sibeliaz",
                           conda = "conda",
-                          sibeliaz_condaenv = "sibeliaz",
+                          # sibeliaz_condaenv = "sibeliaz",
                           miniprot_bin = "miniprot",
                           miniprot_condaenv = "miniprot",
-                          miniprot_out_dir = "./miniprot_out/",
+                          miniprot_out_dir = "./miniprot_out",
                           n_threads = NULL,
                           verbose = TRUE,
                           overwrite = FALSE,
@@ -207,42 +267,46 @@ orthopair <- function(in_list,
                               query_prot = query_prot,
                               subject_prot = subject_prot,
                               hdf5_path = hdf5_path,
+                              miniprot_out_dir = miniprot_out_dir,
                               overwrite = overwrite,
                               resume = resume,
                               redo = redo,
                               param_list = param_list)
     
-    if(object$resume$sibeliaz){
-        if(verbose){
-            message("Running SibeliaZ for local collinear block (LCB) detection.")
-        }
-        runSibeliaZ(object = object,
-                    out_dir = sibeliaz_out_dir,
-                    sibeliaz_bin = sibeliaz_bin,
-                    maf2synteny_bin = maf2synteny_bin,
-                    conda = conda,
-                    condaenv = sibeliaz_condaenv,
-                    run_sibeliaz = TRUE)
-        
-    } else {
-        if(verbose){
-            message("redo running SibeliaZ.")
-        }
-    }
+    # if(object$resume$sibeliaz){
+    #     if(verbose){
+    #         message("Running SibeliaZ for local collinear block (LCB) detection.")
+    #     }
+    #     runSibeliaZ(object = object,
+    #                 out_dir = sibeliaz_out_dir,
+    #                 sibeliaz_bin = sibeliaz_bin,
+    #                 maf2synteny_bin = maf2synteny_bin,
+    #                 conda = conda,
+    #                 condaenv = sibeliaz_condaenv,
+    #                 run_sibeliaz = TRUE)
+    #     
+    # } else {
+    #     if(verbose){
+    #         message("skip running SibeliaZ.")
+    #     }
+    # }
     
-    if(object$resume$lcbpair){
-        if(verbose){
-            message("Runnig LCB pairing.")
-        }
-        sibeliaLCB2DF(object = object)
-        lcbClassify(object = object)
-        getLCBpairs(object = object)
-        
-    } else {
-        if(verbose){
-            message("redo LCB pairing.")
-        }   
-    }
+    # if(object$resume$lcbgraph){
+    #     if(verbose){
+    #         # message("Runnig LCB pairing.")
+    #         message("Generating LCB graph.")
+    #     }
+    #     sibeliaRaw2Graph(object = object)
+    #     
+    #     # sibeliaLCB2DF(object = object)
+    #     # lcbClassify(object = object)
+    #     # getLCBpairs(object = object)
+    #     
+    # } else {
+    #     if(verbose){
+    #         message("skip LCB pairing.")
+    #     }   
+    # }
     
     if(object$resume$miniprot){
         if(verbose){
@@ -258,7 +322,7 @@ orthopair <- function(in_list,
         
     } else {
         if(verbose){
-            message("redo gene modeling.")
+            message("skip gene modeling.")
         }
     }
     
@@ -274,7 +338,7 @@ orthopair <- function(in_list,
         
     } else {
         if(verbose){
-            message("redo performinig reciprocal BLAST.")
+            message("skip performinig reciprocal BLAST.")
         }
     }
     
@@ -286,7 +350,7 @@ orthopair <- function(in_list,
         
     } else {
         if(verbose){
-            message("redo pairing orthologs.")
+            message("skip pairing orthologs.")
         }
     }
     
@@ -296,9 +360,12 @@ orthopair <- function(in_list,
 
 #' @importFrom rhdf5 H5Lexists
 .checkResumePoint <- function(hdf5_path, resume, redo){
-    out <- list(sibeliaz = TRUE, 
-                lcbpair = TRUE,
-                miniprot = TRUE,
+    # out <- list(sibeliaz = TRUE, 
+    #             lcbpair = TRUE,
+    #             miniprot = TRUE,
+    #             blast = TRUE,
+    #             pairing = TRUE)
+    out <- list( miniprot = TRUE,
                 blast = TRUE,
                 pairing = TRUE)
     if(!resume){
@@ -310,23 +377,25 @@ orthopair <- function(in_list,
     if(!is.null(redo)){
         check <- names(redo) %in% names(out)
         if(!all(check)){
+            # stop("The redo object must be a named list with the following names:",
+            #      "\n'sibeliaz', 'lcbgraph', 'miniprot', 'blast', 'pairing'.")
             stop("The redo object must be a named list with the following names:",
-                 "\n'sibeliaz', 'lcbpair', 'miniprot', 'blast', 'pairing'.")
+                 "\n'miniprot', 'blast', 'pairing'.")
         }
     }
     
-    if(H5Lexists(h5, "timestamp/sibeliaz")){
-        out$sibeliaz <- FALSE
-        if(!is.null(redo$sibeliaz)){
-            out$sibeliaz <- redo$sibeliaz
-        }
-    }
-    if(H5Lexists(h5, "timestamp/lcbpair")){
-        out$lcbpair <- FALSE
-        if(!is.null(redo$lcbpair)){
-            out$lcbpair <- redo$lcbpair
-        }
-    }
+    # if(H5Lexists(h5, "timestamp/sibeliaz")){
+    #     out$sibeliaz <- FALSE
+    #     if(!is.null(redo$sibeliaz)){
+    #         out$sibeliaz <- redo$sibeliaz
+    #     }
+    # }
+    # if(H5Lexists(h5, "timestamp/lcbgraph")){
+    #     out$lcbgraph <- FALSE
+    #     if(!is.null(redo$lcbgraph)){
+    #         out$lcbgraph <- redo$lcbgraph
+    #     }
+    # }
     if(H5Lexists(h5, "timestamp/miniprot")){
         out$miniprot <- FALSE
         if(!is.null(redo$miniprot)){
@@ -375,8 +444,8 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
             stop("The input object must be a PairwiseOrthoPairInput class object.",
                  call. = FALSE)
         }
-        name_hit <- name %in% object$name
-        if(name_hit){
+        name_hit <- object$name %in% name
+        if(any(name_hit)){
             message(name, " exsits in the input file list.")
             while(TRUE){
                 check <- readline(prompt = "Overwrite?(y/n): ")

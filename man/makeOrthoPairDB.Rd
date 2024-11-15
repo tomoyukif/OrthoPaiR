@@ -14,6 +14,7 @@ makeOrthoPairDB(
   query_prot,
   subject_prot,
   hdf5_path = "./orthopair.h5",
+  miniprot_out_dir = "./miniprot",
   overwrite = FALSE,
   resume = FALSE,
   redo = NULL,

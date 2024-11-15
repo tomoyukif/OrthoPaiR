@@ -118,7 +118,7 @@ fixInfiles <- function(genome, gff){
                 digits <- readline(prompt = "How many digits?: ")
                 if(digits != ""){
                     is_numeric <- !is.na(suppressWarnings(as.numeric(genome_names)))
-                    chr_prefix <- readline(prompt = "Set prefix for chromosomes (e.g. chr): ")
+                    chr_prefix <- readline(prompt = "Set prefix for chromosomes, e.g. chr: ")
                     genome_names[is_numeric] <- paste0(chr_prefix, sprintf(paste0("%0", digits, "d"),
                                                                            as.numeric(genome_names[is_numeric])))
                 }
@@ -204,15 +204,28 @@ fixInfiles <- function(genome, gff){
     }
     
     check <- message("\nDrop GFF entries of unnecessary type(s).\n")
-    drop_gff <- gff[!gff$type %in% c("gene", "CDS", "mRNA", "exon", "transcript")]
-    p_drop_gff <- unlist(drop_gff$Parent)
     gff <- gff[gff$type %in% c("gene", "CDS", "mRNA", "exon", "transcript")]
-    gff <- gff[!gff$ID %in% p_drop_gff]
-    element <- gff$type %in% c("CDS", "exon")
-    gff_element <- gff[element]
-    gff <- gff[!element]
-    gff_element <- gff_element[which(unlist(gff_element$Parent) %in% gff$ID)]
-    gff <- c(gff, gff_element)
+    p_gff <- sapply(gff$Parent, function(x){
+        if(length(x) == 0){
+            return(NA)
+        } else {
+            return(x)
+        }
+    })
+    gene_and_tx <- gff$type %in% c("gene", "mRNA", "transcript")
+    gff_gene_and_tx <- gff[gene_and_tx]
+    gff_gene_and_tx <- gff_gene_and_tx[gff_gene_and_tx$ID %in% p_gff]
+    gff <- gff[!gene_and_tx]
+    p_gff <- sapply(gff$Parent, function(x){
+        if(length(x) == 0){
+            return(NA)
+        } else {
+            return(x[1])
+        }
+    })
+    gff <- gff[p_gff %in% gff_gene_and_tx$ID]
+    gff <- c(gff_gene_and_tx, gff)
+    gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
     gff$Name <- gff$ID
     Sys.sleep(3)
     
@@ -220,7 +233,7 @@ fixInfiles <- function(genome, gff){
             paste(head(gff$ID[gff$type == "gene"]), collapse = "\n"))
     check <- readline(prompt = "Replace IDs? (y/n): ")
     if(check != "n"){
-        id_prefix <- readline(prompt = "Set ID prefix (e.g. Os or Osat for Oryza sativa): ")
+        id_prefix <- readline(prompt = "Set ID prefix, e.g. Os or Osat for Oryza sativa: ")
         
         while(TRUE){
             if(id_prefix == ""){
@@ -230,7 +243,7 @@ fixInfiles <- function(genome, gff){
                     break
                     
                 } else {
-                    id_prefix <- readline(prompt = "Set ID prefix (e.g. Os_ or Osat_ for Oryza sativa): ")
+                    id_prefix <- readline(prompt = "Set ID prefix, e.g. Os_ or Osat_ for Oryza sativa: ")
                 }
             } else {
                 break
@@ -245,7 +258,7 @@ fixInfiles <- function(genome, gff){
                         " that will be removed to obtain numbers only.",
                         "Sequence levels in the GFF:\n",
                         paste(seqlevels(gff), collapse = "\n"))
-                chr_prefix <- readline(prompt = "Set chr prefix (e.g. chr): ")
+                chr_prefix <- readline(prompt = "Set chr prefix, e.g. chr: ")
             }
             digits_fmt <- readline(prompt = "How many digits for serial numbers? (default = 6): ")
             if(digits_fmt == ""){
@@ -290,7 +303,7 @@ fixInfiles <- function(genome, gff){
     writeXStringSet(x = cds_seqs, filepath = new_cds_fn)
     writeXStringSet(x = prot_seqs, filepath = new_prot_fn)
     
-    out <- list(gneome = new_genome_fn, gff = new_gff_fn, cds = new_cds_fn, prot = new_prot_fn)
+    out <- list(genome = new_genome_fn, gff = new_gff_fn, cds = new_cds_fn, prot = new_prot_fn)
     return(out)
 }
 
