@@ -735,7 +735,8 @@ mapProt <- function(object,
     
     # For other elements, set gene_id based on their parent transcript/mRNA
     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-    hit <- match(unlist(gff$Parent[element_i]), gff$ID[tx_i])
+    element_p <- sapply(gff$Parent[element_i], "[", 1)
+    hit <- match(element_p, gff$ID[tx_i])
     gff$gene_id[element_i] <- gff$gene_id[tx_i][hit]
     return(gff)
 }
