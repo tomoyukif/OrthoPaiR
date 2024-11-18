@@ -366,8 +366,8 @@ orthopair <- function(in_list,
     #             blast = TRUE,
     #             pairing = TRUE)
     out <- list( miniprot = TRUE,
-                blast = TRUE,
-                pairing = TRUE)
+                 blast = TRUE,
+                 pairing = TRUE)
     if(!resume){
         return(out)
     }
@@ -508,6 +508,21 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
         prot <- readAAStringSet(filepath = prot)
         gff_seq_lev <- seqlevels(gff)
         genome_seq_name <- names(genome)
+        
+        check <- is.null(gff$gene_id)
+        if(check){
+            stop(paste0("In input data validation for ", name),
+                 "\nThe specified GFF does not have the 'gene_id' column.",
+                 call. = FALSE)
+        }
+        
+        check <- any(is.na(gff$gene_id))
+        if(check){
+            stop(paste0("In input data validation for ", name),
+                 "\nThe specified GFF contains NA in the 'gene_id' column.",
+                 call. = FALSE)
+        }
+        
         check <-  gff_seq_lev %in% genome_seq_name
         if(!all(check)){
             stop(paste0("In input data validation for ", name),
