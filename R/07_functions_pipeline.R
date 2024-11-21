@@ -6,7 +6,7 @@
 #' @export
 #'
 #' @importFrom parallel detectCores
-#' @importFrom igraph write_graph
+#' @importFrom igraph write_graph read_graph
 orthopair <- function(in_list,
                       working_dir = ".",
                       # sibeliaz_bin = "sibeliaz",
@@ -126,7 +126,7 @@ orthopair <- function(in_list,
                                    out_dir = file.path(working_dir, "reorg_out"),
                                    out_fn = "reorg_orthopair.h5",
                                    makeFASTA = TRUE,
-                                   overwrite = TRUE)
+                                   overwrite = overwrite)
         
     } else {
         hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
@@ -140,6 +140,7 @@ orthopair <- function(in_list,
         
     } else {
         graph_fn <- file.path(working_dir, "orthopair.graphml")
+        graph <- read_graph(file = graph_fn, format = "graphml")
     }
     
     if(!output_table){
@@ -152,7 +153,7 @@ orthopair <- function(in_list,
     message("Summarizing orthopairs into a spreadsheat ...")
     orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
     unlink(x = orthopair_fn, force = TRUE)
-    graph2df(graph = graph, orthopair_fn = orthopair_fn)
+    graph2df(hdf5_fn = hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
     
     orphan <- getOrphan(hdf5_fn = hdf5_fn)
     orphan <- lapply(seq_along(orphan), function(i){
@@ -509,6 +510,13 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
         gff_seq_lev <- seqlevels(gff)
         genome_seq_name <- names(genome)
         
+        check <- .checkGFFstr(gff = gff)
+        if(check$check){
+            stop(paste0("In input data validation for ", name), "\n",
+                 check$msg,
+                 call. = FALSE)
+        }
+        
         check <- is.null(gff$gene_id)
         if(check){
             stop(paste0("In input data validation for ", name),
@@ -564,4 +572,31 @@ orgInputFiles <- function(object = NULL, name, genome, gff, cds, prot){
                            prot = in_list$prot[i])
         }
     }
+}
+
+.checkGFFstr <- function(gff){
+    check <- any(is.na(gff$type)) | any(gff$type == "")
+    if(check){
+        out <- list(check = TRUE, msg = "NA or missing values in the type column.")
+        return(out)
+    }
+    
+    gene <- gff[gff$type %in% "gene"]
+    tx <- gff[gff$type %in% c("mRNA", "transcript")]
+    tx_p <- unlist(tx$Parent)
+    check <- !all(tx_p %in% gene$ID)
+    if(check){
+        out <- list(check = TRUE, 
+                    msg = "The Parent column of the transcripts contains values that do not match the values in the ID column of the genes.")
+        return(out)
+    }
+    check <- !all(gene$ID %in% tx_p)
+    if(check){
+        out <- list(check = TRUE, 
+                    msg = "The ID column of the genes contains values that do not match the values in the Parent column of the transcripts.")
+        return(out)
+    }
+    
+    out <- list(check = FALSE)
+    return(out)
 }

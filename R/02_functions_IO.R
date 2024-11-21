@@ -79,14 +79,16 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                      file = out$h5, "files/subject_prot")
         
     } else {
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
-                     file = out$h5, "files/query_gff")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
-                     file = out$h5, "files/subject_gff")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
-                     file = out$h5, "files/query_cds")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
-                     file = out$h5, "files/subject_cds")
+        if(out$resume$blast | out$resume$pairing){
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
+                         file = out$h5, "files/query_gff")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
+                         file = out$h5, "files/subject_gff")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
+                         file = out$h5, "files/query_cds")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
+                         file = out$h5, "files/subject_cds")
+        }
     }
     
     # Summarize the query and subject genomes

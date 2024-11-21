@@ -4,7 +4,7 @@
 \alias{.condaExe}
 \title{Execute a command using conda environment}
 \usage{
-.condaExe(conda, env, command, args)
+.condaExe(conda, env, command, args, log_fn)
 }
 \arguments{
 \item{conda}{Path to the conda executable.}

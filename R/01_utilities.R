@@ -156,6 +156,7 @@ fixInfiles <- function(genome, gff){
     writeXStringSet(x = genome, new_genome_fn)
     
     gff <- import.gff(gff)
+    gff$Name <- gff$ID
     gff_levels <- seqlevels(gff)
     while(TRUE){
         if(all(gff_levels %in% old_genome_names)){
@@ -203,31 +204,29 @@ fixInfiles <- function(genome, gff){
         }
     }
     
-    check <- message("\nDrop GFF entries of unnecessary type(s).\n")
-    gff <- gff[gff$type %in% c("gene", "CDS", "mRNA", "exon", "transcript")]
-    p_gff <- sapply(gff$Parent, function(x){
-        if(length(x) == 0){
-            return(NA)
-        } else {
-            return(x)
-        }
-    })
-    gene_and_tx <- gff$type %in% c("gene", "mRNA", "transcript")
-    gff_gene_and_tx <- gff[gene_and_tx]
-    gff_gene_and_tx <- gff_gene_and_tx[gff_gene_and_tx$ID %in% p_gff]
-    gff <- gff[!gene_and_tx]
-    p_gff <- sapply(gff$Parent, function(x){
-        if(length(x) == 0){
-            return(NA)
-        } else {
-            return(x[1])
-        }
-    })
-    gff <- gff[p_gff %in% gff_gene_and_tx$ID]
-    gff <- c(gff_gene_and_tx, gff)
+    message("\nDrop GFF entries of unnecessary type(s).\n")
+    gene <- gff[grep("^gene$", gff$type)]
+    tx <- gff[gff$type %in% c("mRNA", "transcript")]
+    tx_p <- sapply(tx$Parent, function(x){if(length(x) == 0) {return(NA)} else {return(x[1])}})
+    hit_tx <- tx[tx_p %in% gene$ID]
+    gene <- gene[gene$ID %in% tx_p]
+    element <- gff[gff$type %in% c("exon", "CDS")]
+    element_p <- sapply(element$Parent, function(x){if(length(x) == 0) {return(NA)} else {return(x[1])}})
+    hit_element <- element[element_p %in% hit_tx$ID]
+    check <- any(sapply(hit_element$Parent, length) > 1)
+    if(check){
+        hit_element$Parent <- lapply(hit_element$Parent, "[", 1)
+    }
+    gff <- c(gene, hit_tx, hit_element)
     gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
-    gff$Name <- gff$ID
     Sys.sleep(3)
+    
+    check <- any(is.na(gff$ID))
+    if(check){
+        gff$ID[gff$type %in% c("CDS", "exon")] <- paste(unlist(gff$Parent[gff$type %in% c("CDS", "exon")]), 
+                                                        gff$type[gff$type %in% c("CDS", "exon")], 
+                                                        sep = ":")
+    }
     
     message("Gene IDs in the GFF:\n",
             paste(head(gff$ID[gff$type == "gene"]), collapse = "\n"))
@@ -260,9 +259,10 @@ fixInfiles <- function(genome, gff){
                         paste(seqlevels(gff), collapse = "\n"))
                 chr_prefix <- readline(prompt = "Set chr prefix, e.g. chr: ")
             }
-            digits_fmt <- readline(prompt = "How many digits for serial numbers? (default = 6): ")
+            message("Two zeros will be automatically added at the end of serial numbers.")
+            digits_fmt <- readline(prompt = "How many digits for serial numbers? (default = 5): ")
             if(digits_fmt == ""){
-                digits_fmt <- "%06d00"
+                digits_fmt <- "%05d00"
             } else {
                 digits_fmt <- paste0("%0", digits_fmt, "d00")
             }
@@ -274,8 +274,43 @@ fixInfiles <- function(genome, gff){
         }
     }
     
+    message(prompt = "\nChecking the 'gene_id' column in the GFF.\n")
+    need_fix_gene_id <- FALSE
     if(is.null(gff$gene_id)){
+        need_fix_gene_id <- TRUE
+        
+    } else {
+        if(any(is.na(gff$gene_id))){
+            need_fix_gene_id <- TRUE
+        }
+    }
+    if(need_fix_gene_id){
         gff <- .setGeneID(gff)
+    }
+    
+    message(prompt = "\nChecking the 'Parent' column in the GFF.\n")
+    non_gene_i <- !gff$type %in% c("gene")
+    n_entry <- sapply(gff$Parent[non_gene_i], length)
+    if(any(n_entry > 1)){
+        message(prompt = "\nSome entires in the Parent column have multuple IDs.\n")
+        message(prompt = "\nEach entry in the Parent column must be a single value to process in OrthoPaiR.\n")
+        message(prompt = "\nThe first ID in each entry usually is the ID that is required to process in OrthoPaiR.\n")
+        while(TRUE){
+            check <- readline(prompt = "Are you sure to take only the first ID for each entry? (y/n): ")
+            if(check == "y"){
+                non_gene_i <- !gff$type %in% c("gene")
+                non_gene_p <- sapply(gff$Parent[non_gene_i], "[", 1)
+                gff$Parent[non_gene_i] <- lapply(non_gene_p, c)
+                hit <- match(non_gene_p, gff$ID)
+                gff$gene_id[non_gene_i] <- gff$ID[hit]
+                break
+                
+            } else if(check == "n"){
+                message(prompt = "\nOrthoPaiR may produce an error during the process.\n")
+                break
+            }
+            
+        }
     }
     
     message(prompt = "\nDrop unnecessary GFF annotation(s).\n")

@@ -348,6 +348,11 @@ reorgOrthopiars <- function(hdf5_fn,
     mp_gff_tx_i <- mp_gff$type %in% c("transcript", "mRNA")
     
     hit <- match(mp_gff_block, ref_gff_block)
+    if(all(is.na(hit))){
+        id2id <- NULL
+        out <- list(rest_mp = mp_gff, id2id = id2id)
+        return(out)
+    }
     mp_hit_tx_i <- as.numeric(names(mp_gff_block[!is.na(hit)]))
     ref_hit_tx_i <- as.numeric(names(ref_gff_block[na.omit(hit)]))
     mp_hit_tx <- mp_gff$ID[mp_gff_tx_i][mp_hit_tx_i]
@@ -374,6 +379,13 @@ reorgOrthopiars <- function(hdf5_fn,
     rest_gff_tx_i <- rest_gff$type %in% c("transcript", "mRNA")
     ol <- findOverlaps(rest_gff[rest_gff_cds_i], ref_gff[ref_gff_cds_i])
     ol <- as.data.frame(ol)
+    if(nrow(ol) == 0){
+        out <- list(non_ol_mp_gff = rest_gff,
+                    id2id = NULL,
+                    id2id_split_mp = NULL,
+                    id2id_split_ref = NULL)
+        return(out)
+    }
     ol$query_gene <- rest_gff$gene_id[rest_gff_cds_i][ol$queryHits]
     ol$queryHits <- unlist(rest_gff$Parent[rest_gff_cds_i][ol$queryHits])
     tx_id <- rest_gff$ID[rest_gff_tx_i]
@@ -688,10 +700,14 @@ makeOrthoGraph <- function(hdf5_fn){
              " by the reorgOrthopiars() function.")
     }
     files <- names(h5$orthopair_gene)
-    gene_list <- as.vector(h5$gene_list$gene)
-    gene_list <- unique(gene_list)
-    graph <- make_empty_graph(n = length(gene_list), directed = FALSE)
-    V(graph)$name <- gene_list
+    old_gene_id <- as.vector(h5$gene_list$old_gene_id)
+    gene_id <- as.vector(h5$gene_list$gene)
+    dup_id <- duplicated(gene_id)
+    gene_id <- gene_id[!dup_id]
+    old_gene_id <- old_gene_id[!dup_id]
+    graph <- make_empty_graph(n = length(gene_id), directed = FALSE)
+    V(graph)$name <- gene_id
+    V(graph)$old_gene_id <- old_gene_id
     for(i in seq_along(files)){
         orthopair_gene <- h5$orthopair_gene[[i]]
         edges <- subset(orthopair_gene, select = c(query_gene, subject_gene))
@@ -713,13 +729,14 @@ makeOrthoGraph <- function(hdf5_fn){
 
 #' @importFrom igraph components ego V subgraph vcount
 #' @export
-graph2df <- function(graph, orthopair_fn){
-    gene_list <- attributes(graph)$gene_list
+graph2df <- function(hdf5_fn, graph, orthopair_fn){
+    h5 <- H5Fopen(hdf5_fn)
+    on.exit(H5Fclose(h5))
+    gene_list <- h5$gene_list
     gene_list$assign <- FALSE
     genomes <- sort(unique(gene_list$genome))
     graph_grp <- .groupGraph(graph = graph)
     
-    out <- NULL
     count <- 0
     full <- TRUE
     while(TRUE){
@@ -740,7 +757,9 @@ graph2df <- function(graph, orthopair_fn){
                                       gene_list = gene_list,
                                       n_len = n_len,
                                       full = full)
-        .writeEntries(x = full_con$full_con, file = orthopair_fn)
+        if(!is.null(full_con$full_con)){
+            .writeEntries(x = full_con$full_con, file = orthopair_fn)
+        }
         
         if(is.null(full_con$rest_genes)){
             full_mem <- list(rest_genes = NULL)
@@ -752,7 +771,9 @@ graph2df <- function(graph, orthopair_fn){
                                          gene_list = gene_list,
                                          n_len = n_len,
                                          full = full)
-            .writeEntries(x = full_mem$full_mem, file = orthopair_fn)
+            if(!is.null(full_mem$full_mem)){
+                .writeEntries(x = full_mem$full_mem, file = orthopair_fn)
+            }
         }
         
         if(is.null(full_mem$rest_genes)){
@@ -765,7 +786,10 @@ graph2df <- function(graph, orthopair_fn){
                                           gene_list = gene_list,
                                           n_len = n_len,
                                           full = full)
-            .writeEntries(x = full_chain$full_chain, file = orthopair_fn)
+            
+            if(!is.null(full_chain$full_chain)){
+                .writeEntries(x = full_chain$full_chain, file = orthopair_fn)
+            }
         }
         
         out <- rbind(full_con$full_con, 
@@ -779,7 +803,7 @@ graph2df <- function(graph, orthopair_fn){
         graph_ego <- lapply(graph_ego, names)
         graph <- subgraph(graph = graph, vids = unlist(graph_ego))
     }
-    
+    out <- read.csv(file = orthopair_fn)
     out$SOG <- NA
     i <- 1
     while(TRUE){
@@ -792,7 +816,8 @@ graph2df <- function(graph, orthopair_fn){
     }
     out <- out[order(out$SOG), ]
     out <- .setTxID(out = out, gene_list = gene_list)
-    return(out)
+    write.csv(out, file = orthopair_fn, row.names = FALSE)
+    invisible(orthopair_fn)
 }
 
 .writeEntries <- function(x, file){
@@ -856,7 +881,9 @@ graph2df <- function(graph, orthopair_fn){
     graph_cliques <- .getGraphCliques(graph = graph)
     is_full_con <- graph_cliques$n == n_len
     if(sum(is_full_con) == 0){
-        return(unlist(graph_cliques$cliques[!is_full_con]))
+        out <- list(rest_genes = unlist(graph_cliques$cliques[!is_full_con]),
+                    full_con = NULL)
+        return(out)
     }
     full_con <- graph_cliques$cliques[is_full_con]
     full_con <- data.frame(gene_id = unlist(full_con),
