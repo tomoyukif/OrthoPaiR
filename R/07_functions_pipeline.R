@@ -347,7 +347,9 @@ orthopair <- function(in_list,
         if(verbose){
             message("Pairing orthologs.")
         }
-        syntenicOrtho(object = object)
+        syntenicOrtho(object = object,
+                      rbbh_mci_threshold = object$param_list$rbbh_mci_threshol,
+                      rbh_mci_threshold = object$param_list$rbh_mci_threshol)
         
     } else {
         if(verbose){

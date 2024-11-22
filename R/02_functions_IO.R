@@ -110,12 +110,14 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     out <- list(len_diff = 0.2,
                 pident = 0,
                 qcovs = 0,
-                evalue = 1e-4)
+                evalue = 1e-4,
+                rbbh_mci_threshold = 0.1,
+                rbh_mci_threshold = 0.4)
     if(!is.null(param_list)){
         check <- names(param_list) %in% names(out)
         if(!all(check)){
             stop("The param_list object must be a named list with the following names:",
-                 "\n'len_diff', 'pident', 'qcovs', 'evalue'.")
+                 "\n'len_diff', 'pident', 'qcovs', 'evalue', 'rbbh_mci_threshold', 'rbh_mci_threshold'.")
         }
         if(!is.null(param_list$len_diff)){
             out$len_diff <- param_list$len_diff
@@ -129,12 +131,20 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
         if(!is.null(param_list$evalue)){
             out$evalue <- param_list$evalue
         }
+        if(!is.null(param_list$rbbh_mci_threshold)){
+            out$rbbh_mci_threshold <- param_list$rbbh_mci_threshold
+        }
+        if(!is.null(param_list$rbh_mci_threshold)){
+            out$rbh_mci_threshold <- param_list$rbh_mci_threshold
+        }
     }
     message("Use following parameters:")
     message("len_diff = ", out$len_diff)
     message("pident = ", out$pident)
     message("qcovs = ", out$qcovs)
     message("evalue = ", out$evalue)
+    message("rbbh_mci_threshold = ", out$rbbh_mci_threshold)
+    message("rbh_mci_threshold = ", out$rbh_mci_threshold)
     return(out)
 }
 

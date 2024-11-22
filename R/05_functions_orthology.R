@@ -6,7 +6,7 @@
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom parallel mclapply
-syntenicOrtho <- function(object){
+syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 0.4){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
     
@@ -29,10 +29,13 @@ syntenicOrtho <- function(object){
     g2g_graph <- .linkGene2Genome(h5 = h5)
     anchor <- .findAnchors(h5 = h5,
                            # genome_graph = genome_graph,
-                           g2g_graph = g2g_graph)
+                           g2g_graph = g2g_graph,
+                           rbbh_mci_threshold = rbbh_mci_threshold)
     
-    t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
-    orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph)
+    t2a_graph <- .linkTx2Anchor(anchor = anchor$anchor, g2g_graph = g2g_graph)
+    orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph, 
+                                    rbbh_mci_threshold = anchor$rbbh_mci_threshold,
+                                    rbh_mci_threshold = rbh_mci_threshold)
     # orthopair <- .pickNonSyntenicOrtho(h5 = h5, orthopair = orthopair, g2g_graph = g2g_graph)
     orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
     
@@ -345,11 +348,12 @@ syntenicOrtho <- function(object){
 #' @importFrom dplyr left_join
 .findAnchors <- function(h5, 
                          # genome_graph,
-                         g2g_graph){
+                         g2g_graph,
+                         rbbh_mci_threshold){
     rbbh <- h5$blast$rbbh
     score <- .getRBHscore(rbh = rbbh)
-    mutual_ci_threashold <- quantile(x = score$mutual_ci, probs = 0.1)
-    rbbh <- subset(rbbh, subset = score$mutual_ci >= mutual_ci_threashold)
+    rbbh_mci_threshold <- quantile(x = score$mutual_ci, probs = rbbh_mci_threshold)
+    rbbh <- subset(rbbh, subset = score$mutual_ci >= rbbh_mci_threshold)
     # genome_graph <- subset(genome_graph, 
     #                        select = c(query_genome, subject_genome))
     root_hit <- match(rbbh$qseqid, g2g_graph$query_tx$tx)
@@ -365,7 +369,8 @@ syntenicOrtho <- function(object){
     #                   by = "subject_genome", relationship = "many-to-many")
     # anchor <- subset(rbbh, subset = leaf == expected_leaf, select = c(root, leaf))
     anchor <- unique(anchor)
-    return(anchor)
+    out <- list(anchor = anchor, rbbh_mci_threashold = rbbh_mci_threshold)
+    return(out)
 }
 
 #' @importFrom dplyr left_join
@@ -435,9 +440,15 @@ syntenicOrtho <- function(object){
 }
 
 #' @importFrom dplyr left_join
-.findSyntenicOrtho <- function(h5, g2g_graph, t2a_graph){
+.findSyntenicOrtho <- function(h5, 
+                               g2g_graph,
+                               t2a_graph,
+                               rbbh_mci_threshold,
+                               rbh_mci_threshold){
     rbh <- h5$blast$rbh
     rbh_score <- .getRBHscore(rbh = rbh)
+    rbh_mci_threshold <- rbbh_mci_threshold * rbh_mci_threshold
+    rbh <- subset(rbh, subset = rbh_score$mutual_ci >= rbh_mci_threshold)
     
     root_hit <- match(rbh$qseqid, t2a_graph$query_tx$tx)
     leaf_hit <- match(rbh$sseqid, t2a_graph$subject_tx$tx)
