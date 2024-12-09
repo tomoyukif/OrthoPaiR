@@ -250,15 +250,13 @@ fixInfiles <- function(genome, gff){
         }
         
         if(id_prefix != ""){
-            if(is.null(chr_prefix)){
-                message("Replaced IDs will '[ID prefix][chr number]G[serial number]'\n",
-                        "The chr numbers will be otbained from the sequence levels of the GFF",
-                        "Please specify the prefix of the sequence levels of chromosomes",
-                        " that will be removed to obtain numbers only.",
-                        "Sequence levels in the GFF:\n",
-                        paste(seqlevels(gff), collapse = "\n"))
-                chr_prefix <- readline(prompt = "Set chr prefix, e.g. chr: ")
-            }
+            message("Replaced IDs will '[ID prefix][chr number]G[serial number]'\n",
+                    "The chr numbers will be otbained from the sequence levels of the GFF",
+                    "Please specify the prefix of the sequence levels of chromosomes",
+                    " that will be removed to obtain numbers only.",
+                    "Sequence levels in the GFF:\n",
+                    paste(seqlevels(gff), collapse = "\n"))
+            chr_prefix <- readline(prompt = "Set chr prefix, e.g. chr: ")
             message("Two zeros will be automatically added at the end of serial numbers.")
             digits_fmt <- readline(prompt = "How many digits for serial numbers? (default = 5): ")
             if(digits_fmt == ""){

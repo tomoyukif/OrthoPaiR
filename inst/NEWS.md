@@ -1,3 +1,7 @@
+Changes in version 0.4.2 (2024-12-09)
++ Minor bug fix in syntenicOrtho() to skip .splitGene() if the first run of 
++ .splitGene() returned NULL to the 'rest' slot in the output object.
+
 Changes in version 0.4.1 (2024-11-15)
 + Remove the LCB detection step by SibeliaZ and change the algorithm to let the anchoring step only depends on the RBBH result with filtering by the 10%-quantile of mutual-CI.
 

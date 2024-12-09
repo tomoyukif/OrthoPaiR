@@ -46,18 +46,20 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
     rest_orthopair <- split_orthopair$rest
     
-    while(TRUE){
-        rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
-        rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
-        if(is.null(rest_orthopair$rest)){
-            split_orthopair$splited <- rbind(split_orthopair$splited,
-                                             rest_orthopair$rest)
-            break
-            
-        } else {
-            split_orthopair$splited <- rbind(split_orthopair$splited,
-                                             rest_orthopair$splited)
-            rest_orthopair <- rest_orthopair$rest
+    if(!is.null(rest_orthopair$rest)){
+        while(TRUE){
+            rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
+            rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
+            if(is.null(rest_orthopair$rest)){
+                split_orthopair$splited <- rbind(split_orthopair$splited,
+                                                 rest_orthopair$rest)
+                break
+                
+            } else {
+                split_orthopair$splited <- rbind(split_orthopair$splited,
+                                                 rest_orthopair$splited)
+                rest_orthopair <- rest_orthopair$rest
+            }
         }
     }
     orthopair_gene <- split_orthopair$splited
@@ -369,7 +371,7 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     #                   by = "subject_genome", relationship = "many-to-many")
     # anchor <- subset(rbbh, subset = leaf == expected_leaf, select = c(root, leaf))
     anchor <- unique(anchor)
-    out <- list(anchor = anchor, rbbh_mci_threashold = rbbh_mci_threshold)
+    out <- list(anchor = anchor, rbbh_mci_threshold = rbbh_mci_threshold)
     return(out)
 }
 

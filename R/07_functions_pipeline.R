@@ -368,9 +368,9 @@ orthopair <- function(in_list,
     #             miniprot = TRUE,
     #             blast = TRUE,
     #             pairing = TRUE)
-    out <- list( miniprot = TRUE,
-                 blast = TRUE,
-                 pairing = TRUE)
+    out <- list(miniprot = TRUE,
+                blast = TRUE,
+                pairing = TRUE)
     if(!resume){
         return(out)
     }
