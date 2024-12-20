@@ -227,7 +227,6 @@ fixInfiles <- function(genome, gff){
                                                         gff$type[gff$type %in% c("CDS", "exon")], 
                                                         sep = ":")
     }
-    
     message("Gene IDs in the GFF:\n",
             paste(head(gff$ID[gff$type == "gene"]), collapse = "\n"))
     check <- readline(prompt = "Replace IDs? (y/n): ")
