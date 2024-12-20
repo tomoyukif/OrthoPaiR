@@ -65,8 +65,10 @@ reorgOrthopiars <- function(hdf5_fn,
                                         id2id = id2id)
                 
                 id2id_df <- rbind(id2id_df, id2id$identical, id2id$id2id)
-                hit <- match(id2id_df$ref_tx_id, ref_gff$ID)
-                id2id_df$ref_gene_id <- ref_gff$gene_id[hit]
+                if(!is.null(id2id_df)){
+                    hit <- match(id2id_df$ref_tx_id, ref_gff$ID)
+                    id2id_df$ref_gene_id <- ref_gff$gene_id[hit]
+                }
             }
             id2id_list <- c(id2id_list, list(id2id_df))
             .outputGFFdata(gff = ref_gff,
@@ -548,60 +550,74 @@ reorgOrthopiars <- function(hdf5_fn,
 
 .replaceOrthoPairID <- function(df, id2id_list, genome){
     if(genome$target == "query"){
-        id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
-        hit <- match(df$query_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$target_genome]])){
+            id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
+            hit <- match(df$query_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
         
-        id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
-        hit <- match(df$subject_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$pair_genome]])){
+            id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
+            hit <- match(df$subject_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
-        
     } else {
-        id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
-        hit <- match(df$subject_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$target_genome]])){
+            id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
+            hit <- match(df$subject_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
         
-        id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
-        hit <- match(df$query_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$pair_genome]])){
+            id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
+            hit <- match(df$query_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
+                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
     }
     
     if(genome$target == "query"){
-        id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
-        hit <- match(df$query_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$target_genome]])){
+            id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
+            hit <- match(df$query_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
         
-        id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
-        hit <- match(df$subject_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$pair_genome]])){
+            id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
+            hit <- match(df$subject_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
-        
     } else {
-        id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
-        hit <- match(df$query_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$pair_genome]])){
+            id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
+            hit <- match(df$query_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
         
-        id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
-        hit <- match(df$subject_tx, id2id$mp_tx_id)
-        if(any(!is.na(hit))){
-            df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+        if(!is.null(id2id_list[[genome$target_genome]])){
+            id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
+            hit <- match(df$subject_tx, id2id$mp_tx_id)
+            if(any(!is.na(hit))){
+                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
+            }
         }
     }
     
@@ -647,6 +663,10 @@ reorgOrthopiars <- function(hdf5_fn,
                      name = paste0("orthopair_gene/", data_name))
     }
     
+    orphan_list <- .orgOrphan(hdf5_fn = hdf5_fn, 
+                              orthopair_list = orthopair_list,
+                              gene_list = gene_list)
+    
     .h5creategroup(hdf5_fn, "genome_fn")
     for(i in seq_along(genome_fn)){
         .h5overwrite(obj = genome_fn[i],
@@ -657,6 +677,10 @@ reorgOrthopiars <- function(hdf5_fn,
     .h5overwrite(obj = gene_list,
                  file = hdf5_fn,
                  name = "gene_list")
+    
+    .h5overwrite(obj = orphan_list,
+                 file = hdf5_fn,
+                 name = "orphan_list")
     
     .h5overwrite(obj = "reorg_orthopair",
                  file = hdf5_fn,
@@ -686,6 +710,44 @@ reorgOrthopiars <- function(hdf5_fn,
     return(gff)
 }
 
+.orgOrphan <- function(hdf5_fn, orthopair_list, gene_list){
+    .h5creategroup(hdf5_fn, "orphan_tx")
+    .h5creategroup(hdf5_fn, "orphan_gene")
+    genomes <- unique(gene_list$genome)
+    out <- NULL
+    for(i in seq_along(genomes)){
+        hit <- grepl(genomes[i], orthopair_list$genomewise_list$pair_genome) | 
+            grepl(genomes[i], orthopair_list$genomewise_list$target_genome)
+        hit <- which(hit)
+        hit_tx <- NULL
+        for(j in hit){
+            pairs_in_j <- orthopair_list$gene[[j]]
+            check <- genomes[i] == orthopair_list$genomewise_list$pair_genome[i]
+            if(check){
+                hit_tx <- c(hit_tx, pairs_in_j$query_tx)
+            } else {
+                hit_tx <- c(hit_tx, pairs_in_j$subject_tx)
+            }
+            hit_tx <- unique(hit_tx)
+        }
+        genome_out <- subset(gene_list,
+                             subset = genome == genomes[i])
+        orphan_tx <- unique(genome_out$tx_id[!genome_out$tx_id %in% hit_tx])
+        hit_old_gene_id <- genome_out$old_gene_id[genome_out$tx_id %in% hit_tx]
+        orphan_gene <- unique(genome_out$old_gene_id[!genome_out$old_gene_id %in% hit_old_gene_id])
+        out <- rbind(out, data.frame(genome = genomes[i], 
+                                     gene = unique(orphan_gene)))
+        
+        .h5overwrite(obj = orphan_tx,
+                     file = hdf5_fn,
+                     name = paste0("orphan_tx/", genomes[i]))
+        .h5overwrite(obj = orphan_gene,
+                     file = hdf5_fn,
+                     name = paste0("orphan_gene/", genomes[i]))
+    }
+    return(out)
+}
+
 ################################################################################
 #' @importFrom igraph make_empty_graph add_edges add_vertices V<-
 #' @export
@@ -699,23 +761,15 @@ makeOrthoGraph <- function(hdf5_fn){
         stop("This function onyl accepts an output hdf5 file created",
              " by the reorgOrthopiars() function.")
     }
-    files <- names(h5$orthopair_gene)
-    old_gene_id <- as.vector(h5$gene_list$old_gene_id)
-    gene_id <- as.vector(h5$gene_list$gene)
-    dup_id <- duplicated(gene_id)
-    gene_id <- gene_id[!dup_id]
-    old_gene_id <- old_gene_id[!dup_id]
-    graph <- make_empty_graph(n = length(gene_id), directed = FALSE)
-    V(graph)$name <- gene_id
-    V(graph)$old_gene_id <- old_gene_id
-    for(i in seq_along(files)){
+    n_files <- length(h5$orthopair_gene)
+    orphan_gene_id <- unlist(h5$orphan_gene)
+    graph <- make_empty_graph(n = 0, directed = FALSE)
+    for(i in seq_len(n_files)){
         orthopair_gene <- h5$orthopair_gene[[i]]
         edges <- subset(orthopair_gene, select = c(query_gene, subject_gene))
         edges <- as.vector(t(edges))
         check <- !edges %in% V(graph)$name
         if(any(check)){
-            warning("Some gene IDs are not found in the gene list for the reorganized orthopair data.\n",
-                    paste(head(edges[check]), collapse = ", "))
             vertices <- unique(edges[check])
             graph <- add_vertices(graph = graph, nv = length(vertices), name = vertices)
         }
@@ -724,6 +778,7 @@ makeOrthoGraph <- function(hdf5_fn){
                            attr = list(mutual_ci = orthopair_gene$mutual_ci,
                                        class = orthopair_gene$class))
     }
+    graph <- add_vertices(graph = graph, nv = length(orphan_gene_id), name = orphan_gene_id)
     return(graph)
 }
 
@@ -1016,7 +1071,7 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn){
     if(sum(full_chain) == 0){ return(list(rest_genes = rest_genes)) }
     valid_ego_id <- names(n_entry_full_chain_candidate[full_chain])
     
-    full_chain <- full_chain_candidate[full_chain_candidate$ego_id %in% as.numeric(valid_ego_id), ]
+    full_chain <- full_chain_candidate[full_chain_candidate$full_ego_id %in% as.numeric(valid_ego_id), ]
     full_chain <- matrix(data = full_chain$gene_id, 
                          ncol = length(genomes),
                          byrow = TRUE)

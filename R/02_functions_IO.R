@@ -308,24 +308,7 @@ getOrphan <- function(object = NULL, hdf5_fn = NULL){
     
     check <- h5$data_type == "reorg_orthopair"
     if(check){
-        gene_list <- h5$gene_list
-        genomes <- unique(gene_list$genome)
-        genome_comb <- names(h5$orthopair_gene)
-        out <- NULL
-        for(i in seq_along(genomes)){
-            genome_out <- subset(gene_list,
-                                 subset = genome == genomes[i],
-                                 select = gene)
-            genome_out <- unlist(genome_out)
-            hit <- grep(genomes[i], genome_comb)
-            for(j in hit){
-                gene_in_j <- h5$orthopair_gene[[genome_comb[j]]]
-                genome_out <- genome_out[!genome_out %in% gene_in_j$query_gene]
-                genome_out <- genome_out[!genome_out %in% gene_in_j$subject_gene]
-            }
-            out <- c(out, list(unique(genome_out)))
-        }
-        names(out) <- genomes
+        out <- h5$orphan_gene
         
     } else {
         if(!H5Lexists(h5, "orphan_query")){
