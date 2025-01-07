@@ -1,3 +1,6 @@
+Changes in version 0.4.3 (2025-01-07)
++ Minor bug fix in .orgOrphan(). and the main pipeline control. 
+
 Changes in version 0.4.2 (2024-12-09)
 + Minor bug fix in syntenicOrtho() to skip .splitGene() if the first run of 
 + .splitGene() returned NULL to the 'rest' slot in the output object.

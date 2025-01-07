@@ -722,7 +722,7 @@ reorgOrthopiars <- function(hdf5_fn,
         hit_tx <- NULL
         for(j in hit){
             pairs_in_j <- orthopair_list$gene[[j]]
-            check <- genomes[i] == orthopair_list$genomewise_list$pair_genome[i]
+            check <- genomes[i] == orthopair_list$genomewise_list$target_genome[j]
             if(check){
                 hit_tx <- c(hit_tx, pairs_in_j$query_tx)
             } else {

@@ -140,33 +140,40 @@ orthopair <- function(in_list,
         
     } else {
         graph_fn <- file.path(working_dir, "orthopair.graphml")
-        graph <- read_graph(file = graph_fn, format = "graphml")
+        
+        if(output_table){
+            if(file.exists(graph_fn)){
+                graph <- read_graph(file = graph_fn, format = "graphml")
+                
+            } else {
+                message("You set 'makegraph = FALSE' and 'output_table = TRUE'.", 
+                        "\nHowever, the graph file ", graph_fn, 
+                        ", which is required to create a table output, is not found",
+                        "The table creation step will be skipped.")
+                output_table <- FALSE
+            }
+        }
     }
     
-    if(!output_table){
-        on.exit()
-        out <- c(hdf5_fn = hdf5_fn, graph_fn = graph_fn)
-        message("Finished all processes in the pipeline!")
-        return(out)
+    if(output_table){
+        message("Summarizing orthopairs into a spreadsheat ...")
+        orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
+        unlink(x = orthopair_fn, force = TRUE)
+        graph2df(hdf5_fn = hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
+        
+        orphan <- getOrphan(hdf5_fn = hdf5_fn)
+        orphan <- lapply(seq_along(orphan), function(i){
+            i_orphan <- orphan[[i]]
+            i_out <- matrix(data = NA, nrow = length(i_orphan), ncol = length(orphan))
+            i_out[, i] <- i_orphan
+            i_out <- data.frame(i_out)
+            names(i_out) <- names(orphan)
+            return(i_out)
+        })
+        orphan <- do.call("rbind", orphan)
+        orphan_fn <- file.path(working_dir, "orphan_list.csv")
+        write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
     }
-    
-    message("Summarizing orthopairs into a spreadsheat ...")
-    orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
-    unlink(x = orthopair_fn, force = TRUE)
-    graph2df(hdf5_fn = hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
-    
-    orphan <- getOrphan(hdf5_fn = hdf5_fn)
-    orphan <- lapply(seq_along(orphan), function(i){
-        i_orphan <- orphan[[i]]
-        i_out <- matrix(data = NA, nrow = length(i_orphan), ncol = length(orphan))
-        i_out[, i] <- i_orphan
-        i_out <- data.frame(i_out)
-        names(i_out) <- names(orphan)
-        return(i_out)
-    })
-    orphan <- do.call("rbind", orphan)
-    orphan_fn <- file.path(working_dir, "orphan_list.csv")
-    write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
     
     on.exit()
     out <- c(hdf5_fn = hdf5_fn, graph_fn = graph_fn, 
