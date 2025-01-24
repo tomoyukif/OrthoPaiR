@@ -37,13 +37,6 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                   query_prot = query_prot,
                   subject_prot = subject_prot)
     
-    # Check if all input files exist
-    for(i in seq_along(files)){
-        if(!file.exists(files[[i]])){
-            stop(files[[i]], " do not exists!")
-        }
-    }
-    
     out <- NULL
     out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
     
@@ -52,11 +45,17 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                                 redo = redo)
     
     out$resume <- resume
-    if(out$resume$miniprot){
+    if(is.null(files$query_genome) | is.null(files$subject_genome)){
+        out$resume$miniprot <- FALSE
         reset <- TRUE
         
     } else {
-        reset <- FALSE
+        if(out$resume$miniprot){
+            reset <- TRUE
+            
+        } else {
+            reset <- FALSE
+        }
     }
     
     if(reset){
