@@ -395,8 +395,8 @@ fixInfiles <- function(genome, gff){
 #' @importFrom S4Vectors mcols mcols<-
 #'
 #' @export
-formatGFF <- function(gff){
-  new_gff_fn <- paste0(sub(pattern = "\\.gff3?\\.?.?$", replacement = "", gff), ".renamed.gff")
+formatGFF <- function(gff, suffix = ".reformat.gff"){
+  new_gff_fn <- paste0(sub(pattern = "\\.gff3?\\.?.?$", replacement = "", gff), suffix)
   
   gff <- import.gff(gff)
   gff$Name <- gff$ID
