@@ -46,10 +46,15 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     
     out$resume <- resume
     if(is.null(files$query_genome) | is.null(files$subject_genome)){
+        query_genome <- "no_query_genome"
+	subject_genome <- "no_subject_genome"
         out$resume$miniprot <- FALSE
         reset <- TRUE
         
     } else {
+        # Summarize the query and subject genomes
+        out$genome$query <- .genomeSummary(genome = query_genome)
+        out$genome$subject <- .genomeSummary(genome = subject_genome)
         if(out$resume$miniprot){
             reset <- TRUE
             
@@ -89,10 +94,6 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                          file = out$h5, "files/subject_cds")
         }
     }
-    
-    # Summarize the query and subject genomes
-    out$genome$query <- .genomeSummary(genome = query_genome)
-    out$genome$subject <- .genomeSummary(genome = subject_genome)
     
     out$param_list <- .validateParamList(param_list = param_list)
     

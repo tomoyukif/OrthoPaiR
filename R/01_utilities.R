@@ -390,3 +390,79 @@ fixInfiles <- function(genome, gff){
     gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
     return(gff)
 }
+
+#' @importFrom rtracklayer import.gff export.gff3
+#' @importFrom S4Vectors mcols mcols<-
+#'
+#' @export
+formatGFF <- function(gff){
+  new_gff_fn <- paste0(sub(pattern = "\\.gff3?\\.?.?$", replacement = "", gff), ".renamed.gff")
+  
+  gff <- import.gff(gff)
+  gff$Name <- gff$ID
+  
+  message("\nDrop GFF entries of unnecessary type(s).\n")
+  gene <- gff[grep("^gene$", gff$type)]
+  tx <- gff[gff$type %in% c("mRNA", "transcript")]
+  tx_p <- sapply(tx$Parent, function(x){if(length(x) == 0) {return(NA)} else {return(x[1])}})
+  hit_tx <- tx[tx_p %in% gene$ID]
+  gene <- gene[gene$ID %in% tx_p]
+  element <- gff[gff$type %in% c("exon", "CDS")]
+  element_p <- sapply(element$Parent, function(x){if(length(x) == 0) {return(NA)} else {return(x[1])}})
+  hit_element <- element[element_p %in% hit_tx$ID]
+  check <- any(sapply(hit_element$Parent, length) > 1)
+  if(check){
+    hit_element$Parent <- lapply(hit_element$Parent, "[", 1)
+  }
+  gff <- c(gene, hit_tx, hit_element)
+  gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
+  Sys.sleep(3)
+  
+  check <- any(is.na(gff$ID))
+  if(check){
+    gff$ID[gff$type %in% c("CDS", "exon")] <- paste(unlist(gff$Parent[gff$type %in% c("CDS", "exon")]),
+                                                    gff$type[gff$type %in% c("CDS", "exon")],
+                                                    sep = ":")
+  }
+  
+  message(prompt = "\nChecking the 'gene_id' column in the GFF.\n")
+  need_fix_gene_id <- FALSE
+  if(is.null(gff$gene_id)){
+    need_fix_gene_id <- TRUE
+    
+  } else {
+    if(any(is.na(gff$gene_id))){
+      need_fix_gene_id <- TRUE
+    }
+  }
+  if(need_fix_gene_id){
+    gff <- .setGeneID(gff)
+  }
+  
+  message(prompt = "\nChecking the 'Parent' column in the GFF.\n")
+  non_gene_i <- !gff$type %in% c("gene")
+  n_entry <- sapply(gff$Parent[non_gene_i], length)
+  if(any(n_entry > 1)){
+    while(TRUE){
+      non_gene_i <- !gff$type %in% c("gene")
+      non_gene_p <- sapply(gff$Parent[non_gene_i], "[", 1)
+      gff$Parent[non_gene_i] <- lapply(non_gene_p, c)
+      hit <- match(non_gene_p, gff$ID)
+      gff$gene_id[non_gene_i] <- gff$ID[hit]
+    }
+  }
+  
+  message(prompt = "\nDrop unnecessary GFF annotation(s).\n")
+  gff_mcols <- mcols(gff)
+  if(is.null(gff_mcols$oldID)){
+    gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent, gene_id))
+    
+  } else {
+    gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent, oldID, gene_id))
+  }
+  mcols(gff) <- gff_mcols
+  Sys.sleep(3)
+  
+  message("Saving new GFF file.")
+  export.gff3(gff, new_gff_fn)
+}

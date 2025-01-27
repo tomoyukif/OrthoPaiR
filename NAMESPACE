@@ -3,6 +3,7 @@
 export(.getPromoterSeq)
 export(compareOrthoSeq)
 export(fixInfiles)
+export(formatGFF)
 export(getLCBpairs)
 export(getOrphan)
 export(getOrthoPair)
