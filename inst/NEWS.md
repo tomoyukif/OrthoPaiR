@@ -1,3 +1,6 @@
+Changes in version 0.4.5 (2025-01-28)
++ Update fixInFiles() to support automatic transcript rename. 
+
 Changes in version 0.4.3 (2025-01-07)
 + Minor bug fix in .orgOrphan(). and the main pipeline control. 
 

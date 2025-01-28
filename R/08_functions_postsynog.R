@@ -213,13 +213,18 @@ reorgOrthopiars <- function(hdf5_fn,
     export.gff3(object = gff, con = out_gff_fn)
     
     if(makeFASTA){
-        out_cds <- .makeCDS(gff = out_gff_fn, genome = genome_fn)
-        out_cds_fn <- sub("\\.gff", ".cds", out_gff_fn)
-        writeXStringSet(out_cds, out_cds_fn)
-        
-        out_prot <- translate(x = out_cds, no.init.codon = TRUE, if.fuzzy.codon = "X")
-        out_prot_fn <- sub("\\.gff", ".prot", out_gff_fn)
-        writeXStringSet(out_prot, out_prot_fn)
+        if(genome_fn %in% c("no_query_genome", "no_subject_genome")){
+            message("Skip CDS and protein FASTA generation for reorganized GFF becuase of no genome FASTA input.")
+            
+        } else {
+            out_cds <- .makeCDS(gff = out_gff_fn, genome = genome_fn)
+            out_cds_fn <- sub("\\.gff", ".cds", out_gff_fn)
+            writeXStringSet(out_cds, out_cds_fn)
+            
+            out_prot <- translate(x = out_cds, no.init.codon = TRUE, if.fuzzy.codon = "X")
+            out_prot_fn <- sub("\\.gff", ".prot", out_gff_fn)
+            writeXStringSet(out_prot, out_prot_fn)
+        }
     }
 }
 

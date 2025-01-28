@@ -47,7 +47,7 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     out$resume <- resume
     if(is.null(files$query_genome) | is.null(files$subject_genome)){
         query_genome <- "no_query_genome"
-	subject_genome <- "no_subject_genome"
+        subject_genome <- "no_subject_genome"
         out$resume$miniprot <- FALSE
         reset <- TRUE
         
@@ -61,6 +61,14 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
         } else {
             reset <- FALSE
         }
+    }
+    
+    if(is.null(files$query_prot) | is.null(files$subject_prot)){
+        query_prot <- "no_query_prot"
+        subject_prot <- "no_subject_prot"
+        out$resume$miniprot <- FALSE
+        reset <- TRUE
+        
     }
     
     if(reset){
