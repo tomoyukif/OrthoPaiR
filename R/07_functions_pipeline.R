@@ -9,9 +9,7 @@
 #' @importFrom igraph write_graph read_graph
 orthopair <- function(in_list,
                       working_dir = ".",
-                      # sibeliaz_bin = "sibeliaz",
                       conda = "conda",
-                      # sibeliaz_condaenv = "sibeliaz",
                       miniprot_bin = "miniprot",
                       miniprot_condaenv = "miniprot",
                       n_threads = NULL,
@@ -37,12 +35,9 @@ orthopair <- function(in_list,
     hdf5_out_dir <- file.path(working_dir, "hdf5_out")
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
     
-    # message("Validating input data...")
-    # .validateInput(in_list = in_list)
-    
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
-                                 # sibeliaz_out_dir = file.path(working_dir, "sibeliaz_out"),
+                                 working_dir = working_dir,
                                  miniprot_out_dir = file.path(working_dir, "miniprot_out"),
                                  target_pair = target_pair)
     hdf5_fn <- NULL
@@ -122,12 +117,11 @@ orthopair <- function(in_list,
                                    makeFASTA = TRUE,
                                    overwrite = overwrite)
         
-    } else {
-        hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
     }
     
     if(makegraph){
         message("Summarizing orthopairs into graphs ...")
+        hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
         graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
         graph_fn <- file.path(working_dir, "orthopair.graphml")
         write_graph(graph = graph, file = graph_fn, format = "graphml")
@@ -137,6 +131,7 @@ orthopair <- function(in_list,
         
         if(output_table){
             if(file.exists(graph_fn)){
+                hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
                 graph <- read_graph(file = graph_fn, format = "graphml")
                 
             } else {
@@ -146,6 +141,8 @@ orthopair <- function(in_list,
                         "The table creation step will be skipped.")
                 output_table <- FALSE
             }
+        } else {
+            graph_fn <- NULL
         }
     }
     
@@ -167,6 +164,8 @@ orthopair <- function(in_list,
         orphan <- do.call("rbind", orphan)
         orphan_fn <- file.path(working_dir, "orphan_list.csv")
         write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
+    } else {
+        orthopair_fn <- orphan_fn <- NULL
     }
     
     on.exit()
@@ -179,7 +178,7 @@ orthopair <- function(in_list,
 
 .prepPairs <- function(in_list,
                        hdf5_out_dir,
-                       # sibeliaz_out_dir,
+                       working_dir,
                        miniprot_out_dir,
                        target_pair = NULL){
     in_list <- as.data.frame(x = in_list)
@@ -203,21 +202,60 @@ orthopair <- function(in_list,
     out <- NULL
     for(i in seq_along(comb_id)){
         prefix <- comb_id[i]
-        i_out <- list(query_genome = in_list$genome[combs[1, i]],
-                      subject_genome = in_list$genome[combs[2, i]],
-                      query_gff = in_list$gff[combs[1, i]],
-                      subject_gff = in_list$gff[combs[2, i]],
-                      query_cds = in_list$cds[combs[1, i]],
-                      subject_cds = in_list$cds[combs[2, i]],
-                      query_prot = in_list$prot[combs[1, i]],
-                      subject_prot = in_list$prot[combs[2, i]],
-                      hdf5_path = file.path(hdf5_out_dir, paste0(prefix, ".h5")),
-                      # sibeliaz_out_dir = file.path(sibeliaz_out_dir, prefix),
-                      miniprot_out_dir = file.path(miniprot_out_dir, prefix))
-        out <- c(out, list(i_out))
+        input_dir <- file.path(working_dir, "input")
+        dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
+        
+        fn_list <- list(query_genome = in_list$genome[combs[1, i]],
+                        subject_genome = in_list$genome[combs[2, i]],
+                        query_gff = in_list$gff[combs[1, i]],
+                        subject_gff = in_list$gff[combs[2, i]],
+                        query_cds = in_list$cds[combs[1, i]],
+                        subject_cds = in_list$cds[combs[2, i]],
+                        query_prot = in_list$prot[combs[1, i]],
+                        subject_prot = in_list$prot[combs[2, i]])
+        
+        fn_list <- .prepInputFiles(fn_list = fn_list, input_dir = input_dir)
+        
+        fn_list$hdf5_path <- file.path(hdf5_out_dir, paste0(prefix, ".h5"))
+        fn_list$miniprot_out_dir <- file.path(miniprot_out_dir, prefix)
+        out <- c(out, list(fn_list))
     }
     names(out) <- comb_id
     return(out)
+}
+
+.prepInputFiles <- function(fn_list, input_dir){
+    for(i in seq_along(fn_list)){
+        if(is.null(fn_list[[i]])){
+            next
+        }
+        target <- names(fn_list)[i]
+        if(!is.null(fn_list[[i]])){
+            if(grepl("gff", target)){
+                new_fn <- paste0(target, ".gff")
+                
+            } else {
+                new_fn <- paste0(target, ".fa")
+            }
+            new_path <- file.path(input_dir, new_fn)
+            abs_path <- file.path(getwd(), sub("^\\./", "", fn_list[[i]]))
+            if(file.exists(new_path)){
+                unlink(new_path, force = TRUE)
+            }
+            check <- file.symlink(abs_path, new_path)
+            if(check){
+                fn_list[[i]] <- new_path
+                
+            } else {
+                
+                
+                stop(paste("Faild to create a symlink to ",
+                           abs_path), 
+                     call. = FALSE)
+            }
+        }
+    }
+    return(fn_list)
 }
 
 #' @importFrom parallel detectCores

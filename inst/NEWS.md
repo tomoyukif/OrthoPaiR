@@ -1,4 +1,8 @@
-Changes in version 0.4.5 (2025-01-28)
+Changes in version 0.4.7 (2025-01-30)
++ Update .prepPairs() to create symlinks to input files and put all symlink files
++ into the input directory of the working directory. 
+
+Changes in version 0.4.6 (2025-01-29)
 + Update fixInFiles() to support automatic transcript rename. 
 
 Changes in version 0.4.3 (2025-01-07)
