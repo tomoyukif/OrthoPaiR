@@ -514,110 +514,94 @@ orgInputFiles <- function(object = NULL, name, genome = NULL, gff, cds, prot = N
 #' @importFrom GenomeInfoDb seqlevels
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom rtracklayer import.gff
-.validateInput <- function(in_list = NULL, name, genome, gff, cds, prot){
-    if(is.null(in_list)){
-        check <- is.na(name) | name == ""
+.validateInput <- function(name, genome, gff, cds, prot){
+    check <- is.na(name) | name == ""
+    if(check){
+        stop("Empty name is not allowed.", call. = FALSE)
+    }
+    
+    if(!is.null(genome)){
+        check <- !file.exists(genome)
         if(check){
-            stop("Empty name is not allowed.", call. = FALSE)
+            stop('The file "genome" does not exist.', call. = FALSE)
         }
-        
-        if(!is.null(genome)){
-            check <- !file.exists(genome)
-            if(check){
-                stop('The file "genome" does not exist.', call. = FALSE)
-            }
-        }
-        
-        check <- !file.exists(gff)
+    }
+    
+    check <- !file.exists(gff)
+    if(check){
+        stop('The file "gff" does not exist.', call. = FALSE)
+    }
+    
+    check <- !file.exists(cds)
+    if(check){
+        stop('The file "cds" does not exist.', call. = FALSE)
+    }
+    
+    if(!is.null(prot)){
+        check <- !file.exists(prot)
         if(check){
-            stop('The file "gff" does not exist.', call. = FALSE)
+            stop('The file "prot" does not exist.', call. = FALSE)
         }
-        
-        check <- !file.exists(cds)
-        if(check){
-            stop('The file "cds" does not exist.', call. = FALSE)
-        }
-        
-        if(!is.null(prot)){
-            check <- !file.exists(prot)
-            if(check){
-                stop('The file "prot" does not exist.', call. = FALSE)
-            }
-        }
-        
-        if(!is.null(genome)){
-            genome <- readDNAStringSet(filepath = genome)
-            genome_seq_name <- names(genome)
-        }
-        gff <- import.gff(con = gff)
-        cds <- readDNAStringSet(filepath = cds)
-        if(!is.null(prot)){
-            prot <- readAAStringSet(filepath = prot)
-        }
-        gff_seq_lev <- seqlevels(gff)
-        
-        check <- .checkGFFstr(gff = gff)
-        if(check$check){
-            stop(paste0("In input data validation for ", name), "\n",
-                 check$msg,
-                 call. = FALSE)
-        }
-        
-        check <- is.null(gff$gene_id)
-        if(check){
-            stop(paste0("In input data validation for ", name),
-                 "\nThe specified GFF does not have the 'gene_id' column.",
-                 call. = FALSE)
-        }
-        
-        check <- any(is.na(gff$gene_id))
-        if(check){
-            stop(paste0("In input data validation for ", name),
-                 "\nThe specified GFF contains NA in the 'gene_id' column.",
-                 call. = FALSE)
-        }
-        
-        if(!is.null(genome)){
-            check <-  gff_seq_lev %in% genome_seq_name
-            if(!all(check)){
-                stop(paste0("In input data validation for ", name),
-                     "\nFollowing sequence names appeared in the GFF but not in the genome:\n",
-                     paste(head(gff_seq_lev[!gff_seq_lev %in% genome_seq_name]),
-                           collapse = ", "), call. = FALSE)
-            }
-        }
-        cds_names <- names(cds)
-        check <- cds_names %in% gff$Name
+    }
+    
+    if(!is.null(genome)){
+        genome <- readDNAStringSet(filepath = genome)
+        genome_seq_name <- names(genome)
+    }
+    gff <- import.gff(con = gff)
+    cds <- readDNAStringSet(filepath = cds)
+    if(!is.null(prot)){
+        prot <- readAAStringSet(filepath = prot)
+    }
+    gff_seq_lev <- seqlevels(gff)
+    
+    check <- .checkGFFstr(gff = gff)
+    if(check$check){
+        stop(paste0("In input data validation for ", name), "\n",
+             check$msg,
+             call. = FALSE)
+    }
+    
+    check <- is.null(gff$gene_id)
+    if(check){
+        stop(paste0("In input data validation for ", name),
+             "\nThe specified GFF does not have the 'gene_id' column.",
+             call. = FALSE)
+    }
+    
+    check <- any(is.na(gff$gene_id))
+    if(check){
+        stop(paste0("In input data validation for ", name),
+             "\nThe specified GFF contains NA in the 'gene_id' column.",
+             call. = FALSE)
+    }
+    
+    if(!is.null(genome)){
+        check <-  gff_seq_lev %in% genome_seq_name
         if(!all(check)){
             stop(paste0("In input data validation for ", name),
-                 "\nFollowing sequence names appeared in the CDS but not in the GFF:\n",
-                 paste(head(cds_names[!cds_names %in% gff$Name]),
+                 "\nFollowing sequence names appeared in the GFF but not in the genome:\n",
+                 paste(head(gff_seq_lev[!gff_seq_lev %in% genome_seq_name]),
                        collapse = ", "), call. = FALSE)
         }
-        
-        if(!is.null(prot)){
-            prot_names <- names(prot)
-            check <- prot_names %in% gff$Name
-            if(!all(check)){
-                stop(paste0("In input data validation for ", name),
-                     "\nFollowing sequence names appeared in the protein but not in the GFF:\n",
-                     paste(head(prot_names[!prot_names %in% gff$Name]),
-                           collapse = ", "), call. = FALSE)
-            }
-        }
-    } else {
-        check <- !c("name", "genome", "gff", "cds", "prot") %in% names(in_list)
-        if(any(check)){
-            stop('The "in_list" object should be a named list ',
-                 'containing the following elements:',
-                 '"name", "genome", "gff", "cds", "prot"', call. = FALSE)
-        }
-        for(i in seq_along(in_list$name)){
-            .validateInput(name = in_list$name[i],
-                           genome = in_list$genome[i],
-                           gff = in_list$gff[i],
-                           cds = in_list$cds[i],
-                           prot = in_list$prot[i])
+    }
+    cds_names <- names(cds)
+    check <- cds_names %in% gff$ID
+    if(!all(check)){
+        stop(paste0("In input data validation for ", name),
+             "\nFollowing sequence names appeared in the CDS but not in the GFF:\n",
+             paste(head(cds_names[!cds_names %in% gff$ID]),
+                   collapse = ", "), call. = FALSE)
+    }
+    
+    if(!is.null(prot)){
+        prot_names <- names(prot)
+        check <- prot_names %in% gff$ID
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the protein but not in the GFF:\n",
+                 paste(head(prot_names[!prot_names %in% gff$ID]),
+                       collapse = ", "), call. = FALSE)
         }
     }
 }

@@ -482,7 +482,7 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
     gff_mcols <- mcols(gff)
     gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent))
     mcols(gff) <- gff_mcols
-    
+    gff$Name <- gff$ID
     message(prompt = "\nSetting the 'gene_id' column in the GFF.\n")
     gff <- .setGeneID(gff)
     
