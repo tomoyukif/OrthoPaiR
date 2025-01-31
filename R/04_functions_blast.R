@@ -187,6 +187,9 @@ rbh <- function(object,
             out <- rbind(out, tmp)
         }
     }
+    if(nrow(out) == 0){
+        out <- NA
+    }
     return(out)
 }
 
@@ -208,6 +211,9 @@ rbh <- function(object,
                           qcovs = 0,
                           evalue = Inf,
                           best = FALSE){
+    if(all(is.na(blast_out))){
+        return(blast_out)
+    }
     if(best){
         # Identify the best hits for each query sequence
         n_hit <- unlist(tapply(blast_out$qseqid, blast_out$qseqid, length))
@@ -252,6 +258,9 @@ rbh <- function(object,
 #' @param df2 A data.frame containing BLAST search results from subject to query.
 #' @return A data.frame containing the reciprocal best hits with relevant BLAST statistics.
 .find_reciprocal <- function(df1, df2){
+    if(all(is.na(df1)) | all(is.na(df2))){
+        return(NA)
+    }
     # Create unique identifiers for BLAST hits in both directions
     id1 <- paste(df1$qseqid, df1$sseqid, sep = "_")
     id2 <- paste(df2$sseqid, df2$qseqid, sep = "_")

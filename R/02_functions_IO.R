@@ -277,7 +277,7 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
             stop("Run syntenicOrtho() to obtain genewise ortholog info.")
         }
         
-        if(!any(check)){
+        if(check){
             out <- NULL
             name <- names(h5$orthopair_tx)
             for(i in seq_along(name)){

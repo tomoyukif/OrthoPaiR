@@ -15,58 +15,59 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
     
-    # Check if the necessary groups exist in the HDF5 file
-    # if(!H5Lexists(h5, "sibeliaz/lcb_pairs")){
-    #     stop("Run getLCBpairs to obtain LCB pair info.")
-    # }
     if(!H5Lexists(h5, "blast/rbbh")){
         stop("Run rbh with `best = TRUE` to obtain RBBH info.")
     }
     
-    # genome_graph <- .prepGenomeGraph(h5 = h5)
-    # genome_graph <- h5$sibeliaz$lcbgraph
-    # g2g_graph <- .linkGene2Genome(h5 = h5, genome_graph = genome_graph)
     g2g_graph <- .linkGene2Genome(h5 = h5)
     anchor <- .findAnchors(h5 = h5,
-                           # genome_graph = genome_graph,
                            g2g_graph = g2g_graph,
                            rbbh_mci_threshold = rbbh_mci_threshold)
-    
-    t2a_graph <- .linkTx2Anchor(anchor = anchor$anchor, g2g_graph = g2g_graph)
-    orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph, 
-                                    rbbh_mci_threshold = anchor$rbbh_mci_threshold,
-                                    rbh_mci_threshold = rbh_mci_threshold)
-    # orthopair <- .pickNonSyntenicOrtho(h5 = h5, orthopair = orthopair, g2g_graph = g2g_graph)
-    orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
-    
-    .h5overwrite(obj = orthopair, file = object$h5, "orthopair_tx")
-    
-    orthopair <- .classifyOrthoPair(orthopair = orthopair)
-    
-    split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
-    rest_orthopair <- split_orthopair$rest
-    
-    if(!is.null(rest_orthopair$rest)){
-        while(TRUE){
-            rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
-            rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
-            if(is.null(rest_orthopair$rest)){
-                split_orthopair$splited <- rbind(split_orthopair$splited,
-                                                 rest_orthopair$rest)
-                break
-                
-            } else {
-                split_orthopair$splited <- rbind(split_orthopair$splited,
-                                                 rest_orthopair$splited)
-                rest_orthopair <- rest_orthopair$rest
+    if(all(is.na(anchor))){
+        orthopair_gene <- data.frame(query_gene = "NA",
+                                     query_tx = "NA",
+                                     subject_gene = "NA",
+                                     subject_tx = "NA")
+        .h5overwrite(obj = orthopair_gene, file = object$h5, "orthopair_tx")
+        
+    } else {
+        t2a_graph <- .linkTx2Anchor(anchor = anchor$anchor, g2g_graph = g2g_graph)
+        orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph, 
+                                        rbbh_mci_threshold = anchor$rbbh_mci_threshold,
+                                        rbh_mci_threshold = rbh_mci_threshold)
+        # orthopair <- .pickNonSyntenicOrtho(h5 = h5, orthopair = orthopair, g2g_graph = g2g_graph)
+        orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
+        
+        .h5overwrite(obj = orthopair, file = object$h5, "orthopair_tx")
+        
+        orthopair <- .classifyOrthoPair(orthopair = orthopair)
+        
+        split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
+        rest_orthopair <- split_orthopair$rest
+        
+        if(!is.null(rest_orthopair$rest)){
+            while(TRUE){
+                rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
+                rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
+                if(is.null(rest_orthopair$rest)){
+                    split_orthopair$splited <- rbind(split_orthopair$splited,
+                                                     rest_orthopair$rest)
+                    break
+                    
+                } else {
+                    split_orthopair$splited <- rbind(split_orthopair$splited,
+                                                     rest_orthopair$splited)
+                    rest_orthopair <- rest_orthopair$rest
+                }
             }
         }
+        orthopair_gene <- split_orthopair$splited
+        orthopair_gene <- .pickBestPair(orthopair_gene = orthopair_gene)
+        orthopair_gene <- .sortSyntenicOrtho(orthopair = orthopair_gene, g2g_graph = g2g_graph)
+        orthopair_gene <- .classifyOrthoPair(orthopair = orthopair_gene)
+        orthopair_gene <- subset(orthopair_gene, select = -gene_pair_id)
     }
-    orthopair_gene <- split_orthopair$splited
-    orthopair_gene <- .pickBestPair(orthopair_gene = orthopair_gene)
-    orthopair_gene <- .sortSyntenicOrtho(orthopair = orthopair_gene, g2g_graph = g2g_graph)
-    orthopair_gene <- .classifyOrthoPair(orthopair = orthopair_gene)
-    orthopair_gene <- subset(orthopair_gene, select = -gene_pair_id)
+    
     orphan <- .getOrphan(orthopair_gene = orthopair_gene, g2g_graph = g2g_graph)
     .h5overwrite(obj = orthopair_gene, file = object$h5, "orthopair_gene")
     .h5overwrite(obj = orphan$query, file = object$h5, "orphan_query")
@@ -353,23 +354,16 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
                          g2g_graph,
                          rbbh_mci_threshold){
     rbbh <- h5$blast$rbbh
+    if(all(is.na(rbbh))){
+        return(NA)
+    }
     score <- .getRBHscore(rbh = rbbh)
     rbbh_mci_threshold <- quantile(x = score$mutual_ci, probs = rbbh_mci_threshold)
     rbbh <- subset(rbbh, subset = score$mutual_ci >= rbbh_mci_threshold)
-    # genome_graph <- subset(genome_graph, 
-    #                        select = c(query_genome, subject_genome))
     root_hit <- match(rbbh$qseqid, g2g_graph$query_tx$tx)
     leaf_hit <- match(rbbh$sseqid, g2g_graph$subject_tx$tx)
     anchor <- data.frame(root = g2g_graph$query_tx$id[root_hit],
                          leaf = g2g_graph$subject_tx$id[leaf_hit])
-    # rbbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
-    #                    expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
-    # rbbh <- left_join(x = rbbh, y = g2g_graph$query_g2b_edge, by = "root")
-    # rbbh <- left_join(x = rbbh, y = genome_graph, by = "query_genome",
-    #                   relationship = "many-to-many")
-    # rbbh <- left_join(x = rbbh, y = g2g_graph$subject_g2b_edge, 
-    #                   by = "subject_genome", relationship = "many-to-many")
-    # anchor <- subset(rbbh, subset = leaf == expected_leaf, select = c(root, leaf))
     anchor <- unique(anchor)
     out <- list(anchor = anchor, rbbh_mci_threshold = rbbh_mci_threshold)
     return(out)
