@@ -274,6 +274,9 @@ rbh <- function(object,
     rhit <- id1 %in% id2
     out <- subset(df1, subset = rhit, select = c(qseqid, sseqid))
     out <- unique(out)
+    if(nrow(out) == 0){
+        return(NA)
+    } 
 
     # Extract relevant BLAST statistics for reciprocal hits
     out_id <- paste(out$qseqid, out$sseqid, sep = "_")
@@ -283,6 +286,6 @@ rbh <- function(object,
     out$s2q_pident <- df2$pident[match(out_id, id2)]
     out$s2q_qcovs <- df2$qcovs[match(out_id, id2)]
     out$s2q_evalue <- df2$evalue[match(out_id, id2)]
-
+    
     return(out)
 }
