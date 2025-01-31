@@ -1,4 +1,4 @@
-Changes in version 0.4.8 (2025-01-31)
+Changes in version 0.4.9 (2025-01-31)
 + Bug fix to accept no blast hit.
 
 Changes in version 0.4.7 (2025-01-30)
