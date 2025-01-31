@@ -61,14 +61,14 @@ rbh <- function(object,
                                 n_threads = n_threads,
                                 n_batch = n_batch,
                                 max_target_seqs = max_target_seqs,
-                                evalue = 1e-3,
+                                evalue = evalue,
                                 task = "-task blastn")
     blast_out2 <- .blast_search(fa = fa2,
                                 db = db1,
                                 n_threads = n_threads,
                                 n_batch = n_batch,
                                 max_target_seqs = max_target_seqs,
-                                evalue = 1e-3,
+                                evalue = evalue,
                                 task = "-task blastn")
 
     # Create HDF5 groups and save BLAST outputs
@@ -80,9 +80,15 @@ rbh <- function(object,
     
     # Filter BLAST results for best hits
     blast_best1 <- .blast_filter(blast_out = blast_out1,
+                                 pident = pident,
+                                 qcovs = qcovs,
+                                 evalue = evalue,
                                  best = TRUE)
 
     blast_best2 <- .blast_filter(blast_out = blast_out2,
+                                 pident = pident,
+                                 qcovs = qcovs,
+                                 evalue = evalue,
                                  best = TRUE)
 
     # Filter BLAST results based on user-defined criteria
@@ -214,6 +220,12 @@ rbh <- function(object,
     if(all(is.na(blast_out))){
         return(blast_out)
     }
+    # Filter based on percentage identity, query coverage, and e-value
+    filter <- blast_out$pident >= pident &
+        blast_out$qcovs >= qcovs &
+        blast_out$evalue <= evalue
+    blast_out <- subset(blast_out, subset = filter)
+    
     if(best){
         # Identify the best hits for each query sequence
         n_hit <- unlist(tapply(blast_out$qseqid, blast_out$qseqid, length))
@@ -239,13 +251,6 @@ rbh <- function(object,
 
         # Combine single-hit and multiple-hit sequences
         blast_out <- rbind(single_hit, mult_hit)
-
-    } else {
-        # Filter based on percentage identity, query coverage, and e-value
-        filter <- blast_out$pident >= pident &
-            blast_out$qcovs >= qcovs &
-            blast_out$evalue <= evalue
-        blast_out <- subset(blast_out, subset = filter)
     }
     return(blast_out)
 }
