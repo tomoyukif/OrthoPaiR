@@ -88,6 +88,9 @@ reorgOrthopiars <- function(hdf5_fn,
             ref_gff <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
         }
         
+        if(is.null(ref_gff$oldGeneID)){
+            ref_gff$oldGeneID <- NA
+        }
         gene_list <- rbind(gene_list, 
                            data.frame(genome = target_genome, 
                                       gene = ref_gff$gene_id[ref_gff$type %in% c("transcript", "mRNA")], 
