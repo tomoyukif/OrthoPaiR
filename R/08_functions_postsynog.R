@@ -5,7 +5,8 @@ reorgOrthopiars <- function(hdf5_fn,
                             out_dir = "./",
                             out_fn = "reorg_orthopair.h5",
                             makeFASTA = TRUE,
-                            overwrite = TRUE){
+                            overwrite = TRUE,
+                            reorg = TRUE){
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
     
     genomewise_list <- .getGenomewiseList(hdf5_fn = hdf5_fn)
@@ -16,67 +17,75 @@ reorgOrthopiars <- function(hdf5_fn,
     for(i in seq_along(genomewise_list)){
         target_data <- genomewise_list[[i]]
         target_genome <- names(genomewise_list)[i]
-        message("reorganizing gene models in ", target_genome, " ...")
-        data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data)
-        genome_fn <- c(genome_fn, data$genome_fn)
-        
-        ref_gff <- data$gff[[1]]
-        ref_prefix <- paste(target_genome, 
-                            target_data$pair_genome[1], 
-                            sep = "_")
-        ref_gff <- .renameMP(gff = ref_gff, prefix = ref_prefix)
-        ref_gff$oldGeneID <- ref_gff$gene_id
-        ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
-                                    df = data$orthopair[[1]], 
-                                    target_data = target_data[1, ],
-                                    prefix = ref_prefix)
-        
-        if(nrow(target_data) == 1){
-            .outputGFFdata(gff = ref_gff,
-                           prefix = target_genome,
-                           genome_fn = data$genome_fn,
-                           out_dir = out_dir,
-                           makeFASTA = makeFASTA)
-        } else {
-            id2id_df <- NULL
-            for(j in seq_along(data$gff)[-1]){
-                ref_prefix <- paste(target_genome, 
-                                    target_data$pair_genome[j], 
-                                    sep = "_")
-                ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
-                                            df = data$orthopair[[j]], 
-                                            target_data = target_data[j, ],
-                                            prefix = ref_prefix)
-                mp_gff <- data$gff[[j]]
-                mp_gff <- .renameMP(gff = mp_gff, prefix = ref_prefix)
-                mp_gff <- mp_gff[mp_gff$source %in% "miniprot"]
-                mp_gff$oldGeneID <- mp_gff$gene_id
-                
-                mp_gff <- .setSplitGeneGFF(gff = mp_gff, 
-                                           df = data$orthopair[[j]], 
-                                           target_data = target_data[j, ],
-                                           prefix = ref_prefix)
-                
-                id2id <- .findMiniprotTxOverlaps(ref_gff = ref_gff,
-                                                 mp_gff = mp_gff)
-                
-                ref_gff <- .rerogRefGFF(ref_gff = ref_gff,
-                                        mp_gff = mp_gff,
-                                        id2id = id2id)
-                
-                id2id_df <- rbind(id2id_df, id2id$identical, id2id$id2id)
-                if(!is.null(id2id_df)){
-                    hit <- match(id2id_df$ref_tx_id, ref_gff$ID)
-                    id2id_df$ref_gene_id <- ref_gff$gene_id[hit]
+        if(reorg){
+            message("reorganizing gene models in ", target_genome, " ...")
+            data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1)
+            genome_fn <- c(genome_fn, data$genome_fn)
+            
+            ref_gff <- data$gff
+            ref_prefix <- paste(target_genome, 
+                                target_data$pair_genome[1], 
+                                sep = "_")
+            ref_gff <- .renameMP(gff = ref_gff, prefix = ref_prefix)
+            ref_gff$oldGeneID <- ref_gff$gene_id
+            ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
+                                        df = data$orthopair, 
+                                        target_data = target_data[1, ],
+                                        prefix = ref_prefix)
+            
+            if(nrow(target_data) == 1){
+                .outputGFFdata(gff = ref_gff,
+                               prefix = target_genome,
+                               genome_fn = data$genome_fn,
+                               out_dir = out_dir,
+                               makeFASTA = makeFASTA)
+            } else {
+                id2id_df <- NULL
+                for(j in seq_along(target_data$pair_genome)[-1]){
+                    data_j <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = j)
+                    ref_prefix <- paste(target_genome, 
+                                        target_data$pair_genome[j], 
+                                        sep = "_")
+                    ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
+                                                df = data_j$orthopair, 
+                                                target_data = target_data[j, ],
+                                                prefix = ref_prefix)
+                    .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1)
+                    mp_gff <- data_j$gff
+                    mp_gff <- .renameMP(gff = mp_gff, prefix = ref_prefix)
+                    mp_gff <- mp_gff[mp_gff$source %in% "miniprot"]
+                    mp_gff$oldGeneID <- mp_gff$gene_id
+                    
+                    mp_gff <- .setSplitGeneGFF(gff = mp_gff, 
+                                               df = data_j$orthopair, 
+                                               target_data = target_data[j, ],
+                                               prefix = ref_prefix)
+                    
+                    id2id <- .findMiniprotTxOverlaps(ref_gff = ref_gff,
+                                                     mp_gff = mp_gff)
+                    
+                    ref_gff <- .rerogRefGFF(ref_gff = ref_gff,
+                                            mp_gff = mp_gff,
+                                            id2id = id2id)
+                    
+                    id2id_df <- rbind(id2id_df, id2id$identical, id2id$id2id)
+                    if(!is.null(id2id_df)){
+                        hit <- match(id2id_df$ref_tx_id, ref_gff$ID)
+                        id2id_df$ref_gene_id <- ref_gff$gene_id[hit]
+                    }
                 }
+                id2id_list <- c(id2id_list, list(id2id_df))
+                .outputGFFdata(gff = ref_gff,
+                               id2id_df = id2id_df,
+                               prefix = target_genome,
+                               genome_fn = data$genome_fn,
+                               out_dir = out_dir,
+                               makeFASTA = makeFASTA)
             }
-            id2id_list <- c(id2id_list, list(id2id_df))
-            .outputGFFdata(gff = ref_gff,
-                           id2id_df = id2id_df,
-                           prefix = target_genome,
-                           genome_fn = data$genome_fn,
-                           out_dir = out_dir,
-                           makeFASTA = makeFASTA)
+            
+        } else {
+            message("skip gene model reorganization.")
+            ref_gff <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
         }
         
         gene_list <- rbind(gene_list, 
@@ -139,36 +148,32 @@ reorgOrthopiars <- function(hdf5_fn,
 #' @importFrom rtracklayer import.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose
 #' @importFrom Biostrings readDNAStringSet readAAStringSet
-.importData <- function(hdf5_fn, target_data){
-    for(i in seq_along(target_data$comb_id)){
-        i_comb_id <- target_data$comb_id[i]
-        i_target_data <- target_data$target[i]
-        h5 <- H5Fopen(hdf5_fn[i_comb_id])
-        on.exit(H5Fclose(h5))
-        i_orthopair <- h5$orthopair_gene
+.importData <- function(hdf5_fn, target_data, index, reorg){
+    i_comb_id <- target_data$comb_id[index]
+    i_target_data <- target_data$target[index]
+    h5 <- H5Fopen(hdf5_fn[i_comb_id])
+    on.exit(H5Fclose(h5))
+    orthopair <- h5$orthopair_gene
+    
+    if(i_target_data == "query"){
+        gff <- import.gff3(h5$files$query_gff[1])
         
+    } else {
+        gff <- import.gff3(h5$files$subject_gff[1])
+    }
+    
+    if(reorg){
         if(i_target_data == "query"){
-            i_gff <- import.gff3(h5$files$query_gff[1])
-            i_gff <- .getMiniprotGFF(gff = i_gff,
-                                     gene = i_orthopair$query_gene,
-                                     tx = i_orthopair$query_tx)
-            i_cds <- readDNAStringSet(h5$files$query_cds[1])
-            i_cds <- i_cds[names(i_cds) %in% i_gff$ID]
+            gff <- .getMiniprotGFF(gff = gff,
+                                   gene = i_orthopair$query_gene,
+                                   tx = i_orthopair$query_tx)
             
         } else {
-            i_gff <- import.gff3(h5$files$subject_gff[1])
-            i_gff <- .getMiniprotGFF(gff = i_gff,
-                                     gene = i_orthopair$subject_gene,
-                                     tx = i_orthopair$subject_tx)
-            i_cds <- readDNAStringSet(h5$files$subject_cds[1])
-            i_cds <- i_cds[names(i_cds) %in% i_gff$ID]
+            gff <- .getMiniprotGFF(gff = gff,
+                                   gene = i_orthopair$subject_gene,
+                                   tx = i_orthopair$subject_tx)
         }
-        
-        if(i == 1){
-            gff <- list(i_gff)
-            cds <- list(i_cds)
-            orthopair <- list(i_orthopair)
-            
+        if(index == 1){
             if(i_target_data == "query"){
                 genome_fn <- h5$files$query_genome[1]
                 
@@ -177,13 +182,14 @@ reorgOrthopiars <- function(hdf5_fn,
             }
             
         } else {
-            gff <- c(gff, list(i_gff))
-            orthopair <- c(orthopair, list(i_orthopair))
-            cds <- c(cds, list(i_cds))
+            genome_fn <- NULL
         }
+        out <- list(gff = gff, orthopair = orthopair, genome_fn = genome_fn)
         
+    } else {
+        out <- gff
     }
-    out <- list(gff = gff, orthopair = orthopair, cds = cds, genome_fn = genome_fn)
+    
     return(out)
 }
 
