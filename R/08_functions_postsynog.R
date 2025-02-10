@@ -750,8 +750,10 @@ reorgOrthopiars <- function(hdf5_fn,
         orphan_tx <- unique(genome_out$tx_id[!genome_out$tx_id %in% hit_tx])
         hit_old_gene_id <- genome_out$old_gene_id[genome_out$tx_id %in% hit_tx]
         orphan_gene <- unique(genome_out$old_gene_id[!genome_out$old_gene_id %in% hit_old_gene_id])
-        out <- rbind(out, data.frame(genome = genomes[i], 
-                                     gene = unique(orphan_gene)))
+        if(length(orphan_gene) > 0){
+            out <- rbind(out, data.frame(genome = genomes[i], 
+                                         gene = unique(orphan_gene)))
+        }
         
         .h5overwrite(obj = orphan_tx,
                      file = hdf5_fn,
