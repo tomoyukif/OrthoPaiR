@@ -85,7 +85,9 @@ reorgOrthopiars <- function(hdf5_fn,
             
         } else {
             message("skip gene model reorganization.")
-            ref_gff <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
+            data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
+            ref_gff <- data$gff
+            genome_fn <- data$genome_fn
         }
         
         if(is.null(ref_gff$oldGeneID)){
@@ -156,7 +158,19 @@ reorgOrthopiars <- function(hdf5_fn,
     i_target_data <- target_data$target[index]
     h5 <- H5Fopen(hdf5_fn[i_comb_id])
     on.exit(H5Fclose(h5))
-    orthopair <- h5$orthopair_gene
+    orthopair <- NULL
+    
+    if(index == 1){
+        if(i_target_data == "query"){
+            genome_fn <- h5$files$query_genome[1]
+            
+        } else {
+            genome_fn <- h5$files$subject_genome[1]
+        }
+        
+    } else {
+        genome_fn <- NULL
+    }
     
     if(i_target_data == "query"){
         gff <- import.gff3(h5$files$query_gff[1])
@@ -166,6 +180,7 @@ reorgOrthopiars <- function(hdf5_fn,
     }
     
     if(reorg){
+        orthopair <- h5$orthopair_gene
         if(i_target_data == "query"){
             gff <- .getMiniprotGFF(gff = gff,
                                    gene = i_orthopair$query_gene,
@@ -176,22 +191,9 @@ reorgOrthopiars <- function(hdf5_fn,
                                    gene = i_orthopair$subject_gene,
                                    tx = i_orthopair$subject_tx)
         }
-        if(index == 1){
-            if(i_target_data == "query"){
-                genome_fn <- h5$files$query_genome[1]
-                
-            } else {
-                genome_fn <- h5$files$subject_genome[1]
-            }
-            
-        } else {
-            genome_fn <- NULL
-        }
-        out <- list(gff = gff, orthopair = orthopair, genome_fn = genome_fn)
-        
-    } else {
-        out <- gff
     }
+    
+    out <- list(gff = gff, orthopair = orthopair, genome_fn = genome_fn)
     
     return(out)
 }
