@@ -83,7 +83,7 @@ reorgOrthopiars <- function(hdf5_fn,
             }
             
         } else {
-            message("skip gene model reorganization.")
+            message("skip gene model reorganization for ",  target_genome, ".")
             data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
             ref_gff <- data$gff
         }
