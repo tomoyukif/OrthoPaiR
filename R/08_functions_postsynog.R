@@ -762,6 +762,9 @@ reorgOrthopiars <- function(hdf5_fn,
                      file = hdf5_fn,
                      name = paste0("orphan_gene/", genomes[i]))
     }
+    if(is.null(out)){
+        out <- "NA"
+    }
     return(out)
 }
 
