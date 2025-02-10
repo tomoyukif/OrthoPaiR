@@ -1,3 +1,6 @@
+Changes in version 0.4.10 (2025-02-10)
++ Minor bug fix in the no-reorg mode of reorgOrthopair().
+
 Changes in version 0.4.9 (2025-01-31)
 + Bug fix to accept no blast hit.
 
