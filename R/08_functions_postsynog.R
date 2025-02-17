@@ -815,7 +815,7 @@ makeOrthoGraph <- function(hdf5_fn){
 
 #' @importFrom igraph components ego V subgraph vcount induced_subgraph
 #' @export
-graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1){
+graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
     h5 <- H5Fopen(hdf5_fn)
     on.exit(H5Fclose(h5))
     gene_list <- h5$gene_list
@@ -823,87 +823,12 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1){
     genomes <- sort(unique(gene_list$genome))
     graph_grp <- .groupGraph(graph = graph)
     grp <- unique(graph_grp$SOG)
+    grp <- split(x = grp, cut(grp, n_batch))
     orthopair_tmp_fn <- paste0(orthopair_fn, ".tmp", seq_along(grp))
     unlink(orthopair_tmp_fn, force = TRUE, recursive = TRUE)
     
-    # count <- 0
-    # full <- TRUE
-    # while(TRUE){
-    #     n_len <- length(genomes) - count
-    #     count <- count + 1
-    #     if(count == 2){
-    #         full <- FALSE
-    #     }
-    #     if(n_len == 1){
-    #         break
-    #     }
-    #     if(vcount(graph) == 0){
-    #         break
-    #     }
-    #     
-    #     full_con <- .orgFullConnected(graph = graph,
-    #                                   genomes = genomes,
-    #                                   gene_list = gene_list,
-    #                                   n_len = n_len,
-    #                                   full = full)
-    #     if(!is.null(full_con$full_con)){
-    #         .writeEntries(x = full_con$full_con, 
-    #                       file = orthopair_fn,
-    #                       sog = i,
-    #                       gene_list = gene_list)
-    #     }
-    #     
-    #     if(is.null(full_con$rest_genes)){
-    #         full_mem <- list(rest_genes = NULL)
-    #         
-    #     } else {
-    #         full_mem <- .orgFullMembered(graph = graph,
-    #                                      rest_genes = full_con$rest_genes, 
-    #                                      genomes = genomes, 
-    #                                      gene_list = gene_list,
-    #                                      n_len = n_len,
-    #                                      full = full)
-    #         if(!is.null(full_mem$full_mem)){
-    #             .writeEntries(x = full_mem$full_mem,
-    #                           file = orthopair_fn, 
-    #                           sog = i,
-    #                           gene_list = gene_list)
-    #         }
-    #     }
-    #     
-    #     if(is.null(full_mem$rest_genes)){
-    #         full_chain <- list(full_chain = NULL)
-    #         
-    #     } else {
-    #         full_chain <- .orgFullChained(graph = graph, 
-    #                                       rest_genes = full_mem$rest_genes, 
-    #                                       genomes = genomes, 
-    #                                       gene_list = gene_list,
-    #                                       n_len = n_len,
-    #                                       full = full)
-    #         
-    #         if(!is.null(full_chain$full_chain)){
-    #             .writeEntries(x = full_chain$full_chain,
-    #                           file = orthopair_fn,
-    #                           sog = i,
-    #                           gene_list = gene_list)
-    #         }
-    #     }
-    #     
-    #     out <- rbind(full_con$full_con, 
-    #                  full_mem$full_mem,
-    #                  full_chain$full_chain)
-    #     check <- all(full_chain$rest_genes %in% unlist(out))
-    #     if(check){
-    #         break
-    #     }
-    #     graph_ego <- ego(graph = graph, order = 1, nodes = full_chain$rest_genes)
-    #     graph_ego <- lapply(graph_ego, names)
-    #     graph <- subgraph(graph = graph, vids = unlist(graph_ego))
-    # }
-    
-    mclapply(X = grp, mc.cores = n_core, FUN = function(i){
-        i_graph <- graph_grp$gene_id[graph_grp$SOG == i]
+    mclapply(X = seq_along(grp), mc.cores = n_core, FUN = function(i){
+        i_graph <- graph_grp$gene_id[graph_grp$SOG %in% unlist(grp[i])]
         i_graph <- induced_subgraph(graph = graph,
                                     vids = which(V(graph)$name %in% i_graph))
         i_orthopair_fn <- paste0(orthopair_fn, ".tmp", i)
@@ -985,7 +910,9 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1){
     })
     out <- NULL
     for(i_fn in orthopair_tmp_fn){
-        out <- rbind(out, read.csv(file = i_fn))
+        if(file.exists(i_fn)){
+            out <- rbind(out, read.csv(file = i_fn))
+        }
     }
     out <- out[order(out$SOG), ]
     write.csv(out, file = orthopair_fn, row.names = FALSE)

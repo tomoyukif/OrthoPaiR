@@ -12,6 +12,7 @@ orthopair(
   miniprot_condaenv = "miniprot",
   n_threads = NULL,
   target_pair = NULL,
+  use_prot = FALSE,
   verbose = TRUE,
   overwrite = FALSE,
   resume = FALSE,

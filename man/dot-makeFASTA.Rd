@@ -4,7 +4,7 @@
 \alias{.makeFASTA}
 \title{Merge CDS files into a single FASTA file}
 \usage{
-.makeFASTA(cds_fn)
+.makeFASTA(fasta_fn, type = "cds")
 }
 \arguments{
 \item{cds_fn}{A character vector containing paths to CDS files.}

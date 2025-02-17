@@ -8,6 +8,7 @@ rbh(
   object,
   db1 = NULL,
   db2 = NULL,
+  use_prot = FALSE,
   n_threads = 1,
   n_batch = NULL,
   makedb = TRUE,
