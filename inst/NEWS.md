@@ -1,4 +1,4 @@
-Changes in version 0.4.12 (2025-02-18)
+Changes in version 0.4.13 (2025-02-18)
 + Use reciprocal protein BLAST hits if 'use_prot = TRUE' in rbh().
 
 Changes in version 0.4.11 (2025-02-10)

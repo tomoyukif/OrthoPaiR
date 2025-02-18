@@ -298,8 +298,20 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
         case <- 1
         cds <- readDNAStringSet(filepath = cds)
         new_cds_names <- sub("\\s.+", "", names(cds))
-        hit <- match(new_cds_names, gff$ID)
-        
+        hit_id <- match(new_cds_names, gff$ID)
+        hit_tx_id <- match(new_cds_names, gff$transcript_id)
+        hit_p_id <- match(new_cds_names, gff$protein_id)
+        best <- which.max(c(sum(!is.na(hit_id)), 
+                            sum(!is.na(hit_tx_id)), 
+                            sum(!is.na(hit_p_id))))
+        if(best == 2){
+            hit <- hit_tx_id
+        } else if(best == 3){
+            hit <- hit_p_id
+        } else {
+            hit <- hit_id
+        }
+
         if(any(!is.na(hit))){
             new_cds_names <- gff$ID[hit]
             omit_cds <- which(is.na(hit))
@@ -312,7 +324,19 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
         if(!check){
             case <- 2
             new_cds_names <- sub("\\..+", "", names(cds))
-            hit <- match(new_cds_names, gff$ID)
+            hit_id <- match(new_cds_names, gff$ID)
+            hit_tx_id <- match(new_cds_names, gff$transcript_id)
+            hit_p_id <- match(new_cds_names, gff$protein_id)
+            best <- which.max(c(sum(!is.na(hit_id)), 
+                                sum(!is.na(hit_tx_id)), 
+                                sum(!is.na(hit_p_id))))
+            if(best == 2){
+                hit <- hit_tx_id
+            } else if(best == 3){
+                hit <- hit_p_id
+            } else {
+                hit <- hit_id
+            }
             
             if(any(!is.na(hit))){
                 new_cds_names <- gff$ID[hit]
@@ -327,7 +351,19 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
                 case <- 3
                 new_cds_names <- sub(".+transcript_id=", "", names(cds))
                 new_cds_names <- sub("\\].+", "", new_cds_names)
-                hit <- match(new_cds_names, gff$transcript_id)
+                hit_id <- match(new_cds_names, gff$ID)
+                hit_tx_id <- match(new_cds_names, gff$transcript_id)
+                hit_p_id <- match(new_cds_names, gff$protein_id)
+                best <- which.max(c(sum(!is.na(hit_id)), 
+                                    sum(!is.na(hit_tx_id)), 
+                                    sum(!is.na(hit_p_id))))
+                if(best == 2){
+                    hit <- hit_tx_id
+                } else if(best == 3){
+                    hit <- hit_p_id
+                } else {
+                    hit <- hit_id
+                }
                 
                 if(any(!is.na(hit))){
                     new_cds_names <- gff$ID[hit]
@@ -342,7 +378,19 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
                     case <- 4
                     new_cds_names <- sub(".+protein_id=", "", names(cds))
                     new_cds_names <- sub("\\].+", "", new_cds_names)
-                    hit <- match(new_cds_names, gff$protein_id)
+                    hit_id <- match(new_cds_names, gff$ID)
+                    hit_tx_id <- match(new_cds_names, gff$transcript_id)
+                    hit_p_id <- match(new_cds_names, gff$protein_id)
+                    best <- which.max(c(sum(!is.na(hit_id)), 
+                                        sum(!is.na(hit_tx_id)), 
+                                        sum(!is.na(hit_p_id))))
+                    if(best == 2){
+                        hit <- hit_tx_id
+                    } else if(best == 3){
+                        hit <- hit_p_id
+                    } else {
+                        hit <- hit_id
+                    }
                     
                     if(any(!is.na(hit))){
                         new_cds_names[!is.na(hit)] <- gff$Parent[na.omit(hit)]
@@ -361,7 +409,7 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
         }
         
         if(case == 0){
-            stop("Names in cds and protein FASTA files do not match the names in the GFF file", 
+            stop("Names in cds FASTA files do not match the names in the GFF file", 
                  "Autofix of the names faild.",
                  "Need manual fix.",
                  call. = FALSE)
@@ -379,34 +427,135 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
         
         if(!is.null(prot)){
             omit_prot <- NULL
+            case <- 1
             prot <- readAAStringSet(filepath = prot)
-            if(case == 1){
-                names(prot) <- sub("\\s.+", "", names(prot))
-                
-            } else if(case == 2){
-                names(prot) <- sub("\\..+", "", names(prot))
-                
-            } else if(case == 3){
-                names(prot) <- sub(".+transcript_id=", "", names(prot))
-                names(prot) <- sub("\\].+", "", names(prot))
-                hit <- match(names(prot), gff$transcript_id)
+            new_prot_names <- sub("\\s.+", "", names(prot))
+            hit_id <- match(new_cds_names, gff$ID)
+            hit_tx_id <- match(new_cds_names, gff$transcript_id)
+            hit_p_id <- match(new_cds_names, gff$protein_id)
+            best <- which.max(c(sum(!is.na(hit_id)), 
+                                sum(!is.na(hit_tx_id)), 
+                                sum(!is.na(hit_p_id))))
+            if(best == 2){
+                hit <- hit_tx_id
+            } else if(best == 3){
+                hit <- hit_p_id
+            } else {
+                hit <- hit_id
+            }
+            
+            if(any(!is.na(hit))){
+                new_prot_names <- gff$ID[hit]
                 omit_prot <- which(is.na(hit))
-                names(prot) <- gff$ID[hit]
+                check <- all(new_prot_names[!is.na(hit)] %in% gff$ID)
                 
-            } else if(case == 4){
-                names(prot) <- sub(".+protein_id=", "", names(prot))
-                names(prot) <- sub("\\].+", "", names(prot))
-                hit <- match(names(prot), gff$protein_id)
-                omit_prot <- which(is.na(hit))
-                names(prot)[!is.na(hit)] <- gff$Parent[na.omit(hit)]
+            } else {
+                check <- FALSE
             }
-            if(length(omit_prot) == 0){
-                omit_prot <- NULL
+            
+            if(!check){
+                case <- 2
+                new_prot_names <- sub("\\..+", "", names(prot))
+                hit_id <- match(new_cds_names, gff$ID)
+                hit_tx_id <- match(new_cds_names, gff$transcript_id)
+                hit_p_id <- match(new_cds_names, gff$protein_id)
+                best <- which.max(c(sum(!is.na(hit_id)), 
+                                    sum(!is.na(hit_tx_id)), 
+                                    sum(!is.na(hit_p_id))))
+                if(best == 2){
+                    hit <- hit_tx_id
+                } else if(best == 3){
+                    hit <- hit_p_id
+                } else {
+                    hit <- hit_id
+                }
+                
+                if(any(!is.na(hit))){
+                    new_prot_names <- gff$ID[hit]
+                    omit_prot <- which(is.na(hit))
+                    check <- all(new_prot_names[!is.na(hit)] %in% gff$ID)
+                    
+                } else {
+                    check <- FALSE
+                }
+                
+                if(!check){
+                    case <- 3
+                    new_prot_names <- sub(".+transcript_id=", "", names(prot))
+                    new_prot_names <- sub("\\].+", "", new_prot_names)
+                    hit_id <- match(new_cds_names, gff$ID)
+                    hit_tx_id <- match(new_cds_names, gff$transcript_id)
+                    hit_p_id <- match(new_cds_names, gff$protein_id)
+                    best <- which.max(c(sum(!is.na(hit_id)), 
+                                        sum(!is.na(hit_tx_id)), 
+                                        sum(!is.na(hit_p_id))))
+                    if(best == 2){
+                        hit <- hit_tx_id
+                    } else if(best == 3){
+                        hit <- hit_p_id
+                    } else {
+                        hit <- hit_id
+                    }
+                    
+                    if(any(!is.na(hit))){
+                        new_prot_names <- gff$ID[hit]
+                        omit_prot <- which(is.na(hit))
+                        check <- all(new_prot_names[!is.na(hit)] %in% gff$ID)
+                        
+                    } else {
+                        check <- FALSE
+                    }
+                    
+                    if(!check){
+                        case <- 4
+                        new_prot_names <- sub(".+protein_id=", "", names(prot))
+                        new_prot_names <- sub("\\].+", "", new_prot_names)
+                        hit_id <- match(new_cds_names, gff$ID)
+                        hit_tx_id <- match(new_cds_names, gff$transcript_id)
+                        hit_p_id <- match(new_cds_names, gff$protein_id)
+                        best <- which.max(c(sum(!is.na(hit_id)), 
+                                            sum(!is.na(hit_tx_id)), 
+                                            sum(!is.na(hit_p_id))))
+                        if(best == 2){
+                            hit <- hit_tx_id
+                        } else if(best == 3){
+                            hit <- hit_p_id
+                        } else {
+                            hit <- hit_id
+                        }
+                        
+                        if(any(!is.na(hit))){
+                            new_prot_names[!is.na(hit)] <- gff$Parent[na.omit(hit)]
+                            omit_prot <- which(is.na(hit))
+                            check <- all(new_prot_names[!is.na(hit)] %in% gff$ID)
+                            
+                        } else {
+                            check <- FALSE
+                        }
+                        
+                        if(!check){
+                            case <- 0
+                        }
+                    }
+                }
             }
-            if(!is.null(omit_prot)){
-                prot <- prot[-omit_prot]
+            
+            if(case == 0){
+                stop("Names in prot FASTA files do not match the names in the GFF file", 
+                     "Autofix of the names faild.",
+                     "Need manual fix.",
+                     call. = FALSE)
+                
+            } else {
+                names(prot) <- new_prot_names
+                if(length(omit_prot) == 0){
+                    omit_prot <- NULL
+                }
+                if(!is.null(omit_prot)){
+                    prot <- prot[-omit_prot]
+                }
+                writeXStringSet(prot, out$prot)
             }
-            writeXStringSet(prot, out$prot)
         }
         
     } else {

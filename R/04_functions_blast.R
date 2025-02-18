@@ -36,8 +36,8 @@ rbh <- function(object,
     on.exit(H5Fclose(h5))
 
     # Generate FASTA files from the CDS sequences
-    fa1 <- .makeFASTA(cds_fn = as.vector(h5$files$query_cds))
-    fa2 <- .makeFASTA(cds_fn = as.vector(h5$files$subject_cds))
+    fa1 <- .makeFASTA(fasta_fn = as.vector(h5$files$query_cds))
+    fa2 <- .makeFASTA(fasta_fn = as.vector(h5$files$subject_cds))
 
     # Create BLAST databases if necessary
     if(makedb | is.null(db1) | is.null(db2)){
@@ -149,7 +149,6 @@ rbh <- function(object,
                                         task = "-task blastp")
             
             # Create HDF5 groups and save BLAST outputs
-            .h5creategroup(object$h5,"blast")
             .h5overwrite(obj = blast_out1, file = object$h5, "blast/blastp_q2s")
             .h5overwrite(obj = blast_out2, file = object$h5, "blast/blastp_s2q")
             
