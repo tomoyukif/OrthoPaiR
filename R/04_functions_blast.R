@@ -25,20 +25,21 @@ rbh <- function(object,
                 max_target_seqs = 100000,
                 pident = 0,
                 qcovs = 0,
-                evalue = 1e-4
+                evalue = 1e-4,
+                diamond_exec_path = NULL
 ){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
-
+    
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
-
+    
     # Generate FASTA files from the CDS sequences
     fa1 <- .makeFASTA(fasta_fn = as.vector(h5$files$query_cds))
     fa2 <- .makeFASTA(fasta_fn = as.vector(h5$files$subject_cds))
-
+    
     # Create BLAST databases if necessary
     if(makedb | is.null(db1) | is.null(db2)){
         makeblastdb(file = fa1, dbtype = "nucl", verbose = FALSE)
@@ -46,16 +47,16 @@ rbh <- function(object,
         db1 <- fa1
         db2 <- fa2
     }
-
+    
     # Read the FASTA files and create BLAST database connections
     fa1 <- readDNAStringSet(fa1)
     fa2 <- readDNAStringSet(fa2)
     db1 <- blast(db = db1, type = "blastn")
     db2 <- blast(db = db2, type = "blastn")
-
+    
     # Set scientific notation options
     options(scipen = 10^6)
-
+    
     # Perform BLAST searches in both directions
     blast_out1 <- .blast_search(fa = fa1,
                                 db = db2,
@@ -71,7 +72,7 @@ rbh <- function(object,
                                 max_target_seqs = max_target_seqs,
                                 evalue = evalue,
                                 task = "-task blastn")
-
+    
     # Create HDF5 groups and save BLAST outputs
     .h5creategroup(object$h5,"blast")
     .h5overwrite(obj = blast_out1, file = object$h5, "blast/blastn_q2s")
@@ -83,30 +84,30 @@ rbh <- function(object,
                                  qcovs = qcovs,
                                  evalue = evalue,
                                  best = TRUE)
-
+    
     blast_best2 <- .blast_filter(blast_out = blast_out2,
                                  pident = pident,
                                  qcovs = qcovs,
                                  evalue = evalue,
                                  best = TRUE)
-
+    
     # Filter BLAST results based on user-defined criteria
     blast_out1 <- .blast_filter(blast_out = blast_out1,
                                 pident = pident,
                                 qcovs = qcovs,
                                 evalue = evalue,
                                 best = FALSE)
-
+    
     blast_out2 <- .blast_filter(blast_out = blast_out2,
                                 pident = pident,
                                 qcovs = qcovs,
                                 evalue = evalue,
                                 best = FALSE)
-
+    
     # Find Reciprocal Best BLAST Hits (RBBH) and Reciprocal BLAST Hits (RBH)
     rbbh_out <- .find_reciprocal(df1 = blast_best1, df2 = blast_best2)
     rbh_out <- .find_reciprocal(df1 = blast_out1, df2 = blast_out2)
-
+    
     if(use_prot){
         # Generate FASTA files from the CDS sequences
         check1 <- "no_query_prot" %in% as.vector(h5$files$query_prot)
@@ -115,38 +116,22 @@ rbh <- function(object,
             fa1 <- .makeFASTA(fasta_fn = as.vector(h5$files$query_prot), type = "prot")
             fa2 <- .makeFASTA(fasta_fn = as.vector(h5$files$subject_prot), type = "prot")
             
-            # Create BLAST databases if necessary
-            if(makedb | is.null(db1) | is.null(db2)){
-                makeblastdb(file = fa1, dbtype = "prot", verbose = FALSE)
-                makeblastdb(file = fa2, dbtype = "prot", verbose = FALSE)
-                db1 <- fa1
-                db2 <- fa2
-            }
-            
-            # Read the FASTA files and create BLAST database connections
-            fa1 <- readDNAStringSet(fa1)
-            fa2 <- readDNAStringSet(fa2)
-            db1 <- blast(db = db1, type = "blastp")
-            db2 <- blast(db = db2, type = "blastp")
-            
             # Set scientific notation options
             options(scipen = 10^6)
             
             # Perform BLAST searches in both directions
-            blast_out1 <- .blast_search(fa = fa1,
-                                        db = db2,
-                                        n_threads = n_threads,
-                                        n_batch = n_batch,
-                                        max_target_seqs = max_target_seqs,
-                                        evalue = evalue,
-                                        task = "-task blastp")
-            blast_out2 <- .blast_search(fa = fa2,
-                                        db = db1,
-                                        n_threads = n_threads,
-                                        n_batch = n_batch,
-                                        max_target_seqs = max_target_seqs,
-                                        evalue = evalue,
-                                        task = "-task blastp")
+            blast_out1 <- .diamond_search(query = fa1,
+                                          subject = fa2,
+                                          n_threads = n_threads,
+                                          max_target_seqs = max_target_seqs,
+                                          evalue = evalue,
+                                          diamond_exec_path = diamond_exec_path)
+            blast_out2 <- .diamond_search(query = fa2,
+                                          subject = fa1,
+                                          n_threads = n_threads,
+                                          max_target_seqs = max_target_seqs,
+                                          evalue = evalue,
+                                          diamond_exec_path = diamond_exec_path)
             
             # Create HDF5 groups and save BLAST outputs
             .h5overwrite(obj = blast_out1, file = object$h5, "blast/blastp_q2s")
@@ -274,7 +259,7 @@ rbh <- function(object,
                         paste("-max_target_seqs", max_target_seqs),
                         paste("-evalue", evalue),
                         paste("-num_threads", n_threads))
-
+    
     # Check if batch processing is required
     if(is.null(n_batch)){
         # Perform the BLAST search without batching
@@ -297,6 +282,26 @@ rbh <- function(object,
     }
     if(nrow(out) == 0){
         out <- NA
+    }
+    return(out)
+}
+
+#' @importFrom rdiamond diamond_protein_to_protein
+.diamond_search <- function(query, subject, n_threads, max_target_seqs, evalue, diamond_exec_path){
+    suppressMessages({
+        out <- diamond_protein_to_protein(query = query,
+                                          subject = subject, 
+                                          cores = n_threads,
+                                          max_target_seqs = max_target_seqs,
+                                          evalue = evalue,
+                                          diamond_exec_path = diamond_exec_path)
+    })
+    
+    if(nrow(out) == 0){
+        out <- NA
+    } else {
+        out <- subset(out, select = c(query_id, subject_id, perc_identity, evalue, qcovhsp))
+        names(out) <- c("qseqid", "sseqid", "pident", "evalue", "qcovs")
     }
     return(out)
 }
@@ -337,20 +342,20 @@ rbh <- function(object,
         single_hit <- blast_out[single_hit, ]
         mult_hit <- blast_out$qseqid %in% names(n_hit)[n_hit > 1]
         mult_hit <- blast_out[mult_hit, ]
-
+        
         # Filter multiple-hit sequences by the lowest e-value
         filter <- tapply(mult_hit$evalue, mult_hit$qseqid, min)
         hit <- match(mult_hit$qseqid, names(filter))
         filter <- filter[hit]
         mult_hit <- subset(mult_hit, subset = evalue == filter)
-
+        
         # Further filter by the highest product of percentage identity and query coverage
         qcov_pident <- mult_hit$pident * mult_hit$qcovs * 1e-2
         filter <- tapply(qcov_pident, mult_hit$qseqid, max)
         hit <- match(mult_hit$qseqid, names(filter))
         filter <- filter[hit]
         mult_hit <- subset(mult_hit, subset = qcov_pident == filter)
-
+        
         # Combine single-hit and multiple-hit sequences
         blast_out <- rbind(single_hit, mult_hit)
     }
@@ -371,7 +376,7 @@ rbh <- function(object,
     # Create unique identifiers for BLAST hits in both directions
     id1 <- paste(df1$qseqid, df1$sseqid, sep = "_")
     id2 <- paste(df2$sseqid, df2$qseqid, sep = "_")
-
+    
     # Identify reciprocal hits
     rhit <- id1 %in% id2
     out <- subset(df1, subset = rhit, select = c(qseqid, sseqid))
@@ -379,7 +384,7 @@ rbh <- function(object,
     if(nrow(out) == 0){
         return(NA)
     } 
-
+    
     # Extract relevant BLAST statistics for reciprocal hits
     out_id <- paste(out$qseqid, out$sseqid, sep = "_")
     out$q2s_pident <- df1$pident[match(out_id, id1)]

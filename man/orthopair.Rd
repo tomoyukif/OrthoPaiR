@@ -10,6 +10,7 @@ orthopair(
   conda = "conda",
   miniprot_bin = "miniprot",
   miniprot_condaenv = "miniprot",
+  diamond_exec_path = NULL,
   n_threads = NULL,
   target_pair = NULL,
   use_prot = FALSE,

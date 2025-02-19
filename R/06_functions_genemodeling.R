@@ -30,6 +30,8 @@ mapProt <- function(object,
     
     .createFASTA(object = object, out_dir = out_dir, merge = FALSE)
     
+    message("Organize and integrate miniprot predicated gene models...")
+    
     .orgMiniprot(object = object, out_dir = out_dir, len_diff = len_diff)
     
     .createFASTA(object = object, out_dir = out_dir, merge = TRUE)

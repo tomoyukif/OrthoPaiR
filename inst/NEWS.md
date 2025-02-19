@@ -1,3 +1,6 @@
+Changes in version 0.4.14 (2025-02-19)
++ Replace BLAST to DIAMOND for the protein BLAST search in rbh().
+
 Changes in version 0.4.13 (2025-02-18)
 + Use reciprocal protein BLAST hits if 'use_prot = TRUE' in rbh().
 

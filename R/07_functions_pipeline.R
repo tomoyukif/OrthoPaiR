@@ -12,6 +12,7 @@ orthopair <- function(in_list,
                       conda = "conda",
                       miniprot_bin = "miniprot",
                       miniprot_condaenv = "miniprot",
+                      diamond_exec_path = NULL,
                       n_threads = NULL,
                       target_pair = NULL,
                       use_prot = FALSE,
@@ -84,6 +85,7 @@ orthopair <- function(in_list,
                                             miniprot_bin = miniprot_bin,
                                             miniprot_condaenv = miniprot_condaenv,
                                             miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
+                                            diamond_exec_path = diamond_exec_path,
                                             n_threads = n_threads,
                                             overwrite = overwrite,
                                             use_prot = use_prot,
@@ -204,7 +206,7 @@ orthopair <- function(in_list,
     out <- NULL
     for(i in seq_along(comb_id)){
         prefix <- comb_id[i]
-        input_dir <- file.path(working_dir, "input")
+        input_dir <- file.path(working_dir, "input", prefix)
         dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
         
         fn_list <- list(query_genome = in_list$genome[combs[1, i]],
@@ -240,11 +242,10 @@ orthopair <- function(in_list,
                 new_fn <- paste0(target, ".fa")
             }
             new_path <- file.path(input_dir, new_fn)
-            abs_path <- file.path(getwd(), sub("^\\./", "", fn_list[[i]]))
             if(file.exists(new_path)){
                 unlink(new_path, force = TRUE)
             }
-            check <- file.symlink(abs_path, new_path)
+            check <- file.symlink(fn_list[[i]], new_path)
             if(check){
                 fn_list[[i]] <- new_path
                 
@@ -274,6 +275,7 @@ orthopair <- function(in_list,
                           miniprot_bin = "miniprot",
                           miniprot_condaenv = "miniprot",
                           miniprot_out_dir = "./miniprot_out",
+                          diamond_exec_path = NULL,
                           n_threads = NULL,
                           verbose = TRUE,
                           overwrite = FALSE,
@@ -375,7 +377,8 @@ orthopair <- function(in_list,
             n_threads = n_threads, 
             pident = object$param_list$pident, 
             qcovs = object$param_list$qcovs, 
-            evalue = object$param_list$evalue)
+            evalue = object$param_list$evalue, 
+            diamond_exec_path = diamond_exec_path)
         
     } else {
         if(verbose){

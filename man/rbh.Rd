@@ -15,7 +15,8 @@ rbh(
   max_target_seqs = 1e+05,
   pident = 0,
   qcovs = 0,
-  evalue = 1e-04
+  evalue = 1e-04,
+  diamond_exec_path = NULL
 )
 }
 \arguments{

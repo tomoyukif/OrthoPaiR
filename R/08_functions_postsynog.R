@@ -49,7 +49,6 @@ reorgOrthopiars <- function(hdf5_fn,
                                                 df = data_j$orthopair, 
                                                 target_data = target_data[j, ],
                                                 prefix = ref_prefix)
-                    .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1)
                     mp_gff <- data_j$gff
                     mp_gff <- .renameMP(gff = mp_gff, prefix = ref_prefix)
                     mp_gff <- mp_gff[mp_gff$source %in% "miniprot"]
@@ -152,7 +151,7 @@ reorgOrthopiars <- function(hdf5_fn,
 #' @importFrom rtracklayer import.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose
 #' @importFrom Biostrings readDNAStringSet readAAStringSet
-.importData <- function(hdf5_fn, target_data, index, reorg){
+.importData <- function(hdf5_fn, target_data, index, reorg = TRUE){
     i_comb_id <- target_data$comb_id[index]
     i_target_data <- target_data$target[index]
     h5 <- H5Fopen(hdf5_fn[i_comb_id])
@@ -182,13 +181,13 @@ reorgOrthopiars <- function(hdf5_fn,
         orthopair <- h5$orthopair_gene
         if(i_target_data == "query"){
             gff <- .getMiniprotGFF(gff = gff,
-                                   gene = i_orthopair$query_gene,
-                                   tx = i_orthopair$query_tx)
+                                   gene = orthopair$query_gene,
+                                   tx = orthopair$query_tx)
             
         } else {
             gff <- .getMiniprotGFF(gff = gff,
-                                   gene = i_orthopair$subject_gene,
-                                   tx = i_orthopair$subject_tx)
+                                   gene = orthopair$subject_gene,
+                                   tx = orthopair$subject_tx)
         }
     }
     
@@ -916,6 +915,7 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
     }
     out <- out[order(out$SOG), ]
     write.csv(out, file = orthopair_fn, row.names = FALSE)
+    unlink(orthopair_tmp_fn, force = TRUE, recursive = TRUE)
     invisible(orthopair_fn)
 }
 
