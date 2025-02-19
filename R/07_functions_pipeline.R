@@ -248,7 +248,7 @@ orthopair <- function(in_list,
                 full_path <- file.path(getwd(), full_path)
             }
             
-            check <- file.symlink(fn_list[[i]], new_path)
+            check <- file.symlink(full_path, new_path)
             if(check){
                 fn_list[[i]] <- new_path
                 
