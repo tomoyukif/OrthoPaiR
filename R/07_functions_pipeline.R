@@ -245,6 +245,11 @@ orthopair <- function(in_list,
             if(file.exists(new_path)){
                 unlink(new_path, force = TRUE)
             }
+            full_path <- sub("\\./", "", fn_list[[i]])
+            if(!grepl("^\\/|^~\\/|^[^\\/]:", full_path)){
+                full_path <- file.path(getwd(), full_path)
+            }
+            
             check <- file.symlink(fn_list[[i]], new_path)
             if(check){
                 fn_list[[i]] <- new_path
