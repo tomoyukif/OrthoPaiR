@@ -242,9 +242,7 @@ orthopair <- function(in_list,
                 new_fn <- paste0(target, ".fa")
             }
             new_path <- file.path(input_dir, new_fn)
-            if(file.exists(new_path)){
-                unlink(new_path, force = TRUE)
-            }
+            unlink(new_path, force = TRUE)
             full_path <- sub("\\./", "", fn_list[[i]])
             if(!grepl("^\\/|^~\\/|^[^\\/]:", full_path)){
                 full_path <- file.path(getwd(), full_path)
@@ -258,7 +256,7 @@ orthopair <- function(in_list,
                 
                 
                 stop(paste("Faild to create a symlink to ",
-                           abs_path), 
+                           full_path), 
                      call. = FALSE)
             }
         }
