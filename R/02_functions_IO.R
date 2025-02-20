@@ -23,6 +23,7 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                             hdf5_path = "./orthopair.h5",
                             miniprot_out_dir ="./miniprot",
                             overwrite = FALSE,
+                            resume = FALSE,
                             module = NULL,
                             param_list = NULL){
     
