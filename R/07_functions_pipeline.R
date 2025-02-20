@@ -35,12 +35,15 @@ orthopair <- function(in_list,
         n_threads <- core - 1
     }
     hdf5_out_dir <- file.path(working_dir, "hdf5_out")
+    miniprot_out_dir <- file.path(working_dir, "miniprot_out")
+    diamond_out_dir <- file.path(working_dir, "diamond_out")
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
     
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
                                  working_dir = working_dir,
-                                 miniprot_out_dir = file.path(working_dir, "miniprot_out"),
+                                 miniprot_out_dir = miniprot_out_dir,
+                                 diamond_out_dir = diamond_out_dir,
                                  target_pair = target_pair)
     hdf5_fn <- NULL
     on.exit({return(hdf5_fn)})
@@ -85,6 +88,7 @@ orthopair <- function(in_list,
                                             miniprot_bin = miniprot_bin,
                                             miniprot_condaenv = miniprot_condaenv,
                                             miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir,
+                                            diamond_out_dir = pairwise_input[[i]]$diamond_out_dir,
                                             diamond_exec_path = diamond_exec_path,
                                             n_threads = n_threads,
                                             overwrite = overwrite,
@@ -184,6 +188,7 @@ orthopair <- function(in_list,
                        hdf5_out_dir,
                        working_dir,
                        miniprot_out_dir,
+                       diamond_out_dir,
                        target_pair = NULL){
     in_list <- as.data.frame(x = in_list)
     combs <- combn(x = seq_len(nrow(in_list)), m = 2)
@@ -222,6 +227,7 @@ orthopair <- function(in_list,
         
         fn_list$hdf5_path <- file.path(hdf5_out_dir, paste0(prefix, ".h5"))
         fn_list$miniprot_out_dir <- file.path(miniprot_out_dir, prefix)
+        fn_list$diamond_out_dir <- file.path(diamond_out_dir, prefix)
         out <- c(out, list(fn_list))
     }
     names(out) <- comb_id
@@ -265,19 +271,20 @@ orthopair <- function(in_list,
 }
 
 #' @importFrom parallel detectCores
-.runOrthoPair <- function(query_genome,
-                          subject_genome,
-                          query_gff,
-                          subject_gff,
-                          query_cds,
-                          subject_cds,
-                          query_prot,
-                          subject_prot,
+.runOrthoPair <- function(query_genome = "",
+                          subject_genome = "",
+                          query_gff = "",
+                          subject_gff = "",
+                          query_cds = "",
+                          subject_cds = "",
+                          query_prot = "",
+                          subject_prot = "",
                           hdf5_path = "./orthopair.h5",
                           conda = "conda",
                           miniprot_bin = "miniprot",
                           miniprot_condaenv = "miniprot",
-                          miniprot_out_dir = "./miniprot_out",
+                          miniprot_out_dir = "",
+                          diamond_out_dir = "",
                           diamond_exec_path = NULL,
                           n_threads = NULL,
                           verbose = TRUE,
@@ -318,41 +325,6 @@ orthopair <- function(in_list,
                               module = module,
                               param_list = param_list)
     
-    # if(object$resume$sibeliaz){
-    #     if(verbose){
-    #         message("Running SibeliaZ for local collinear block (LCB) detection.")
-    #     }
-    #     runSibeliaZ(object = object,
-    #                 out_dir = sibeliaz_out_dir,
-    #                 sibeliaz_bin = sibeliaz_bin,
-    #                 maf2synteny_bin = maf2synteny_bin,
-    #                 conda = conda,
-    #                 condaenv = sibeliaz_condaenv,
-    #                 run_sibeliaz = TRUE)
-    #     
-    # } else {
-    #     if(verbose){
-    #         message("skip running SibeliaZ.")
-    #     }
-    # }
-    
-    # if(object$resume$lcbgraph){
-    #     if(verbose){
-    #         # message("Runnig LCB pairing.")
-    #         message("Generating LCB graph.")
-    #     }
-    #     sibeliaRaw2Graph(object = object)
-    #     
-    #     # sibeliaLCB2DF(object = object)
-    #     # lcbClassify(object = object)
-    #     # getLCBpairs(object = object)
-    #     
-    # } else {
-    #     if(verbose){
-    #         message("skip LCB pairing.")
-    #     }   
-    # }
-    
     if(object$resume$miniprot){
         if(verbose){
             message("Gene modeling by Miniprot to find missing genes.")
@@ -381,7 +353,8 @@ orthopair <- function(in_list,
             pident = object$param_list$pident, 
             qcovs = object$param_list$qcovs, 
             evalue = object$param_list$evalue, 
-            diamond_exec_path = diamond_exec_path)
+            diamond_exec_path = diamond_exec_path,
+            diamond_out_dir = diamond_out_dir)
         
     } else {
         if(verbose){

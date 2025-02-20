@@ -26,7 +26,8 @@ rbh <- function(object,
                 pident = 0,
                 qcovs = 0,
                 evalue = 1e-4,
-                diamond_exec_path = NULL
+                diamond_exec_path = NULL,
+                diamond_out_dir = ""
 ){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
@@ -125,13 +126,15 @@ rbh <- function(object,
                                           n_threads = n_threads,
                                           max_target_seqs = max_target_seqs,
                                           evalue = evalue,
-                                          diamond_exec_path = diamond_exec_path)
+                                          diamond_exec_path = diamond_exec_path,
+                                          diamond_out_dir = diamond_out_dir)
             blast_out2 <- .diamond_search(query = fa2,
                                           subject = fa1,
                                           n_threads = n_threads,
                                           max_target_seqs = max_target_seqs,
                                           evalue = evalue,
-                                          diamond_exec_path = diamond_exec_path)
+                                          diamond_exec_path = diamond_exec_path,
+                                          diamond_out_dir = diamond_out_dir)
             
             # Create HDF5 groups and save BLAST outputs
             .h5overwrite(obj = blast_out1, file = object$h5, "blast/blastp_q2s")
@@ -287,14 +290,15 @@ rbh <- function(object,
 }
 
 #' @importFrom rdiamond diamond_protein_to_protein
-.diamond_search <- function(query, subject, n_threads, max_target_seqs, evalue, diamond_exec_path){
+.diamond_search <- function(query, subject, n_threads, max_target_seqs, evalue, diamond_exec_path, diamond_out_dir){
     suppressMessages({
         out <- diamond_protein_to_protein(query = query,
                                           subject = subject, 
                                           cores = n_threads,
                                           max_target_seqs = max_target_seqs,
                                           evalue = evalue,
-                                          diamond_exec_path = diamond_exec_path)
+                                          diamond_exec_path = diamond_exec_path,
+                                          output_path = diamond_out_dir)
     })
     
     if(nrow(out) == 0){
