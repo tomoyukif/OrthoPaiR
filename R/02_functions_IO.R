@@ -40,38 +40,45 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     out <- NULL
     out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
     
-    resume <- .checkResumePoint(hdf5_path = out$h5,
-                                resume = resume,
-                                module = module)
-    
-    out$resume <- resume
     if(is.null(files$query_genome) | is.null(files$subject_genome)){
         query_genome <- "no_query_genome"
         subject_genome <- "no_subject_genome"
-        out$resume$miniprot <- FALSE
-        reset <- TRUE
+        no_genome <- TRUE
         
     } else {
         # Summarize the query and subject genomes
         out$genome$query <- .genomeSummary(genome = query_genome)
         out$genome$subject <- .genomeSummary(genome = subject_genome)
-        if(out$resume$miniprot){
-            reset <- TRUE
-            
-        } else {
-            reset <- FALSE
-        }
+        no_genome <- FALSE
     }
     
     if(is.null(files$query_prot) | is.null(files$subject_prot)){
         query_prot <- "no_query_prot"
         subject_prot <- "no_subject_prot"
-        out$resume$miniprot <- FALSE
-        reset <- TRUE
-        
+        no_prot <- TRUE
+    } else {
+        no_prot <- FALSE
     }
     
-    if(reset){
+    out$resume <- .checkResumePoint(hdf5_path = out$h5,
+                                    resume = resume,
+                                    module = module,
+                                    no_genome = no_genome,
+                                    no_prot = no_prot)
+    
+    if(out$resume$set_mp){
+        if(out$resume$blast | out$resume$pairing){
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
+                         file = out$h5, "files/query_gff")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
+                         file = out$h5, "files/subject_gff")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
+                         file = out$h5, "files/query_cds")
+            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
+                         file = out$h5, "files/subject_cds")
+        }
+        
+    } else {
         .h5creategroup(out$h5,"files")
         .h5overwrite(obj = query_genome,
                      file = out$h5, "files/query_genome")
@@ -89,18 +96,6 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                      file = out$h5, "files/query_prot")
         .h5overwrite(obj = subject_prot,
                      file = out$h5, "files/subject_prot")
-        
-    } else {
-        if(out$resume$blast | out$resume$pairing){
-            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
-                         file = out$h5, "files/query_gff")
-            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
-                         file = out$h5, "files/subject_gff")
-            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
-                         file = out$h5, "files/query_cds")
-            .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
-                         file = out$h5, "files/subject_cds")
-        }
     }
     
     out$param_list <- .validateParamList(param_list = param_list)

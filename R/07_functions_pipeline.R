@@ -408,7 +408,7 @@ orthopair <- function(in_list,
 }
 
 #' @importFrom rhdf5 H5Lexists
-.checkResumePoint <- function(hdf5_path, files, resume, module){
+.checkResumePoint <- function(hdf5_path, files, resume, module, no_genome, no_prot){
     out <- list(miniprot = TRUE,
                 blast = TRUE,
                 pairing = TRUE)
@@ -418,8 +418,6 @@ orthopair <- function(in_list,
     if(!is.null(module)){
         check <- names(module) %in% names(out)
         if(!all(check)){
-            # stop("The module object must be a named list with the following names:",
-            #      "\n'sibeliaz', 'lcbgraph', 'miniprot', 'blast', 'pairing'.")
             stop("The module object must be a named list with the following names:",
                  "\n'miniprot', 'blast', 'pairing'.")
         }
@@ -452,6 +450,17 @@ orthopair <- function(in_list,
             out$pairing <- FALSE
         }
     }
+    
+    if(no_genome | no_prot){
+        out$miniprot <- FALSE
+    }
+    
+    if(!out$miniprot){
+        if(H5Lexists(h5, "timestamp/miniprot")){
+            out$set_mp <- TRUE
+        }
+    }
+    
     return(out)
 }
 
