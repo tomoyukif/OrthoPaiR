@@ -23,8 +23,8 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                             hdf5_path = "./orthopair.h5",
                             miniprot_out_dir ="./miniprot",
                             overwrite = FALSE,
-                            resume = FALSE,
-                            redo = NULL,
+                            module = FALSE,
+                            module = NULL,
                             param_list = NULL){
     
     # Create a list containing all input file paths
@@ -42,7 +42,7 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     
     resume <- .checkResumePoint(hdf5_path = out$h5,
                                 resume = resume,
-                                redo = redo)
+                                module = module)
     
     out$resume <- resume
     if(is.null(files$query_genome) | is.null(files$subject_genome)){
