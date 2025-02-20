@@ -19,7 +19,7 @@ orthopair <- function(in_list,
                       verbose = TRUE,
                       overwrite = FALSE,
                       resume = FALSE,
-                      redo = NULL,
+                      module = NULL,
                       param_list = NULL,
                       orthopair = TRUE,
                       reorg = TRUE,
@@ -69,7 +69,7 @@ orthopair <- function(in_list,
         # n_threads = n_threads
         # overwrite = overwrite
         # resume = resume
-        # redo = redo
+        # module = module
         # param_list = param_list
         #############################################################
         object <- try(expr = {.runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
@@ -90,7 +90,7 @@ orthopair <- function(in_list,
                                             overwrite = overwrite,
                                             use_prot = use_prot,
                                             resume = resume,
-                                            redo = redo,
+                                            module = module,
                                             param_list = param_list)},
                       silent = TRUE)
         if(inherits(x = object, what = "try-error")){
@@ -284,7 +284,7 @@ orthopair <- function(in_list,
                           overwrite = FALSE,
                           use_prot = FALSE,
                           resume = FALSE,
-                          redo = NULL,
+                          module = NULL,
                           param_list = NULL){
     
     if(is.null(n_threads)){
@@ -315,7 +315,7 @@ orthopair <- function(in_list,
                               miniprot_out_dir = miniprot_out_dir,
                               overwrite = overwrite,
                               resume = resume,
-                              redo = redo,
+                              module = module,
                               param_list = param_list)
     
     # if(object$resume$sibeliaz){
@@ -408,12 +408,7 @@ orthopair <- function(in_list,
 }
 
 #' @importFrom rhdf5 H5Lexists
-.checkResumePoint <- function(hdf5_path, files, resume, redo){
-    # out <- list(sibeliaz = TRUE, 
-    #             lcbpair = TRUE,
-    #             miniprot = TRUE,
-    #             blast = TRUE,
-    #             pairing = TRUE)
+.checkResumePoint <- function(hdf5_path, files, resume, module){
     out <- list(miniprot = TRUE,
                 blast = TRUE,
                 pairing = TRUE)
@@ -423,50 +418,38 @@ orthopair <- function(in_list,
     h5 <- H5Fopen(hdf5_path)
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
-    if(!is.null(redo)){
-        check <- names(redo) %in% names(out)
+    if(!is.null(module)){
+        check <- names(module) %in% names(out)
         if(!all(check)){
-            # stop("The redo object must be a named list with the following names:",
+            # stop("The module object must be a named list with the following names:",
             #      "\n'sibeliaz', 'lcbgraph', 'miniprot', 'blast', 'pairing'.")
-            stop("The redo object must be a named list with the following names:",
+            stop("The module object must be a named list with the following names:",
                  "\n'miniprot', 'blast', 'pairing'.")
         }
     }
     
-    # if(H5Lexists(h5, "timestamp/sibeliaz")){
-    #     out$sibeliaz <- FALSE
-    #     if(!is.null(redo$sibeliaz)){
-    #         out$sibeliaz <- redo$sibeliaz
-    #     }
-    # }
-    # if(H5Lexists(h5, "timestamp/lcbgraph")){
-    #     out$lcbgraph <- FALSE
-    #     if(!is.null(redo$lcbgraph)){
-    #         out$lcbgraph <- redo$lcbgraph
-    #     }
-    # }
     if(H5Lexists(h5, "timestamp/miniprot")){
         out$miniprot <- FALSE
-        if(!is.null(redo$miniprot)){
-            out$miniprot <- redo$miniprot
+        if(!is.null(module$miniprot)){
+            out$miniprot <- module$miniprot
             if(out$miniprot){
-                redo$pairing <- redo$blast <- TRUE
+                module$pairing <- module$blast <- TRUE
             }
         }
     }
     if(H5Lexists(h5, "timestamp/blast")){
         out$blast <- FALSE
-        if(!is.null(redo$blast)){
-            out$blast <- redo$blast
+        if(!is.null(module$blast)){
+            out$blast <- module$blast
             if(out$blast){
-                redo$pairing <- TRUE
+                module$pairing <- TRUE
             }
         }
     }
     if(H5Lexists(h5, "timestamp/pairing")){
         out$pairing <- FALSE
-        if(!is.null(redo$pairing)){
-            out$pairing <- redo$pairing
+        if(!is.null(module$pairing)){
+            out$pairing <- module$pairing
         }
     }
     return(out)
