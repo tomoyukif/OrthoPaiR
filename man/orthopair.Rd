@@ -17,7 +17,7 @@ orthopair(
   verbose = TRUE,
   overwrite = FALSE,
   resume = FALSE,
-  redo = NULL,
+  module = NULL,
   param_list = NULL,
   orthopair = TRUE,
   reorg = TRUE,
