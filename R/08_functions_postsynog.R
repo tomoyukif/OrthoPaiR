@@ -1156,7 +1156,7 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
 }
 
 .setTxID <- function(x = x, gene_list = gene_list){
-    tx_out <- subset(x, select = -c(class, SOG))
+    tx_out <- subset(x, select = -class)
     names(tx_out) <- paste(names(tx_out), "TX", sep = "_")
     for(i in seq_len(ncol(tx_out))){
         hit <- match(tx_out[, i], gene_list$gene)
