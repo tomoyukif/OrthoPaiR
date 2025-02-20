@@ -17,7 +17,7 @@ makeOrthoPairDB(
   miniprot_out_dir = "./miniprot",
   overwrite = FALSE,
   resume = FALSE,
-  redo = NULL,
+  module = NULL,
   param_list = NULL
 )
 }
