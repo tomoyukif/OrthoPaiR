@@ -411,7 +411,8 @@ orthopair <- function(in_list,
 .checkResumePoint <- function(hdf5_path, files, resume, module, no_genome, no_prot){
     out <- list(miniprot = TRUE,
                 blast = TRUE,
-                pairing = TRUE)
+                pairing = TRUE,
+                set_mp = FALSE)
     h5 <- H5Fopen(hdf5_path)
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
@@ -442,6 +443,7 @@ orthopair <- function(in_list,
     if(resume){
         if(H5Lexists(h5, "timestamp/miniprot")){
             out$miniprot <- FALSE
+            out$set_mp <- TRUE
         }
         if(H5Lexists(h5, "timestamp/blast")){
             out$blast <- FALSE
@@ -453,12 +455,6 @@ orthopair <- function(in_list,
     
     if(no_genome | no_prot){
         out$miniprot <- FALSE
-    }
-    
-    if(!out$miniprot){
-        if(H5Lexists(h5, "timestamp/miniprot")){
-            out$set_mp <- TRUE
-        }
     }
     
     return(out)
