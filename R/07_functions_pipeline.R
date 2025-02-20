@@ -412,9 +412,6 @@ orthopair <- function(in_list,
     out <- list(miniprot = TRUE,
                 blast = TRUE,
                 pairing = TRUE)
-    if(!resume){
-        return(out)
-    }
     h5 <- H5Fopen(hdf5_path)
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
@@ -428,28 +425,31 @@ orthopair <- function(in_list,
         }
     }
     
-    if(H5Lexists(h5, "timestamp/miniprot")){
-        out$miniprot <- FALSE
-        if(!is.null(module$miniprot)){
-            out$miniprot <- module$miniprot
-            if(out$miniprot){
-                module$pairing <- module$blast <- TRUE
-            }
+    if(!is.null(module$miniprot)){
+        out$miniprot <- module$miniprot
+        if(out$miniprot){
+            module$pairing <- module$blast <- TRUE
         }
     }
-    if(H5Lexists(h5, "timestamp/blast")){
-        out$blast <- FALSE
-        if(!is.null(module$blast)){
-            out$blast <- module$blast
-            if(out$blast){
-                module$pairing <- TRUE
-            }
+    if(!is.null(module$blast)){
+        out$blast <- module$blast
+        if(out$blast){
+            module$pairing <- TRUE
         }
     }
-    if(H5Lexists(h5, "timestamp/pairing")){
-        out$pairing <- FALSE
-        if(!is.null(module$pairing)){
-            out$pairing <- module$pairing
+    if(!is.null(module$pairing)){
+        out$pairing <- module$pairing
+    }
+    
+    if(resume){
+        if(H5Lexists(h5, "timestamp/miniprot")){
+            out$miniprot <- FALSE
+        }
+        if(H5Lexists(h5, "timestamp/blast")){
+            out$blast <- FALSE
+        }
+        if(H5Lexists(h5, "timestamp/pairing")){
+            out$pairing <- FALSE
         }
     }
     return(out)
