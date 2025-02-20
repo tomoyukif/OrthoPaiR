@@ -1,8 +1,9 @@
+Changes in version 0.4.15 (2025-02-20)
++ Change the algorithm to set SOGs.
++ Change the arugment name "redo" to "module".
+
 Changes in version 0.4.14 (2025-02-19)
 + Replace BLAST to DIAMOND for the protein BLAST search in rbh().
-
-Changes in version 0.4.13 (2025-02-18)
-+ Use reciprocal protein BLAST hits if 'use_prot = TRUE' in rbh().
 
 Changes in version 0.4.11 (2025-02-10)
 + Minor bug fix in the no-reorg mode of reorgOrthopair().
