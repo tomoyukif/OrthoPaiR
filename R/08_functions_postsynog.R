@@ -845,7 +845,7 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
             if(vcount(graph) == 0){
                 break
             }
-
+            
             full_con <- .orgFullConnected(graph = i_graph,
                                           genomes = genomes,
                                           gene_list = gene_list,
@@ -854,13 +854,12 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
             if(!is.null(full_con$full_con)){
                 .writeEntries(x = full_con$full_con,
                               file = i_orthopair_fn,
-                              sog = i,
                               gene_list = gene_list)
             }
-
+            
             if(is.null(full_con$rest_genes)){
                 full_mem <- list(rest_genes = NULL)
-
+                
             } else {
                 full_mem <- .orgFullMembered(graph = i_graph,
                                              rest_genes = full_con$rest_genes,
@@ -871,14 +870,13 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
                 if(!is.null(full_mem$full_mem)){
                     .writeEntries(x = full_mem$full_mem,
                                   file = i_orthopair_fn,
-                                  sog = i,
                                   gene_list = gene_list)
                 }
             }
-
+            
             if(is.null(full_mem$rest_genes)){
                 full_chain <- list(full_chain = NULL)
-
+                
             } else {
                 full_chain <- .orgFullChained(graph = i_graph,
                                               rest_genes = full_mem$rest_genes,
@@ -886,15 +884,14 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
                                               gene_list = gene_list,
                                               n_len = n_len,
                                               full = full)
-
+                
                 if(!is.null(full_chain$full_chain)){
                     .writeEntries(x = full_chain$full_chain,
                                   file = i_orthopair_fn,
-                                  sog = i,
                                   gene_list = gene_list)
                 }
             }
-
+            
             out <- rbind(full_con$full_con,
                          full_mem$full_mem,
                          full_chain$full_chain)
@@ -913,14 +910,26 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
             out <- rbind(out, read.csv(file = i_fn))
         }
     }
+    out$SOG <- NA
+    i <- 1
+    while(TRUE){
+        if(all(!is.na(out$SOG))){
+            break
+        }
+        if(i > ncol(out)){
+            break
+        }
+        hit <- match(out[, i], graph_grp$gene_id)
+        out$SOG[!is.na(hit)] <- graph_grp$SOG[na.omit(hit)]
+        i <- i + 1
+    }
     out <- out[order(out$SOG), ]
     write.csv(out, file = orthopair_fn, row.names = FALSE)
     unlink(orthopair_tmp_fn, force = TRUE, recursive = TRUE)
     invisible(orthopair_fn)
 }
 
-.writeEntries <- function(x, file, sog, gene_list){
-    x <- cbind(x, SOG = sog)
+.writeEntries <- function(x, file, gene_list){
     x <- .setTxID(x = x, gene_list = gene_list)
     if(file.exists(file)){
         write.table(x = x, 
