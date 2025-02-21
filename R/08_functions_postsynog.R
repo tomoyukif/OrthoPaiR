@@ -41,10 +41,10 @@ reorgOrthopiars <- function(hdf5_fn,
             } else {
                 id2id_df <- NULL
                 for(j in seq_along(target_data$pair_genome)[-1]){
-                    data_j <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = j)
-                    ref_prefix <- paste(target_genome, 
-                                        target_data$pair_genome[j], 
-                                        sep = "_")
+                    pair_genome <- target_data$pair_genome[j]
+                    ref_prefix <- paste(target_genome, pair_genome, sep = "_")
+                    data_j <- .importData(hdf5_fn = hdf5_fn, target_data = target_data,
+                                          index = j, pair_genome = pair_genome)
                     ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
                                                 df = data_j$orthopair, 
                                                 target_data = target_data[j, ],
@@ -151,7 +151,7 @@ reorgOrthopiars <- function(hdf5_fn,
 #' @importFrom rtracklayer import.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose
 #' @importFrom Biostrings readDNAStringSet readAAStringSet
-.importData <- function(hdf5_fn, target_data, index, reorg = TRUE){
+.importData <- function(hdf5_fn, target_data, index, reorg = TRUE, pair_genome = NULL){
     i_comb_id <- target_data$comb_id[index]
     i_target_data <- target_data$target[index]
     h5 <- H5Fopen(hdf5_fn[i_comb_id])
@@ -173,16 +173,18 @@ reorgOrthopiars <- function(hdf5_fn,
     if(i_target_data == "query"){
         gff_fn <- h5$files$query_gff[1]
         if(!file.exists(gff_fn)){
+            message("Use the original input GFF file for ", pair_genome, ".")
             gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
-            gff_fn <- sub("miniprot_merge_query.gff", "query.gff", gff_fn)
+            gff_fn <- sub("miniprot_merge_query.gff", "query_gff.gff", gff_fn)
         }
         gff <- import.gff3(gff_fn)
         
     } else {
         gff_fn <- h5$files$subject_gff[1]
         if(!file.exists(gff_fn)){
+            message("Use the original input GFF file for ", pair_genome, ".")
             gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
-            gff_fn <- sub("miniprot_merge_subject.gff", "subject.gff", gff_fn)
+            gff_fn <- sub("miniprot_merge_subject.gff", "subject_gff.gff", gff_fn)
         }
         gff <- import.gff3(gff_fn)
     }

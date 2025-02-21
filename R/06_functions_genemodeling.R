@@ -985,14 +985,15 @@ mapProt <- function(object,
 #'
 .makeCDS <- function(gff, genome){
     # Create a TxDb object from the GFF file
-    txdb <- makeTxDbFromGFF(file = gff)
+    txdb <- suppressMessages({makeTxDbFromGFF(file = gff)})
     
     # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(filepath = genome)
     
     # Extract CDS sequences from the TxDb object
-    cds_db <- cdsBy(x = txdb, by = "tx", use.names = TRUE)
-    cds <- extractTranscriptSeqs(x = genome, transcripts = cds_db)
+    cds_db <- suppressMessages({cdsBy(x = txdb, by = "tx", use.names = TRUE)})
+    
+    cds <- suppressMessages({extractTranscriptSeqs(x = genome, transcripts = cds_db)})
     
     # Order CDS sequences by their names
     cds <- cds[order(names(cds))]

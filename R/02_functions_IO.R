@@ -84,8 +84,8 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
     .h5overwrite(obj = subject_cds,
                  file = out$h5, "files/subject_cds")
     
-    set_mp <- out$resume$set_mp & (out$resume$blast | out$resume$pairing)
-    if(set_mp){
+    if(out$resume$set_mp){
+        message("Use gene models including miniprot predicted genes.")
         .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
                      file = out$h5, "files/query_gff")
         .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),

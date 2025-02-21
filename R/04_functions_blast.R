@@ -291,16 +291,15 @@ rbh <- function(object,
 
 #' @importFrom rdiamond diamond_protein_to_protein
 .diamond_search <- function(query, subject, n_threads, max_target_seqs, evalue, diamond_exec_path, diamond_out_dir){
-    suppressMessages({
-        out <- diamond_protein_to_protein(query = query,
-                                          subject = subject, 
-                                          cores = n_threads,
-                                          max_target_seqs = max_target_seqs,
-                                          evalue = evalue,
-                                          diamond_exec_path = diamond_exec_path,
-                                          output_path = diamond_out_dir)
-    })
-    
+    sink(file = file.path(diamond_out_dir, "diamond.log"), type = "message")
+    out <- diamond_protein_to_protein(query = query,
+                                      subject = subject, 
+                                      cores = n_threads,
+                                      max_target_seqs = max_target_seqs,
+                                      evalue = evalue,
+                                      diamond_exec_path = diamond_exec_path,
+                                      output_path = diamond_out_dir)
+    sink()
     if(nrow(out) == 0){
         out <- NA
     } else {
