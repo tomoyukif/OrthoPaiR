@@ -171,10 +171,20 @@ reorgOrthopiars <- function(hdf5_fn,
     }
     
     if(i_target_data == "query"){
-        gff <- import.gff3(h5$files$query_gff[1])
+        gff_fn <- h5$files$query_gff[1]
+        if(!file.exists(gff_fn)){
+            gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
+            gff_fn <- sub("miniprot_merge_query.gff", "query.gff", gff_fn)
+        }
+        gff <- import.gff3(gff_fn)
         
     } else {
-        gff <- import.gff3(h5$files$subject_gff[1])
+        gff_fn <- h5$files$subject_gff[1]
+        if(!file.exists(gff_fn)){
+            gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
+            gff_fn <- sub("miniprot_merge_subject.gff", "subject.gff", gff_fn)
+        }
+        gff <- import.gff3(gff_fn)
     }
     
     if(reorg){
