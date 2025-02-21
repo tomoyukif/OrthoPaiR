@@ -46,14 +46,9 @@ object <- orthopair(query_genome = query_genome,
                     query_prot = query_prot,
                     subject_prot = subject_prot,
                     hdf5_path = hdf5_path,
-                    sibeliaz_out_dir = "./sibeliaz_out",
-                    sibeliaz_bin = "sibeliaz",
-                    maf2synteny_bin = "maf2synteny",
                     conda = "/home/ftom/miniforge/miniforge3/bin/conda",
-                    sibeliaz_condaenv = "sibeliaz",
                     miniprot_bin = "miniprot",
                     miniprot_condaenv = "miniprot",
-                    miniprot_out_dir = "./miniprot_out",
                     n_threads = 30,
                     omit_chr = "chrUn|chrSy")
 ```
@@ -64,12 +59,8 @@ the following functions.
 ```{r}
 txwise_summary <- summaryOrthoPaiR(object = object, gene = FALSE)
 genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
-OrthoPaiR_genewise <- getOrthoPaiR(object = object, gene = TRUE)
+genewise_orthopair <- getOrthoPaiR(object = object, gene = TRUE)
 orphan_genewise <- getOrphan(object = object, gene = TRUE)
-genewise_split_summary <- summaryOrthoPaiR(object = object, gene = TRUE, split = TRUE)
-OrthoPaiR_txwise <- getOrthoPaiR(object = object, gene = FALSE)
-OrthoPaiR_genewise_split <- getOrthoPaiR(object = object, gene = TRUE, split = TRUE)
-orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
 ```
 See the [Output results] section in this vignette for more details of output resutls.
 
@@ -104,132 +95,4 @@ object <- makeOrthoPaiRDB(query_genome = "inst/extdata/query_genome.fa",
                           query_prot = "inst/extdata/query_prot.fa",
                           subject_prot = "inst/extdata/subject_prot.fa",
                           hdf5_path = hdf5_path)
-
-# object <- makeOrthoPaiRDB(query_genome = query_genome,
-#                       subject_genome = subject_genome,
-#                       query_gff = query_gff,
-#                       subject_gff = subject_gff,
-#                       query_cds = query_cds,
-#                       subject_cds = subject_cds,
-#                       query_prot = query_prot,
-#                       subject_prot = subject_prot,
-#                       hdf5_path = hdf5_path)
-```
-
-# Running Sibeliaz
-
-Run Sibeliaz to identify locally collinear blocks (LCBs) between the query and subject genomes.
-Usually, installation of SibeliaZ using conda or conda wrappers may be the easiest way. If you installed SibeliaZ using conda or conda wrappers, you need to specify the name of the conda environment for SibeliaZ. If your conda binary is not executable from your R environment, please specify the path to the conda binary.
-
-```{r run-sibeliaz}
-runSibeliaZ(object = object,
-            out_dir = file.path(out_dir, "sibeliaz_out"), 
-            conda = "/home/ftom/miniforge/miniforge3/bin/conda",
-            condaenv = "sibeliaz", 
-            run_sibeliaz = TRUE)
-```
-
-
-```{r run-sibeliaz}
-sibeliaLCB2DF(object = object)
-lcbClassify(object = object)
-getLCBpairs(object = object)
-```
-
-# Finding Ortholog Pairs Based on CDS RBH
-
-Find reciprocal best hits (RBH) for CDS sequences.
-
-```{r find-rbh}
-rbh(object = object, n_threads = 30)
-```
-
-# Running LCB-based RBBH Filtering
-
-Anchor orthologous genes using LCB-based RBBH filtering.
-
-```{r anchor-ortho}
-anchorOrtho(object = object)
-```
-
-# Synteny-based RBH Filtering
-
-Filter orthologous genes based on synteny.
-
-```{r synteny-ortho}
-syntenyOrtho(object = object, 
-             omit_chr = "chrUn|chrSy",
-             pident = 90, 
-             evalue = 1e-100, 
-             qcovs = 50)
-```
-
-# Gene-wise Orthologous Pairing
-
-Perform gene-wise orthologous pairing.
-
-```{r gene-ortho}
-geneOrtho(object = object)
-```
-
-# Summarizing Results
-
-Generate summaries and export results.
-
-```{r summarize-results}
-txwise_summary <- summaryOrthoPaiR(object = object, gene = FALSE)
-genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
-OrthoPaiR_genewise <- getOrthoPaiR(object = object, gene = TRUE)
-orphan_genewise <- getOrphan(object = object, gene = TRUE)
-```
-
-# Mapping Proteins with Miniprot
-
-Map proteins using Miniprot to further refine orthologous pairs.
-
-```{r map-prot}
-mapProt(object = object,
-        conda = "/home/ftom/miniforge/miniforge3/bin/conda", condaenv = "miniprot",
-        n_core = 20,
-        out_prefix = file.path(out_dir, "miniprot_out"))
-```
-
-# Updating Files and Re-running Analyses
-
-Update files and re-run analyses for refined results.
-
-```{r update-files}
-createFASTA(object = object)
-object <- updateFiles(object = object)
-rbh(object = object, n_threads = 30)
-anchorOrtho(object = object)
-syntenyOrtho(object = object, 
-             omit_chr = "chrUn|chrSy",
-             pident = 90, 
-             evalue = 1e-100, 
-             qcovs = 50)
-geneOrtho(object = object)
-```
-
-# Summarizing Refined Results
-
-Generate refined summaries and export results.
-
-```{r summarize-refined-results}
-txwise_summary <- summaryOrthoPaiR(object = object, gene = FALSE)
-genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
-OrthoPaiR_genewise <- getOrthoPaiR(object = object, gene = TRUE)
-orphan_genewise <- getOrphan(object = object, gene = TRUE)
-```
-
-# Splitting Genes
-
-Split genes based on the orthologous pairs identified.
-
-```{r split-genes}
-splitGenes(object = object)
-genewise_split_summary <- summaryOrthoPaiR(object = object, gene = TRUE, split = TRUE)
-OrthoPaiR_txwise <- getOrthoPaiR(object = object, gene = FALSE)
-OrthoPaiR_genewise_split <- getOrthoPaiR(object = object, gene = TRUE, split = TRUE)
-orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
 ```

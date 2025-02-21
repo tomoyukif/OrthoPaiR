@@ -31,13 +31,13 @@ To install the OrthoPaiR package, use the following commands in R:
 # Install the devtools package if not already installed
 install.packages("devtools")
 
-# Install Synog from GitHub
-devtools::install_github("tomoyukif/OrthoPaiR")
+# Install OrthoPaiR from GitHub
+devtools::install_github("tomoyukif/OrthoPaiR", dependencies = TRUE)
 ```
 
 ## Prerequisites
 
-Synog relies on several R packages and external tools. Install the prerequisite R packages using:
+OrthoPaiR relies on several R packages and external tools. Install the prerequisite R packages using:
 
 ```r
 install.packages("BiocManager")
@@ -50,12 +50,11 @@ install.packages(c("ggplot2", "rBLAST", "parallel", "dplyr"))
 Ensure the following external tools are installed:
 
 - **Miniprot**: [Miniprot Installation Guide](https://github.com/lh3/miniprot)
-- **Sibeliaz**: [Sibeliaz Installation Guide](https://github.com/medvedevgroup/sibeliaz)
 
 ## Usage
 
-Here is a basic example of how to use Synog for syntenic orthologous gene pairing.
-You can go through the Synog pipeline using the `runSynog()` function, which is a wrapper that executes a series of functions to complete the Synog pipeline.
+Here is a basic example of how to use OrthoPaiR for syntenic orthologous gene pairing.
+You can go through the OrthoPaiR pipeline using the `runOrthoPaiR()` function, which is a wrapper that executes a series of functions to complete the OrthoPaiR pipeline.
 
 ```r
 library(OrthoPaiR)
@@ -69,10 +68,10 @@ query_cds <- "input/nb_cds.fa"
 subject_cds <- "input/wk21_cds.fa"
 query_prot <- "input/nb_prot.fa"
 subject_prot <- "input/wk21_prot.fa"
-hdf5_path <- "output/synog.h5"
+hdf5_path <- "output/OrthoPaiR.h5"
 
-# Run Synog pipeline
-object <- runSynog(
+# Run OrthoPaiR pipeline
+object <- runOrthoPaiR(
   query_genome = query_genome,
   subject_genome = subject_genome,
   query_gff = query_gff,
@@ -82,34 +81,27 @@ object <- runSynog(
   query_prot = query_prot,
   subject_prot = subject_prot,
   hdf5_path = hdf5_path,
-  sibeliaz_out_dir = "./sibeliaz_out",
-  sibeliaz_bin = "sibeliaz",
   maf2synteny_bin = "maf2synteny",
   conda = "/home/ftom/miniforge/miniforge3/bin/conda",
   sibeliaz_condaenv = "sibeliaz",
   miniprot_bin = "miniprot",
   miniprot_condaenv = "miniprot",
-  miniprot_out_dir = "./miniprot_out",
-  n_threads = 30,
-  omit_chr = "chrUn|chrSy"
+  n_threads = 30
 )
 ```
 
-The `runSynog()` function outputs a `SynogDB` object containing a link to the HDF5 file that stores syntenic ortholog pairing results. You can access these results using the following functions:
+The `runOrthoPaiR()` function outputs a `OrthoPaiRDB` object containing a link to the HDF5 file that stores syntenic ortholog pairing results. You can access these results using the following functions:
 
 ```r
 # Access results
-genewise_summary <- summarySynog(object = object, gene = TRUE)
-synog_genewise <- getSynog(object = object, gene = TRUE)
+genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
+genewise_ortholog <- getOrthoPaiR(object = object, gene = TRUE)
 orphan_genewise <- getOrphan(object = object, gene = TRUE)
-genewise_split_summary <- summarySynog(object = object, gene = TRUE, split = TRUE)
-synog_genewise_split <- getSynog(object = object, gene = TRUE, split = TRUE)
-orphan_genewise_split <- getOrphan(object = object, gene = TRUE, split = TRUE)
 ```
 
 ## Documentation
 
-For a detailed guide and more advanced usage, refer to the [package vignette](vignettes/Synog.html).
+For a detailed guide and more advanced usage, refer to the [package vignette](vignettes/orthopair.html).
 
 ## Contributing
 
@@ -117,4 +109,4 @@ Contributions are welcome! If you have any ideas, suggestions, or bug reports, p
 
 ## License
 
-Synog is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE.md) file for details.
+OrthoPaiR is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE.md) file for details.

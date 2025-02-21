@@ -16,7 +16,8 @@ rbh(
   pident = 0,
   qcovs = 0,
   evalue = 1e-04,
-  diamond_exec_path = NULL
+  diamond_exec_path = NULL,
+  diamond_out_dir = ""
 )
 }
 \arguments{

@@ -89,14 +89,14 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
     out <- .prep_out(genome = genome, gff = gff, cds = cds, prot = prot)
     
     if(!is.null(genome)){
-        old_genome_names <- .renameGenome(genome = genome, autofix = autofix)
+        genome_names <- .renameGenome(genome = genome, autofix = autofix)
     }
     
     gff <- import.gff(gff)
     gff <- .dropGFFentries(gff = gff)
     
     if(!is.null(genome) & !autofix){
-        gff <- .replaceGFFseqname(gff = gff, old_genome_names = old_genome_names)
+        gff <- .replaceGFFseqname(gff = gff, genome_names = genome_names)
     }
     
     gff <- .replaceID(gff = gff, cds = cds, prot = prot, autofix = autofix, out = out)
@@ -107,27 +107,27 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
 }
 
 .prep_out <- function(genome, gff, cds, prot){
-    new_gff_fn <- paste0(sub(pattern = "\\.gff3?.+", replacement = "", gff), ".op_fixed.gff")
-    new_cds_fn <- paste0(sub(pattern = "\\.f(a|n)?a.+", replacement = "", cds), ".op_fixed.fa")
+    new_gff_fn <- paste0(sub(pattern = "\\.gff3?.*", replacement = "", gff), ".op_fixed.gff")
+    new_cds_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", cds), ".op_fixed.fa")
     if(is.null(genome)){
         new_genome_fn <- NULL
         
     } else {
-        new_genome_fn <- paste0(sub(pattern = "\\.f(a|n)?a.+", replacement = "", genome), ".op_fixed.fa")
-        new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.+", replacement = "", prot), ".op_fixed.fa")
+        new_genome_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", genome), ".op_fixed.fa")
+        new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", prot), ".op_fixed.fa")
     }
     if(is.null(prot)){
         new_prot_fn <- NULL
         
     } else {
-        new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.+", replacement = "", prot), ".op_fixed.fa")
+        new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", prot), ".op_fixed.fa")
     }
     out <- list(genome = new_genome_fn, gff = new_gff_fn, cds = new_cds_fn, prot = new_prot_fn)
     return(out)
 }
 
 .renameGenome <- function(genome, autofix){
-    new_genome_fn <- paste0(sub(pattern = "\\.f(a|n)?a.+", replacement = "", genome), ".op_fixed.fa")
+    new_genome_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", genome), ".op_fixed.fa")
     genome <- readDNAStringSet(genome)
     old_genome_names <- genome_names <- names(genome)
     
@@ -195,9 +195,13 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
             }
         }
     }
-    message("Saving new genome FASTA file.")
-    writeXStringSet(x = genome, new_genome_fn)
-    return(old_genome_names)
+    if(any(old_genome_names != genome_names)){
+        message("Saving new genome FASTA file.")
+        writeXStringSet(x = genome, new_genome_fn)
+    } else {
+        message("No change in the genome FASTA.")
+    }
+    return(list(old_genome_names = old_genome_names, genome_names = genome_names))
 }
 
 .dropGFFentries <- function(gff){
@@ -228,33 +232,32 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
     return(gff)
 }
 
-.replaceGFFseqname <- function(gff, old_genome_names){
+.replaceGFFseqname <- function(gff, genome_names){
     gff$Name <- gff$ID
     gff_levels <- seqlevels(gff)
     while(TRUE){
-        if(all(gff_levels %in% old_genome_names)){
+        if(all(gff_levels %in% genome_names$old_genome_names)){
             break
             
         } else {
             message("Old genome sequece names does not match seqlevels in GFF.")
             message("Replacement is required.")
             message("Sequence names in the old genome FASTA:\n",
-                    paste(old_genome_names, collapse = "\n"))
+                    paste(genome_names$old_genome_names, collapse = "\n"))
             message("Sequence levels in the GFF:\n",
                     paste(gff_levels, collapse = "\n"))
             pattern <- readline(prompt = "Set pattern argument: ")
             replacement <- readline(prompt = "Set replacement argument: ")
             if(pattern != ""){
-                old_genome_names <- sub(pattern, replacement, old_genome_names)
+                genome_names$old_genome_names <- sub(pattern, replacement, genome_names$old_genome_names)
             }
         }
     }
     
-    hit <- match(gff_levels, old_genome_names)
-    seqlevels(gff) <- genome_names_full[hit]
-    genome_names <- names(genome)
+    hit <- match(gff_levels, genome_names$old_genome_names)
+    seqlevels(gff) <- genome_names$old_genome_names[hit]
     gff_levels <- seqlevels(gff)
-    pattern <- gff_levels[!gff_levels %in% genome_names]
+    pattern <- gff_levels[!gff_levels %in% genome_names$genome_names]
     gff <- dropSeqlevels(gff, pattern, pruning.mode = "coarse")
     
     gff_levels <- seqlevels(gff)
@@ -629,7 +632,12 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
 .finalizeGFF <- function(gff, out, genome = genome){
     message(prompt = "\nDrop unnecessary GFF annotation(s).\n")
     gff_mcols <- mcols(gff)
-    gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent))
+    if(is.null(gff$oldID)){
+        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent, oldID))
+        
+    } else {
+        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent))
+    }
     mcols(gff) <- gff_mcols
     gff$Name <- gff$ID
     message(prompt = "\nSetting the 'gene_id' column in the GFF.\n")
