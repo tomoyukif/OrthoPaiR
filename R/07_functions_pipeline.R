@@ -65,15 +65,7 @@ orthopair <- function(in_list,
         # query_prot = pairwise_input[[i]]$query_prot
         # subject_prot = pairwise_input[[i]]$subject_prot
         # hdf5_path = pairwise_input[[i]]$hdf5_path
-        # conda = conda
-        # miniprot_bin = miniprot_bin
-        # miniprot_condaenv = miniprot_condaenv
         # miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir
-        # n_threads = n_threads
-        # overwrite = overwrite
-        # resume = resume
-        # module = module
-        # param_list = param_list
         #############################################################
         object <- try(expr = {.runOrthoPair(query_genome = pairwise_input[[i]]$query_genome,
                                             subject_genome = pairwise_input[[i]]$subject_genome,
