@@ -633,10 +633,10 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
     message(prompt = "\nDrop unnecessary GFF annotation(s).\n")
     gff_mcols <- mcols(gff)
     if(is.null(gff$oldID)){
-        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent, oldID))
+        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent))
         
     } else {
-        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent))
+        gff_mcols <- subset(gff_mcols, select = c(source:ID, Name, Parent, oldID))
     }
     mcols(gff) <- gff_mcols
     gff$Name <- gff$ID

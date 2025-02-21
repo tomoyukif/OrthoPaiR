@@ -251,7 +251,9 @@ reorgOrthopiars <- function(hdf5_fn,
 
 .renameMP <- function(gff, prefix){
     mp_entries <- grepl("^MP[0-9]+", gff$ID)
-    gff$oldID <- NA
+    if(is.null(gff$oldID)){
+        gff$oldID <- NA
+    }
     gff$oldID[mp_entries] <- gff$ID[mp_entries]
     gff$ID[mp_entries] <- paste(prefix, gff$ID[mp_entries], sep = "_")
     not_gene <- gff$type != "gene"
