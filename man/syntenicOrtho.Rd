@@ -4,7 +4,7 @@
 \alias{syntenicOrtho}
 \title{Filter ortholog pairs based on Locally Collinear Blocks (LCBs)}
 \usage{
-syntenicOrtho(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 0.4)
+syntenicOrtho(object)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}

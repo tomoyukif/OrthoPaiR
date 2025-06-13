@@ -1,3 +1,11 @@
+Changes in version 0.5.1 (2025-06-13)
++ Anchor genes is filtered based on if the genes are possibly TEs that have 
++ a large number of multiple hits in RBH.
++ Orthologous pairs are filtered based on mutual-CI if it is detected as
++ outliers in the distribution of the mutual-CIs observed in the detected 
++ orthologous pairs.
++ A function to identify syntenic blocks is added.
+
 Changes in version 0.4.15 (2025-02-20)
 + Change the algorithm to set SOGs.
 + Change the arugment name "redo" to "module".
