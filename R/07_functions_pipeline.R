@@ -12,7 +12,7 @@ orthopair <- function(in_list,
                       conda = "conda",
                       miniprot_bin = "miniprot",
                       miniprot_condaenv = "miniprot",
-                      diamond_exec_path = NULL,
+                      diamond_exec_path = "diamond",
                       n_threads = NULL,
                       target_pair = NULL,
                       use_prot = FALSE,
@@ -20,7 +20,6 @@ orthopair <- function(in_list,
                       overwrite = FALSE,
                       resume = FALSE,
                       module = NULL,
-                      param_list = NULL,
                       orthopair = TRUE,
                       reorg = TRUE,
                       makegraph = TRUE,
@@ -38,6 +37,12 @@ orthopair <- function(in_list,
     miniprot_out_dir <- file.path(working_dir, "miniprot_out")
     diamond_out_dir <- file.path(working_dir, "diamond_out")
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
+    
+    if(use_prot & !file.exists(diamond_exec_path)){
+       stop("Diamond executable binary file was not found at ", 
+            diamond_exec_path, 
+            call. = FALSE) 
+    }
     
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
@@ -86,8 +91,7 @@ orthopair <- function(in_list,
                                             overwrite = overwrite,
                                             use_prot = use_prot,
                                             resume = resume,
-                                            module = module,
-                                            param_list = param_list)},
+                                            module = module)},
                       silent = TRUE)
         if(inherits(x = object, what = "try-error")){
             hdf5_fn <- c(hdf5_fn, object)
@@ -283,8 +287,7 @@ orthopair <- function(in_list,
                           overwrite = FALSE,
                           use_prot = FALSE,
                           resume = FALSE,
-                          module = NULL,
-                          param_list = NULL){
+                          module = NULL){
     
     if(is.null(n_threads)){
         core <- detectCores()
@@ -314,8 +317,7 @@ orthopair <- function(in_list,
                               miniprot_out_dir = miniprot_out_dir,
                               overwrite = overwrite,
                               resume = resume,
-                              module = module,
-                              param_list = param_list)
+                              module = module)
     
     if(object$resume$miniprot){
         if(verbose){
@@ -327,7 +329,7 @@ orthopair <- function(in_list,
                 condaenv = miniprot_condaenv,
                 n_threads = n_threads,
                 out_dir = miniprot_out_dir,
-                len_diff = object$param_list$len_diff)
+                len_diff = 0.2)
         
     } else {
         if(verbose){
@@ -342,9 +344,6 @@ orthopair <- function(in_list,
         rbh(object = object,
             use_prot = use_prot,
             n_threads = n_threads, 
-            pident = object$param_list$pident, 
-            qcovs = object$param_list$qcovs, 
-            evalue = object$param_list$evalue, 
             diamond_exec_path = diamond_exec_path,
             diamond_out_dir = diamond_out_dir)
         
@@ -358,9 +357,7 @@ orthopair <- function(in_list,
         if(verbose){
             message("Pairing orthologs.")
         }
-        syntenicOrtho(object = object,
-                      rbbh_mci_threshold = object$param_list$rbbh_mci_threshol,
-                      rbh_mci_threshold = object$param_list$rbh_mci_threshol)
+        syntenicOrtho(object = object)
         
     } else {
         if(verbose){

@@ -6,7 +6,7 @@
 #' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom parallel mclapply
-syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 0.4){
+syntenicOrtho <- function(object){
     # Check if the input object is of class "OrthoPairDB"
     stopifnot(inherits(x = object, "OrthoPairDB"))
     
@@ -20,9 +20,9 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     }
     
     g2g_graph <- .linkGene2Genome(h5 = h5)
-    anchor <- .findAnchors(h5 = h5,
-                           g2g_graph = g2g_graph,
-                           rbbh_mci_threshold = rbbh_mci_threshold)
+    te <- .prepateTElist(h5 = h5, g2g_graph = g2g_graph)
+    anchor <- .findAnchors(h5 = h5, g2g_graph = g2g_graph, te = te)
+    
     if(all(is.na(anchor))){
         orthopair_gene <- data.frame(query_gene = "NA",
                                      query_tx = "NA",
@@ -31,45 +31,55 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
         .h5overwrite(obj = orthopair_gene, file = object$h5, "orthopair_tx")
         
     } else {
-        t2a_graph <- .linkTx2Anchor(anchor = anchor$anchor, g2g_graph = g2g_graph)
-        orthopair <- .findSyntenicOrtho(h5 = h5, g2g_graph = g2g_graph, t2a_graph = t2a_graph, 
-                                        rbbh_mci_threshold = anchor$rbbh_mci_threshold,
-                                        rbh_mci_threshold = rbh_mci_threshold)
-        # orthopair <- .pickNonSyntenicOrtho(h5 = h5, orthopair = orthopair, g2g_graph = g2g_graph)
-        orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
-        
+        t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
+        orthopair <- .findSyntenicOrtho(h5 = h5,
+                                        g2g_graph = g2g_graph, 
+                                        t2a_graph = t2a_graph)
+        # orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
         .h5overwrite(obj = orthopair, file = object$h5, "orthopair_tx")
+        orthopair <- .findSyntenyBlocks(orthopair = orthopair)
         
+        orthopair <- .pickBestPair(orthopair = orthopair)
+        # Check gene order
+        orthopair <- .filterOrthopair(orthopair = orthopair)
+        te <- .labelTE(orthopair = orthopair, 
+                       h5 = h5, 
+                       t2a_graph = t2a_graph)
+        orthopair$te <- orthopair$query_gene %in% te$query_te | 
+            orthopair$query_gene %in% te$subject_te
         orthopair <- .classifyOrthoPair(orthopair = orthopair)
+        collapsed_id <- .collapseOverlappingGene(orthopair = orthopair, 
+                                                 g2g_graph = g2g_graph)
+        orthopair$query_collapse <- collapsed_id$query_collapse
+        orthopair$subject_collapse <- collapsed_id$subject_collapse
         
         split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
         rest_orthopair <- split_orthopair$rest
+        orthopair <- split_orthopair$splited
         
-        if(!is.null(rest_orthopair$rest)){
+        if(!is.null(rest_orthopair)){
             while(TRUE){
                 rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
                 rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
                 if(is.null(rest_orthopair$rest)){
-                    split_orthopair$splited <- rbind(split_orthopair$splited,
-                                                     rest_orthopair$rest)
+                    orthopair <- rbind(orthopair,
+                                       rest_orthopair$splited)
                     break
                     
                 } else {
-                    split_orthopair$splited <- rbind(split_orthopair$splited,
-                                                     rest_orthopair$splited)
+                    orthopair <- rbind(orthopair,
+                                       rest_orthopair$splited)
                     rest_orthopair <- rest_orthopair$rest
                 }
             }
         }
-        orthopair_gene <- split_orthopair$splited
-        orthopair_gene <- .pickBestPair(orthopair_gene = orthopair_gene)
-        orthopair_gene <- .sortSyntenicOrtho(orthopair = orthopair_gene, g2g_graph = g2g_graph)
-        orthopair_gene <- .classifyOrthoPair(orthopair = orthopair_gene)
-        orthopair_gene <- subset(orthopair_gene, select = -gene_pair_id)
+        # orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
+        orthopair <- .classifyOrthoPair(orthopair = orthopair)
+        orthopair <- subset(orthopair, select = -gene_pair_id)
     }
     
-    orphan <- .getOrphan(orthopair_gene = orthopair_gene, g2g_graph = g2g_graph)
-    .h5overwrite(obj = orthopair_gene, file = object$h5, "orthopair_gene")
+    orphan <- .getOrphan(orthopair_gene = orthopair, g2g_graph = g2g_graph)
+    .h5overwrite(obj = orthopair, file = object$h5, "orthopair_gene")
     .h5overwrite(obj = orphan$query, file = object$h5, "orphan_query")
     .h5overwrite(obj = orphan$subject, file = object$h5, "orphan_subject")
     
@@ -77,6 +87,128 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
                  file = object$h5,
                  name = "data_type")
     .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/pairing")
+}
+
+.prepateTElist <- function(h5, g2g_graph){
+    anchor <- .findAnchors(h5 = h5,
+                           g2g_graph = g2g_graph)
+    t2a_graph <- .linkTx2Anchor(anchor = anchor, g2g_graph = g2g_graph)
+    orthopair <- .findSyntenicOrtho(h5 = h5,
+                                    g2g_graph = g2g_graph, 
+                                    t2a_graph = t2a_graph)
+    orthopair <- .pickBestPair(orthopair = orthopair)
+    orthopair <- .filterOrthopair(orthopair = orthopair)
+    out <- .labelTE(orthopair = orthopair, 
+                    h5 = h5, 
+                    t2a_graph = t2a_graph)
+    return(out)
+}
+
+.collapseOverlappingGene <- function(orthopair, g2g_graph){
+    id_map_Mto1 <- .collapseMto1(orthopair = orthopair, g2g_graph = g2g_graph)
+    id_map_1toM <- .collapse1toM(orthopair = orthopair, g2g_graph = g2g_graph)
+    id_map_MtoM <- .collapseMtoM(orthopair = orthopair, g2g_graph = g2g_graph)
+    id_map <- rbind(id_map_Mto1, id_map_1toM, id_map_MtoM)
+    hit <- match(orthopair$query_gene, id_map$old)
+    query_collapse <- id_map$new[hit]
+    hit <- match(orthopair$subject_gene, id_map$old)
+    subject_collapse <- id_map$new[hit]
+    out <- list(query_collapse = query_collapse, subject_collapse = subject_collapse)
+    return(out)
+}
+
+.collapse1toM <- function(orthopair, g2g_graph){
+    id_map <- NULL
+    orthopair_1toM <- orthopair$subject_gene[orthopair$class == "1toM"]
+    gene_1toM <- g2g_graph$subject_gff$gene_id %in% orthopair_1toM
+    gene_1toM <- g2g_graph$subject_gff[gene_1toM]
+    gene_1toM <- gene_1toM[gene_1toM$type == "CDS"]
+    gene_1toM_ol <- as.data.frame(findOverlaps(gene_1toM, gene_1toM))
+    gene_1toM_ol$queryHits <- gene_1toM$gene_id[gene_1toM_ol$queryHits]
+    gene_1toM_ol$subjectHits <- gene_1toM$gene_id[gene_1toM_ol$subjectHits]
+    gene_1toM_ol <- subset(gene_1toM_ol,
+                           subset = queryHits != subjectHits)
+    gene_1toM_ol <- t(apply(gene_1toM_ol, 1, sort))
+    gene_1toM_ol <- unique(gene_1toM_ol)
+    gene_1toM_ol_newid <- paste(gene_1toM_ol[, 1], gene_1toM_ol[, 2], sep = "/")
+    hit <- match(orthopair$query_gene, gene_1toM_ol[, 1])
+    id_map <- rbind(id_map, data.frame(old = orthopair$subject_gene[!is.na(hit)],
+                                       new = gene_1toM_ol_newid[na.omit(hit)]))
+    hit <- match(orthopair$query_gene, gene_1toM_ol[, 2])
+    id_map <- rbind(id_map, data.frame(old = orthopair$subject_gene[!is.na(hit)],
+                                       new = gene_1toM_ol_newid[na.omit(hit)]))
+    return(id_map)
+}
+
+.collapseMto1 <- function(orthopair, g2g_graph){
+    id_map <- NULL
+    orthopair_Mto1 <- orthopair$query_gene[orthopair$class == "Mto1"]
+    gene_Mto1 <- g2g_graph$query_gff$gene_id %in% orthopair_Mto1
+    gene_Mto1 <- g2g_graph$query_gff[gene_Mto1]
+    gene_Mto1 <- gene_Mto1[gene_Mto1$type == "CDS"]
+    gene_Mto1_ol <- as.data.frame(findOverlaps(gene_Mto1, gene_Mto1))
+    gene_Mto1_ol$queryHits <- gene_Mto1$gene_id[gene_Mto1_ol$queryHits]
+    gene_Mto1_ol$subjectHits <- gene_Mto1$gene_id[gene_Mto1_ol$subjectHits]
+    gene_Mto1_ol <- subset(gene_Mto1_ol,
+                           subset = queryHits != subjectHits)
+    gene_Mto1_ol <- t(apply(gene_Mto1_ol, 1, sort))
+    gene_Mto1_ol <- unique(gene_Mto1_ol)
+    gene_Mto1_ol_newid <- paste(gene_Mto1_ol[, 1], gene_Mto1_ol[, 2], sep = "/")
+    hit <- match(orthopair$query_gene, gene_Mto1_ol[, 1])
+    id_map <- rbind(id_map, data.frame(old = orthopair$query_gene[!is.na(hit)],
+                                       new = gene_Mto1_ol_newid[na.omit(hit)]))
+    hit <- match(orthopair$query_gene, gene_Mto1_ol[, 2])
+    id_map <- rbind(id_map, data.frame(old = orthopair$query_gene[!is.na(hit)],
+                                       new = gene_Mto1_ol_newid[na.omit(hit)]))
+    return(id_map)
+}
+
+.collapseMtoM <- function(orthopair, g2g_graph){
+    id_map <- NULL
+    orthopair_MtoM <- orthopair[orthopair$class == "MtoM", ]
+    orthopair_MtoM$class <- "Mto1"
+    MtoM_id_map_Mto1 <- .collapseMto1(orthopair = orthopair_MtoM, 
+                                      g2g_graph = g2g_graph)
+    orthopair_MtoM$class <- "1toM"
+    MtoM_id_map_1toM <- .collapse1toM(orthopair = orthopair_MtoM,
+                                      g2g_graph = g2g_graph)
+    id_map <- rbind(id_map, MtoM_id_map_Mto1, MtoM_id_map_1toM)
+    return(id_map)
+}
+
+.labelTE <- function(orthopair, h5, t2a_graph){
+    rbh <- h5$blast$rbh
+    hit <- match(rbh$qseqid, t2a_graph$query_tx$tx)
+    rbh$qgeneid <- t2a_graph$query_gene$gene[hit]
+    hit <- match(rbh$sseqid, t2a_graph$subject_tx$tx)
+    rbh$sgeneid <- t2a_graph$subject_gene$gene[hit]
+    rbh$pair_id <- paste(rbh$qgeneid, rbh$sgeneid, sep = "_")
+    non_syntenic_hits <- {rbh$qgeneid %in% orthopair$query_gene | 
+            rbh$sgeneid %in% orthopair$subject_gene} &
+        !rbh$pair_id %in% orthopair$gene_pair_id
+    rbh <- unique(subset(rbh[non_syntenic_hits, ],
+                         select = c(qgeneid, sgeneid)))
+    q_rbh <- table(rbh$qgeneid)
+    s_rbh <- table(rbh$sgeneid)
+    
+    q_q <- quantile(q_rbh, c(0.25, 0.75))
+    q_whisker <- 1.5 * diff(q_q)
+    q_th <- q_q[2] + q_whisker
+    s_q <- quantile(s_rbh, c(0.25, 0.75))
+    s_whisker <- 1.5 * diff(s_q)
+    s_th <- s_q[2] + s_whisker
+    q_te <- names(q_rbh[q_rbh >= q_th])
+    s_te <- names(s_rbh[s_rbh >= s_th])
+    out <- list(query_te = q_te, subject_te = s_te)
+    return(out)
+}
+
+.filterOrthopair <- function(orthopair){
+    op_threshold <- .calcThreshold(orthopair$mutual_ci,
+                                          pair_id = orthopair$gene_pair_id)
+    filter <- orthopair$mutual_ci >= op_threshold
+    orthopair <- orthopair[filter, ]
+    return(orthopair)
 }
 
 .getOrphan <- function(orthopair_gene, g2g_graph){
@@ -165,7 +297,8 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     query_tx <- data.frame(tx = query_tx, id = seq_along(query_tx))
     query_gene <- query_gff$gene_id
     query_gene <- data.frame(gene = query_gene,
-                             id = as.numeric(factor(query_gene)))
+                             id = as.numeric(factor(query_gene)),
+                             chr = as.character(seqnames(query_gff)))
     # query_g2b_edge <- data.frame(root = c(query_tx$id, query_tx$id),
     #                              query_genome = c(query_gr$query_genome[q_g2b_precede], 
     #                                               query_gr$query_genome[q_g2b_follow]))
@@ -180,7 +313,8 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     subject_tx <- data.frame(tx = subject_tx, id = seq_along(subject_tx))
     subject_gene <- subject_gff$gene_id
     subject_gene <- data.frame(gene = subject_gene,
-                               id = as.numeric(factor(subject_gene)))
+                               id = as.numeric(factor(subject_gene)),
+                               chr = as.character(seqnames(subject_gff)))
     # subject_g2b_edge <- data.frame(subject_genome = c(subject_gr$subject_genome[s_g2b_precede], 
     #                                                   subject_gr$subject_genome[s_g2b_follow]),
     #                                leaf = c(subject_tx$id, subject_tx$id))
@@ -350,27 +484,53 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
 
 #' @importFrom dplyr left_join
 .findAnchors <- function(h5, 
-                         # genome_graph,
                          g2g_graph,
-                         rbbh_mci_threshold){
+                         te = NULL){
     rbbh <- h5$blast$rbbh
     if(all(is.na(rbbh))){
         return(NA)
     }
-    score <- .getRBHscore(rbh = rbbh)
-    rbbh_mci_threshold <- quantile(x = score$mutual_ci, probs = rbbh_mci_threshold)
-    rbbh <- subset(rbbh, subset = score$mutual_ci >= rbbh_mci_threshold)
+    
+    hit <- match(rbbh$qseqid, g2g_graph$query_tx$tx)
+    rbbh$qgeneid <- g2g_graph$query_gene$gene[hit]
+    hit <- match(rbbh$sseqid, g2g_graph$subject_tx$tx)
+    rbbh$sgeneid <- g2g_graph$subject_gene$gene[hit]
+    rbbh$pair_id <- paste(rbbh$qgeneid, rbbh$sgeneid, sep = "_")
+    rbbh$mutual_ci <- .getRBHscore(rbh = rbbh)
+    
+    if(!is.null(te)){
+        rbbh <- subset(rbbh,
+                       subset = !qgeneid %in% te$query_te &
+                           !sgeneid %in% te$subject_te)
+    }
+    rbbh_threshold <- .calcThreshold(rbbh$mutual_ci, pair_id = rbbh$pair_id)
+    rbbh <- rbbh[rbbh$mutual_ci >= rbbh_threshold, ]
     root_hit <- match(rbbh$qseqid, g2g_graph$query_tx$tx)
     leaf_hit <- match(rbbh$sseqid, g2g_graph$subject_tx$tx)
     anchor <- data.frame(root = g2g_graph$query_tx$id[root_hit],
                          leaf = g2g_graph$subject_tx$id[leaf_hit])
     anchor <- unique(anchor)
-    out <- list(anchor = anchor, rbbh_mci_threshold = rbbh_mci_threshold)
-    return(out)
+    return(anchor)
+}
+
+.calcThreshold <- function(x, pair_id, top = FALSE){
+    if(top){
+        x <- unlist(tapply(x, pair_id, max))
+        q <- quantile(x, c(0.25, 0.75))
+        whisker <- 1.5 * diff(q)
+        threshold <- q[2] + whisker
+        
+    } else {
+        x <- unlist(tapply(x, pair_id, max))
+        q <- quantile(x, c(0.25, 0.75))
+        whisker <- 1.5 * diff(q)
+        threshold <- q[1] - whisker
+    }
+    return(threshold)
 }
 
 #' @importFrom dplyr left_join
-#' @importFrom GenomicRanges precede follow
+#' @importFrom GenomicRanges precede follow findOverlaps resize
 .linkTx2Anchor <- function(g2g_graph, anchor){
     tx2gene <- data.frame(root = g2g_graph$query_tx$id,
                           query_anchor = g2g_graph$query_gene$id)
@@ -389,40 +549,64 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     query_non_anchor_gff <- query_gff[!query_gff$gene_id %in% query_anchor_gene]
     hit <- match(query_non_anchor_gff$gene_id, g2g_graph$query_gene$gene)
     query_non_anchor_gff$node_id <- g2g_graph$query_gene$id[hit]
+    query_anchor_gff <- resize(query_anchor_gff, 1, fix="start")
+    query_non_anchor_gff <- resize(query_non_anchor_gff, 1, fix="start")
+    query_tx2anchor_overlap <- findOverlaps(query_non_anchor_gff, query_anchor_gff)
+    query_overlap_gff <- query_non_anchor_gff[queryHits(query_tx2anchor_overlap)]
+    query_non_anchor_gff <- query_non_anchor_gff[-queryHits(query_tx2anchor_overlap)]
+    query_tx2anchor_overlap <- subjectHits(query_tx2anchor_overlap)
     query_tx2anchor_precede <- precede(query_non_anchor_gff, query_anchor_gff, ignore.strand = TRUE)
     query_tx2anchor_follow <- follow(query_non_anchor_gff, query_anchor_gff, ignore.strand = TRUE)
     nonanchor_hit <- match(query_non_anchor_gff$ID, g2g_graph$query_tx$tx)
     anchor_hit <- match(query_anchor_gff$ID, g2g_graph$query_tx$tx)
-    query_tx2anchor <- data.frame(root = c(g2g_graph$query_tx$id[nonanchor_hit],
-                                           g2g_graph$query_tx$id[nonanchor_hit],
-                                           g2g_graph$query_tx$id[anchor_hit]),
-                                  query_anchor = c(query_anchor_gff$node_id[query_tx2anchor_precede],
-                                                   query_anchor_gff$node_id[query_tx2anchor_follow],
-                                                   query_anchor_gff$node_id))
+    overlap_hit <- match(query_overlap_gff$ID, g2g_graph$query_tx$tx)
+    query_tx2anchor <- rbind(data.frame(root = c(g2g_graph$query_tx$id[nonanchor_hit],
+                                                 g2g_graph$query_tx$id[nonanchor_hit]),
+                                        query_anchor = c(query_anchor_gff$node_id[query_tx2anchor_follow],
+                                                         query_anchor_gff$node_id[query_tx2anchor_precede]),
+                                        root_anchor = FALSE),
+                             data.frame(root = g2g_graph$query_tx$id[overlap_hit],
+                                        query_anchor = query_anchor_gff$node_id[query_tx2anchor_overlap],
+                                        root_anchor = TRUE),
+                             data.frame(root = g2g_graph$query_tx$id[anchor_hit],
+                                        query_anchor = query_anchor_gff$node_id,
+                                        root_anchor = TRUE))
     query_tx2anchor <- unique(query_tx2anchor[order(query_tx2anchor$root), ])
-    query_tx2anchor <- subset(query_tx2anchor, subset = !is.na(query_tx2anchor))
+    query_tx2anchor <- subset(query_tx2anchor, subset = !is.na(query_anchor))
     
     subject_anchor_gene_i <- which(g2g_graph$subject_gene$id %in% anchor$subject_anchor)
     subject_anchor_gene <- unique(g2g_graph$subject_gene$gene[subject_anchor_gene_i])
-    s_tx_i <- g2g_graph$subject_gff$type %in% c("transcript", "mRNA")
-    subject_gff <- g2g_graph$subject_gff[s_tx_i]
+    q_tx_i <- g2g_graph$subject_gff$type %in% c("transcript", "mRNA")
+    subject_gff <- g2g_graph$subject_gff[q_tx_i]
     subject_anchor_gff <- subject_gff[subject_gff$gene_id %in% subject_anchor_gene]
     hit <- match(subject_anchor_gff$gene_id, g2g_graph$subject_gene$gene)
     subject_anchor_gff$node_id <- g2g_graph$subject_gene$id[hit]
     subject_non_anchor_gff <- subject_gff[!subject_gff$gene_id %in% subject_anchor_gene]
     hit <- match(subject_non_anchor_gff$gene_id, g2g_graph$subject_gene$gene)
     subject_non_anchor_gff$node_id <- g2g_graph$subject_gene$id[hit]
+    subject_anchor_gff <- resize(subject_anchor_gff, 1, fix="start")
+    subject_non_anchor_gff <- resize(subject_non_anchor_gff, 1, fix="start")
+    subject_tx2anchor_overlap <- findOverlaps(subject_non_anchor_gff, subject_anchor_gff)
+    subject_overlap_gff <- subject_non_anchor_gff[subjectHits(subject_tx2anchor_overlap)]
+    subject_non_anchor_gff <- subject_non_anchor_gff[-subjectHits(subject_tx2anchor_overlap)]
+    subject_tx2anchor_overlap <- subjectHits(subject_tx2anchor_overlap)
     subject_tx2anchor_precede <- precede(subject_non_anchor_gff, subject_anchor_gff, ignore.strand = TRUE)
     subject_tx2anchor_follow <- follow(subject_non_anchor_gff, subject_anchor_gff, ignore.strand = TRUE)
     nonanchor_hit <- match(subject_non_anchor_gff$ID, g2g_graph$subject_tx$tx)
     anchor_hit <- match(subject_anchor_gff$ID, g2g_graph$subject_tx$tx)
-    subject_tx2anchor <- data.frame(leaf = c(g2g_graph$subject_tx$id[nonanchor_hit],
-                                             g2g_graph$subject_tx$id[nonanchor_hit],
-                                             g2g_graph$subject_tx$id[anchor_hit]),
-                                    subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_precede],
-                                                       subject_anchor_gff$node_id[subject_tx2anchor_follow],
-                                                       subject_anchor_gff$node_id))
-    subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
+    overlap_hit <- match(subject_overlap_gff$ID, g2g_graph$subject_tx$tx)
+    subject_tx2anchor <- rbind(data.frame(root = c(g2g_graph$subject_tx$id[nonanchor_hit],
+                                                 g2g_graph$subject_tx$id[nonanchor_hit]),
+                                        subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_follow],
+                                                         subject_anchor_gff$node_id[subject_tx2anchor_precede]),
+                                        root_anchor = FALSE),
+                             data.frame(root = g2g_graph$subject_tx$id[overlap_hit],
+                                        subject_anchor = subject_anchor_gff$node_id[subject_tx2anchor_overlap],
+                                        root_anchor = TRUE),
+                             data.frame(root = g2g_graph$subject_tx$id[anchor_hit],
+                                        subject_anchor = subject_anchor_gff$node_id,
+                                        root_anchor = TRUE))
+    subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$root), ])
     subject_tx2anchor <- subset(subject_tx2anchor, subset = !is.na(subject_anchor))
     
     out <- list(anchor = anchor,
@@ -439,35 +623,34 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
 .findSyntenicOrtho <- function(h5, 
                                g2g_graph,
                                t2a_graph,
-                               rbbh_mci_threshold,
-                               rbh_mci_threshold){
+                               rbh_threshold){
     rbh <- h5$blast$rbh
-    rbh_score <- .getRBHscore(rbh = rbh)
-    rbh_mci_threshold <- rbbh_mci_threshold * rbh_mci_threshold
-    rbh <- subset(rbh, subset = rbh_score$mutual_ci >= rbh_mci_threshold)
-    
-    root_hit <- match(rbh$qseqid, t2a_graph$query_tx$tx)
-    leaf_hit <- match(rbh$sseqid, t2a_graph$subject_tx$tx)
-    rbh <- data.frame(root = g2g_graph$query_tx$id[root_hit],
-                      expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
-    rbh <- left_join(rbh, t2a_graph$query_tx2anchor, "root",
-                     relationship = "many-to-many")
-    rbh <- left_join(rbh,
-                     unique(subset(t2a_graph$anchor,
-                                   select = query_anchor:subject_anchor)),
-                     "query_anchor",
-                     relationship = "many-to-many")
-    rbh <- left_join(rbh, t2a_graph$subject_tx2anchor, "subject_anchor",
-                     relationship = "many-to-many")
-    orthopair <- subset(rbh, subset = leaf == expected_leaf)
+    rbh$mutual_ci <- .getRBHscore(rbh = rbh)
+    names(rbh)[1:2] <- c("query_tx", "subject_tx")
+    root_hit <- match(rbh$query_tx, t2a_graph$query_tx$tx)
+    leaf_hit <- match(rbh$subject_tx, t2a_graph$subject_tx$tx)
+    g2g_trace <- data.frame(root = g2g_graph$query_tx$id[root_hit],
+                            expected_leaf = g2g_graph$subject_tx$id[leaf_hit])
+    g2g_trace <- left_join(g2g_trace, t2a_graph$query_tx2anchor, "root",
+                           relationship = "many-to-many")
+    g2g_trace <- left_join(g2g_trace,
+                           unique(subset(t2a_graph$anchor,
+                                         select = query_anchor:subject_anchor)),
+                           "query_anchor",
+                           relationship = "many-to-many")
+    g2g_trace <- left_join(g2g_trace, t2a_graph$subject_tx2anchor, "subject_anchor",
+                           relationship = "many-to-many")
+    orthopair <- subset(g2g_trace, subset = leaf == expected_leaf)
     orthopair <- data.frame(query_gene = t2a_graph$query_gene$gene[orthopair$root],
                             query_tx = t2a_graph$query_tx$tx[orthopair$root],
+                            query_chr = t2a_graph$query_gene$chr[orthopair$root],
                             subject_gene = t2a_graph$subject_gene$gene[orthopair$leaf],
-                            subject_tx = t2a_graph$subject_tx$tx[orthopair$leaf])
-    
-    orthopair <- left_join(orthopair, rbh_score, c("query_tx", "subject_tx"))
+                            subject_tx = t2a_graph$subject_tx$tx[orthopair$leaf],
+                            subject_chr = t2a_graph$subject_gene$chr[orthopair$leaf],
+                            orthopair)
     orthopair$gene_pair_id <- paste(orthopair$query_gene, orthopair$subject_gene, sep = "_")
-    orthopair <- orthopair[order(orthopair$gene_pair_id), ]
+    orthopair <- orthopair[order(orthopair$root), ]
+    orthopair <- left_join(orthopair, rbh, c("query_tx", "subject_tx"))
     orthopair <- unique(orthopair)
     return(orthopair)
 }
@@ -479,12 +662,7 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     
     # Calculate mutual coverage identity as the Euclidean distance of the individual coverage identities
     mutual_ci <- sqrt(q2s_covident^2 + s2q_covident^2) / sqrt(2)
-    
-    rbh_score <- data.frame(query_tx = rbh$qseqid,
-                            subject_tx = rbh$sseqid,
-                            mutual_ci = mutual_ci)
-    
-    return(rbh_score)
+    return(mutual_ci)
 }
 
 .pickNonSyntenicOrtho <- function(h5, orthopair, g2g_graph){
@@ -510,11 +688,130 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     return(orthopair)
 }
 
-.sortSyntenicOrtho <- function(orthopair, g2g_graph){
-    query_id_hit <- match(orthopair$query_tx, g2g_graph$query_tx$tx)
-    orthopair <- orthopair[order(query_id_hit), ]
+.findSyntenyBlocks <- function(orthopair = orthopair){
+    orthopair <- orthopair[order(orthopair$root), ]
+    orthopair$query_synteny_block <- NA
+    query_chr <- unique(orthopair$query_chr)
+    id_offset <- 0
+    for(i_chr in query_chr){
+        i <- orthopair$query_chr == i_chr
+        anchor_index <- which(orthopair$root_anchor[i])
+        anchor_gap_pos <- which(diff(anchor_index) > 1)
+        synteny_block <- data.frame(start = c(head(anchor_index, 1), 
+                                              anchor_index[anchor_gap_pos + 1]),
+                                    end = c(anchor_index[anchor_gap_pos],
+                                            tail(anchor_index, 1)))
+        synteny_block$width <- synteny_block$end - synteny_block$start + 1
+        synteny_block$prev_start <- c(1, head(synteny_block$end, -1) + 1)
+        synteny_block$prev_end <- synteny_block$start - 1
+        synteny_block$gap_width <- synteny_block$prev_end - synteny_block$prev_start + 1
+        
+        block_id <- sapply(seq_along(synteny_block$start), function(j) {
+            rep(j, synteny_block$width[j])
+        })
+        orthopair$query_synteny_block[i][anchor_index] <- unlist(block_id) + id_offset
+        
+        gap_id <- lapply(seq_along(synteny_block$start), function(j) {
+            rep(j, synteny_block$gap_width[j])
+        })
+        gap_id <- unlist(gap_id)
+        if(length(gap_id) > 0){
+            
+            non_anchor_index <- which(!orthopair$root_anchor[i])
+            hit <- match(orthopair$query_anchor[i][-anchor_index],
+                         orthopair$query_anchor[i][anchor_index])
+            gap_id <- c(gap_id, rep(max(gap_id) + 1, 
+                                    length(non_anchor_index) - length(gap_id)))
+            gap_block <- data.frame(gene_index = non_anchor_index, 
+                                    anchor_index = anchor_index[hit],
+                                    gap_id = gap_id)
+            gap_block$block_id <- orthopair$query_synteny_block[i][gap_block$anchor_index]
+            
+            gap_hit2anchor <- tapply(gap_block$block_id, gap_block$gap_id, unique)
+            n_gap_hit2anchor <- sapply(gap_hit2anchor, length)
+            briging_gap <- as.integer(names(gap_hit2anchor)[n_gap_hit2anchor > 1])
+            briging_gap_block <- gap_block[gap_block$gap_id %in% briging_gap, ]
+            briging_gap_block_min <- tapply(briging_gap_block$block_id,
+                                            briging_gap_block$gap_id, 
+                                            min)
+            hit <- match(gap_block$gap_id, names(briging_gap_block_min))
+            gap_block$block_id[!is.na(hit)] <- briging_gap_block_min[na.omit(hit)] + 0.5
+            orthopair$query_synteny_block[i][-anchor_index] <- gap_block$block_id
+            
+            gap_pos <- which(diff(orthopair$query_synteny_block[i]) >= 1)
+            block_len <- diff(c(0, gap_pos, length(orthopair$query_synteny_block[i])))
+            block_id <- unlist(sapply(seq_along(block_len), function(i) {rep(i, block_len[i])}))
+            orthopair$query_synteny_block[i] <- block_id + id_offset
+        }
+        id_offset <- max(orthopair$query_synteny_block, na.rm = TRUE)
+    }
+    
+    orthopair <- orthopair[order(orthopair$leaf), ]
+    orthopair$subject_synteny_block <- NA
+    subject_chr <- unique(orthopair$subject_chr)
+    id_offset <- 0
+    for(i_chr in subject_chr){
+        i <- orthopair$subject_chr == i_chr
+        anchor_index <- which(orthopair$leaf_anchor[i])
+        anchor_gap_pos <- which(diff(anchor_index) > 1)
+        synteny_block <- data.frame(start = c(head(anchor_index, 1), 
+                                              anchor_index[anchor_gap_pos + 1]),
+                                    end = c(anchor_index[anchor_gap_pos],
+                                            tail(anchor_index, 1)))
+        synteny_block$width <- synteny_block$end - synteny_block$start + 1
+        synteny_block$prev_start <- c(1, head(synteny_block$end, -1) + 1)
+        synteny_block$prev_end <- synteny_block$start - 1
+        synteny_block$gap_width <- synteny_block$prev_end - synteny_block$prev_start + 1
+        
+        block_id <- sapply(seq_along(synteny_block$start), function(j) {
+            rep(j, synteny_block$width[j])
+        })
+        orthopair$subject_synteny_block[i][anchor_index] <- unlist(block_id) + id_offset
+        id_offset <- max(orthopair$subject_synteny_block, na.rm = TRUE)
+        
+        gap_id <- lapply(seq_along(synteny_block$start), function(j) {
+            rep(j, synteny_block$gap_width[j])
+        })
+        gap_id <- unlist(gap_id)
+        
+        if(length(gap_id) > 0){
+            non_anchor_index <- which(!orthopair$leaf_anchor[i])
+            hit <- match(orthopair$subject_anchor[i][-anchor_index],
+                         orthopair$subject_anchor[i][anchor_index])
+            if(is.infinite(max(gap_id))){stop()}
+            gap_id <- c(gap_id, rep(max(gap_id) + 1, 
+                                    length(non_anchor_index) - length(gap_id)))
+            gap_block <- data.frame(gene_index = non_anchor_index, 
+                                    anchor_index = anchor_index[hit],
+                                    gap_id = gap_id)
+            gap_block$block_id <- orthopair$subject_synteny_block[i][gap_block$anchor_index]
+            
+            gap_hit2anchor <- tapply(gap_block$block_id, gap_block$gap_id, unique)
+            n_gap_hit2anchor <- sapply(gap_hit2anchor, length)
+            briging_gap <- as.integer(names(gap_hit2anchor)[n_gap_hit2anchor > 1])
+            briging_gap_block <- gap_block[gap_block$gap_id %in% briging_gap, ]
+            briging_gap_block_min <- tapply(briging_gap_block$block_id,
+                                            briging_gap_block$gap_id, 
+                                            min)
+            hit <- match(gap_block$gap_id, names(briging_gap_block_min))
+            gap_block$block_id[!is.na(hit)] <- briging_gap_block_min[na.omit(hit)] + 0.5
+            orthopair$subject_synteny_block[i][-anchor_index] <- gap_block$block_id
+            
+            gap_pos <- which(diff(orthopair$subject_synteny_block[i]) >= 1)
+            block_len <- diff(c(0, gap_pos, length(orthopair$subject_synteny_block[i])))
+            block_id <- unlist(sapply(seq_along(block_len), function(i) {rep(i, block_len[i])}))
+            orthopair$subject_synteny_block[i] <- block_id
+        }
+        id_offset <- max(orthopair$query_synteny_block, na.rm = TRUE)
+    }
     return(orthopair)
 }
+
+# .sortSyntenicOrtho <- function(orthopair, g2g_graph){
+#     query_id_hit <- match(orthopair$query_tx, g2g_graph$query_tx$tx)
+#     orthopair <- orthopair[order(query_id_hit), ]
+#     return(orthopair)
+# }
 
 #' @importFrom igraph graph_from_data_frame V components
 .classifyOrthoPair <- function(orthopair){
@@ -758,12 +1055,12 @@ syntenicOrtho <- function(object, rbbh_mci_threshold = 0.1, rbh_mci_threshold = 
     return(out)
 }
 
-.pickBestPair <- function(orthopair_gene){
-    out <- tapply(seq_along(orthopair_gene$gene_pair_id),
-                  orthopair_gene$gene_pair_id,
+.pickBestPair <- function(orthopair){
+    out <- tapply(seq_along(orthopair$gene_pair_id),
+                  orthopair$gene_pair_id,
                   function(i){
-                      best_pair <- which.max(orthopair_gene$mutual_ci[i])
-                      return(orthopair_gene[i[best_pair], ])
+                      best_pair <- which.max(orthopair$mutual_ci[i])
+                      return(orthopair[i[best_pair], ])
                   })
     out <- do.call("rbind", out)
     return(out)

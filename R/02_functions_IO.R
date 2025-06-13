@@ -24,8 +24,7 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                             miniprot_out_dir ="./miniprot",
                             overwrite = FALSE,
                             resume = FALSE,
-                            module = NULL,
-                            param_list = NULL){
+                            module = NULL){
     
     # Create a list containing all input file paths
     files <- list(query_genome = query_genome,
@@ -96,56 +95,12 @@ makeOrthoPairDB <- function(query_genome, subject_genome,
                      file = out$h5, "files/subject_cds")
     }
     
-    out$param_list <- .validateParamList(param_list = param_list)
-    
     # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "OrthoPairDB")
     
     .h5creategroup(out$h5, "timestamp")
     .h5overwrite(obj = as.character(Sys.time()), file = out$h5, "timestamp/makedb")
     
-    return(out)
-}
-
-.validateParamList <- function(param_list){
-    out <- list(len_diff = 0.2,
-                pident = 0,
-                qcovs = 0,
-                evalue = 1e-4,
-                rbbh_mci_threshold = 0.1,
-                rbh_mci_threshold = 0.4)
-    if(!is.null(param_list)){
-        check <- names(param_list) %in% names(out)
-        if(!all(check)){
-            stop("The param_list object must be a named list with the following names:",
-                 "\n'len_diff', 'pident', 'qcovs', 'evalue', 'rbbh_mci_threshold', 'rbh_mci_threshold'.")
-        }
-        if(!is.null(param_list$len_diff)){
-            out$len_diff <- param_list$len_diff
-        }
-        if(!is.null(param_list$pident)){
-            out$pident <- param_list$pident
-        }
-        if(!is.null(param_list$qcovs)){
-            out$qcovs <- param_list$qcovs
-        }
-        if(!is.null(param_list$evalue)){
-            out$evalue <- param_list$evalue
-        }
-        if(!is.null(param_list$rbbh_mci_threshold)){
-            out$rbbh_mci_threshold <- param_list$rbbh_mci_threshold
-        }
-        if(!is.null(param_list$rbh_mci_threshold)){
-            out$rbh_mci_threshold <- param_list$rbh_mci_threshold
-        }
-    }
-    message("Use following parameters:")
-    message("len_diff = ", out$len_diff)
-    message("pident = ", out$pident)
-    message("qcovs = ", out$qcovs)
-    message("evalue = ", out$evalue)
-    message("rbbh_mci_threshold = ", out$rbbh_mci_threshold)
-    message("rbh_mci_threshold = ", out$rbh_mci_threshold)
     return(out)
 }
 
@@ -187,6 +142,7 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     } else {
         h5 <- H5Fopen(object$h5)
     }
+    on.exit(H5Fclose(h5))
     
     if(!H5Lexists(h5, "orthopair_gene")){
         stop("No genewise ortholog info.")

@@ -121,6 +121,7 @@ rbh <- function(object,
             options(scipen = 10^6)
             
             # Perform BLAST searches in both directions
+            dir.create(diamond_out_dir, recursive = TRUE, showWarnings = FALSE)
             blast_out1 <- .diamond_search(query = fa1,
                                           subject = fa2,
                                           n_threads = n_threads,
@@ -269,7 +270,7 @@ rbh <- function(object,
         out <- predict(db, fa,
                        silent = TRUE,
                        BLAST_args = blast_args,
-                       custom_format = "qseqid sseqid pident evalue qcovs")
+                       custom_format = "qseqid sseqid pident evalue qcovs sstrand")
     } else {
         # Split the query sequences into batches
         batch <- split(seq_along(fa), cut(seq_along(fa), n_batch))
@@ -279,19 +280,21 @@ rbh <- function(object,
             tmp <- predict(db, fa[i],
                            silent = TRUE,
                            BLAST_args = blast_args,
-                           custom_format = "qseqid sseqid pident evalue qcovs")
+                           custom_format = "qseqid sseqid pident evalue qcovs sstrand")
             out <- rbind(out, tmp)
         }
     }
     if(nrow(out) == 0){
         out <- NA
+    } else {
+        out <- subset(out, subset = sstrand == "plus")
     }
     return(out)
 }
 
 #' @importFrom rdiamond diamond_protein_to_protein
 .diamond_search <- function(query, subject, n_threads, max_target_seqs, evalue, diamond_exec_path, diamond_out_dir){
-    sink(file = file.path(diamond_out_dir, "diamond.log"), type = "message")
+    sink(file.path(diamond_out_dir, "diamond.log"))
     out <- diamond_protein_to_protein(query = query,
                                       subject = subject, 
                                       cores = n_threads,

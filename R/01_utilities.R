@@ -85,7 +85,7 @@
 #' @import BSgenome
 #' 
 #' @export
-fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
+fixInfiles <- function(genome = NULL, gff, cds = NULL, prot = NULL, autofix = FALSE){
     out <- .prep_out(genome = genome, gff = gff, cds = cds, prot = prot)
     
     if(!is.null(genome)){
@@ -108,7 +108,13 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
 
 .prep_out <- function(genome, gff, cds, prot){
     new_gff_fn <- paste0(sub(pattern = "\\.gff3?.*", replacement = "", gff), ".op_fixed.gff")
-    new_cds_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", cds), ".op_fixed.fa")
+    if(is.null(cds)){
+        new_cds_fn <- NULL
+        
+    } else {
+        new_cds_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", cds), ".op_fixed.fa")
+    }
+    
     if(is.null(genome)){
         new_genome_fn <- NULL
         
@@ -116,12 +122,14 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
         new_genome_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", genome), ".op_fixed.fa")
         new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", prot), ".op_fixed.fa")
     }
+    
     if(is.null(prot)){
         new_prot_fn <- NULL
         
     } else {
         new_prot_fn <- paste0(sub(pattern = "\\.f(a|n)?a.*", replacement = "", prot), ".op_fixed.fa")
     }
+    
     out <- list(genome = new_genome_fn, gff = new_gff_fn, cds = new_cds_fn, prot = new_prot_fn)
     return(out)
 }
@@ -195,13 +203,13 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
             }
         }
     }
-    if(any(old_genome_names != genome_names)){
+    if(any(old_genome_names != genome_names_full)){
         message("Saving new genome FASTA file.")
         writeXStringSet(x = genome, new_genome_fn)
     } else {
         message("No change in the genome FASTA.")
     }
-    return(list(old_genome_names = old_genome_names, genome_names = genome_names))
+    return(list(old_genome_names = old_genome_names, genome_names_full = genome_names_full, retained_genome_names = genome_names))
 }
 
 .dropGFFentries <- function(gff){
@@ -255,9 +263,9 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
     }
     
     hit <- match(gff_levels, genome_names$old_genome_names)
-    seqlevels(gff) <- genome_names$old_genome_names[hit]
+    seqlevels(gff) <- genome_names$genome_names_full[hit]
     gff_levels <- seqlevels(gff)
-    pattern <- gff_levels[!gff_levels %in% genome_names$genome_names]
+    pattern <- gff_levels[!gff_levels %in% genome_names$retained_genome_names]
     gff <- dropSeqlevels(gff, pattern, pruning.mode = "coarse")
     
     gff_levels <- seqlevels(gff)
@@ -604,9 +612,14 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
                                   chr_prefix = chr_prefix,
                                   digits_fmt = digits_fmt)
                 
-                cds <- readDNAStringSet(filepath = cds)
+                if(!is.null(cds)){
+                    cds <- readDNAStringSet(filepath = cds)
+                    check <- all(names(cds) %in% gff$oldID)
+                    
+                } else {
+                    check <- FALSE
+                }
                 
-                check <- all(names(cds) %in% gff$oldID)
                 if(check){
                     hit <- match(names(cds), gff$oldID)
                     names(cds) <- gff$ID[hit]
@@ -685,7 +698,13 @@ fixInfiles <- function(genome = NULL, gff, cds, prot = NULL, autofix = FALSE){
             cds_seqs <- cds_seqs[order(names(cds_seqs))]
             prot_seqs <- translate(x = cds_seqs, no.init.codon = TRUE, if.fuzzy.codon = "X")
             prot_seqs <- prot_seqs[order(names(prot_seqs))]
+            if(is.null(out$cds)){
+                out$cds <- sub(".op_fixed.gff", "_cds.op_fixed.fa", out$gff)
+            }
             writeXStringSet(x = cds_seqs, filepath = out$cds)
+            if(is.null(out$prot)){
+                out$prot <- sub(".op_fixed.gff", "_prot.op_fixed.fa", out$gff)
+            }
             writeXStringSet(x = prot_seqs, filepath = out$prot)
         }
     }
