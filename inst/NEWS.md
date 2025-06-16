@@ -1,4 +1,4 @@
-Changes in version 0.5.1 (2025-06-13)
+Changes in version 0.5.2 (2025-06-16)
 + Anchor genes is filtered based on if the genes are possibly TEs that have 
 + a large number of multiple hits in RBH.
 + Orthologous pairs are filtered based on mutual-CI if it is detected as

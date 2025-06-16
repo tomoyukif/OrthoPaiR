@@ -530,7 +530,8 @@ syntenicOrtho <- function(object){
 }
 
 #' @importFrom dplyr left_join
-#' @importFrom GenomicRanges precede follow findOverlaps resize
+#' @importFrom GenomicRanges precede follow findOverlaps resize 
+#' @importFrom S4Vectors queryHits subjectHits 
 .linkTx2Anchor <- function(g2g_graph, anchor){
     tx2gene <- data.frame(root = g2g_graph$query_tx$id,
                           query_anchor = g2g_graph$query_gene$id)
@@ -595,18 +596,18 @@ syntenicOrtho <- function(object){
     nonanchor_hit <- match(subject_non_anchor_gff$ID, g2g_graph$subject_tx$tx)
     anchor_hit <- match(subject_anchor_gff$ID, g2g_graph$subject_tx$tx)
     overlap_hit <- match(subject_overlap_gff$ID, g2g_graph$subject_tx$tx)
-    subject_tx2anchor <- rbind(data.frame(root = c(g2g_graph$subject_tx$id[nonanchor_hit],
+    subject_tx2anchor <- rbind(data.frame(leaf = c(g2g_graph$subject_tx$id[nonanchor_hit],
                                                  g2g_graph$subject_tx$id[nonanchor_hit]),
                                         subject_anchor = c(subject_anchor_gff$node_id[subject_tx2anchor_follow],
                                                          subject_anchor_gff$node_id[subject_tx2anchor_precede]),
-                                        root_anchor = FALSE),
-                             data.frame(root = g2g_graph$subject_tx$id[overlap_hit],
+                                        leaf_anchor = FALSE),
+                             data.frame(leaf = g2g_graph$subject_tx$id[overlap_hit],
                                         subject_anchor = subject_anchor_gff$node_id[subject_tx2anchor_overlap],
-                                        root_anchor = TRUE),
-                             data.frame(root = g2g_graph$subject_tx$id[anchor_hit],
+                                        leaf_anchor = TRUE),
+                             data.frame(leaf = g2g_graph$subject_tx$id[anchor_hit],
                                         subject_anchor = subject_anchor_gff$node_id,
-                                        root_anchor = TRUE))
-    subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$root), ])
+                                        leaf_anchor = TRUE))
+    subject_tx2anchor <- unique(subject_tx2anchor[order(subject_tx2anchor$leaf), ])
     subject_tx2anchor <- subset(subject_tx2anchor, subset = !is.na(subject_anchor))
     
     out <- list(anchor = anchor,

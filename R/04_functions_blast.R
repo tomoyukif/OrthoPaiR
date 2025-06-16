@@ -56,7 +56,7 @@ rbh <- function(object,
     db2 <- blast(db = db2, type = "blastn")
     
     # Set scientific notation options
-    options(scipen = 10^6)
+    options(scipen = 9999)
     
     # Perform BLAST searches in both directions
     blast_out1 <- .blast_search(fa = fa1,
@@ -118,7 +118,7 @@ rbh <- function(object,
             fa2 <- .makeFASTA(fasta_fn = as.vector(h5$files$subject_prot), type = "prot")
             
             # Set scientific notation options
-            options(scipen = 10^6)
+            options(scipen = 9999)
             
             # Perform BLAST searches in both directions
             dir.create(diamond_out_dir, recursive = TRUE, showWarnings = FALSE)
