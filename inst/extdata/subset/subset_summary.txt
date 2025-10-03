@@ -1,0 +1,15 @@
+OrthoPaiR Subset Data Summary
+=============================
+Created on: 2025-10-03 08:56:15.809087 
+
+NB (Query Species) Subset:
+- GFF features: 856 
+- CDS sequences: 50 
+- Protein sequences: 50 
+- Genome sequences: 3 
+
+WK21 (Subject Species) Subset:
+- GFF features: 442 
+- CDS sequences: 38 
+- Protein sequences: 38 
+- Genome sequences: 3 
