@@ -809,9 +809,6 @@ makeOrthoGraph <- function(hdf5_fn){
     return(graph)
 }
 
-#' @importFrom igraph components ego V subgraph vcount
-#' @export
-
 #' @importFrom igraph components ego V subgraph vcount induced_subgraph
 #' @importFrom tidyr pivot_wider
 #' @export

@@ -236,7 +236,6 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
 #' @importFrom Biostrings readDNAStringSet writeXStringSet
 #' @importFrom rhdf5 H5Fopen H5Fclose
 #' 
-#' @export
 .getPromoterSeq <- function(gff, genome, out_fn){
     genome <- readDNAStringSet(genome)
     gff <- import.gff3(gff)

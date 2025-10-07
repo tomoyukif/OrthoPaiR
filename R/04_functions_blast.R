@@ -46,7 +46,6 @@ rbh <- function(object,
     # Filter BLAST results for best hits
     message("Generating RBH lists.")
     rbh_out <- .getRBH(df1 = blast_out1, df2 = blast_out2)
-    # rbh_out <- .blast_filter(rbh_out = rbh_out)
     
     if(use_prot){
         # Generate FASTA files from the CDS sequences
@@ -120,12 +119,6 @@ rbh <- function(object,
     return(rbh_out)
 }
 
-#' Merge CDS files into a single FASTA file
-#'
-#' This function reads multiple CDS files and merges them into a single FASTA file.
-#'
-#' @param cds_fn A character vector containing paths to CDS files.
-#' @return The path to the merged FASTA file.
 #' @importFrom Biostrings readDNAStringSet writeXStringSet
 .makeFASTA <- function(fasta_fn, type = "cds"){
     # Check if there is more than one CDS file
@@ -169,23 +162,10 @@ rbh <- function(object,
     return(fasta_fn)
 }
 
-#' Perform BLAST search
-#'
-#' This function performs a BLAST search using the specified parameters.
-#'
-#' @param fa A DNAStringSet object containing the query sequences.
-#' @param db A BLAST database connection.
-#' @param n_threads Number of threads to use for BLAST (default is 1).
-#' @param n_batch Number of sequences to process in each batch (default is NULL).
-#' @param max_target_seqs Maximum number of target sequences (default is 100000).
-#' @param task BLAST task to perform (default is "-task blastn").
-#' 
 #' @importFrom GenomicRanges reduce GRanges 
 #' @importFrom IRanges IRanges width
 #' @importFrom GenomeInfoDb seqnames
 #' 
-#' @return A data.frame containing the BLAST search results.
-#'
 .blast_search <- function(fa,
                           db,
                           blast_path,
@@ -258,49 +238,6 @@ rbh <- function(object,
     return(out)
 }
 
-#' Filter BLAST search results
-#'
-#' This function filters BLAST search results based on specified criteria for percentage identity,
-#' query coverage, and e-value. It can also identify the best hits for each query sequence.
-#'
-#' @param blast_out A data.frame containing the BLAST search results.
-#'
-#' @return A filtered data.frame of BLAST search results.
-#'
-.blast_filter <- function(rbh_out){
-    if(all(is.na(rbh_out[1]))){
-        return(rbh_out)
-    }
-    # Identify the best hits for each query sequence
-    q_n_hit <- table(rbh_out$qseqid)
-    s_n_hit <- table(rbh_out$sseqid)
-    
-    # Separate single-hit and multiple-hit sequences
-    q_single_hit <- rbh_out$qseqid %in% names(q_n_hit)[q_n_hit == 1]
-    s_single_hit <- rbh_out$sseqid %in% names(s_n_hit)[s_n_hit == 1]
-    single_hit <- q_single_hit & s_single_hit
-    mult_hit <- rbh_out[!single_hit, ]
-    single_hit <- rbh_out[single_hit, ]
-    
-    # Filter multiple-hit sequences by the lowest e-value
-    filter <- tapply(mult_hit$mutual_ci, mult_hit$qseqid, max)
-    hit <- match(mult_hit$qseqid, names(filter))
-    filter <- filter[hit]
-    mult_hit <- subset(mult_hit, subset = mutual_ci == filter)
-    
-    # Combine single-hit and multiple-hit sequences
-    blast_out <- rbind(single_hit, mult_hit)
-    return(blast_out)
-}
-
-#' Find Reciprocal Best Hits (RBH)
-#'
-#' This function identifies Reciprocal Best Hits (RBH) between two sets of BLAST search results.
-#'
-#' @param df1 A data.frame containing BLAST search results from query to subject.
-#' @param df2 A data.frame containing BLAST search results from subject to query.
-#' @return A data.frame containing the reciprocal best hits with relevant BLAST statistics.
-#' 
 #' @importFrom dplyr inner_join
 #' 
 .getRBH <- function(df1, df2){
@@ -364,13 +301,3 @@ rbh <- function(object,
                  subset(uniq_rbh, select = c(qseqid:qcovs_q2s, qcovs_s2q)))
     return(rbh)
 }
-
-# .getMCI <- function(rbh){
-#     # Calculate coverage identity for query to subject (q2s) and subject to query (s2q)
-#     ci_q2s <- rbh$pident_q2s * rbh$qcovs_q2s * 1e-4
-#     ci_s2q <- rbh$pident_s2q * rbh$qcovs_s2q * 1e-4
-#     
-#     # Calculate mutual coverage identity as the Euclidean distance of the individual coverage identities
-#     mutual_ci <- sqrt(ci_q2s^2 + ci_s2q^2) / sqrt(2)
-#     return(list(mutual_ci = mutual_ci, ci_q2s = ci_q2s, ci_s2q = ci_s2q))
-# }

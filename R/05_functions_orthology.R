@@ -234,15 +234,6 @@ syntenicOrtho <- function(object){
     return(out)
 }
 
-# .filterOrthopair <- function(orthopair){
-#     notMtoM <- orthopair$class != "MtoM"
-#     op_threshold <- .calcThreshold(orthopair$mutual_ci[notMtoM],
-#                                    pair_id = orthopair$pair_id[notMtoM])
-#     filter <- orthopair$mutual_ci >= op_threshold
-#     orthopair <- orthopair[filter, ]
-#     return(orthopair)
-# }
-
 .getOrphan <- function(orthopair, g2g_graph){
     query_tx_hit <- g2g_graph$query_gff$Parent %in% orthopair$query_tx
     hit_gene_id <- g2g_graph$query_gff$gene_id[query_tx_hit]
@@ -306,7 +297,6 @@ syntenicOrtho <- function(object){
     return(df)
 }
 
-# #' @importFrom GenomicRanges nearest
 .linkGene2Genome <- function(object){
     gff_ls <- .getGFFlist(object = object)
     
@@ -826,12 +816,6 @@ syntenicOrtho <- function(object){
     }
     return(synteny_block_id)
 }
-
-# .sortSyntenicOrtho <- function(orthopair, g2g_graph){
-#     query_id_hit <- match(orthopair$query_tx, g2g_graph$query_tx$tx)
-#     orthopair <- orthopair[order(query_id_hit), ]
-#     return(orthopair)
-# }
 
 #' @importFrom igraph graph_from_data_frame V components
 .classifyOrthoPair <- function(orthopair){

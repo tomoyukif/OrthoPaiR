@@ -55,13 +55,6 @@ makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
     return(out)
 }
 
-#' Summarize genome information
-#'
-#' This function reads a genome file and returns a summary containing the names and lengths of the sequences.
-#'
-#' @param genome Path to the genome file.
-#'
-#' @return A list containing genome names and lengths.
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom BiocGenerics width
 .genomeSummary <- function(genome){
