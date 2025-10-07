@@ -4,21 +4,7 @@
 \alias{makeOrthoPairDB}
 \title{Create a OrthoPairDB object}
 \usage{
-makeOrthoPairDB(
-  query_genome,
-  subject_genome,
-  query_gff,
-  subject_gff,
-  query_cds,
-  subject_cds,
-  query_prot,
-  subject_prot,
-  hdf5_path = "./orthopair.h5",
-  miniprot_out_dir = "./miniprot",
-  overwrite = FALSE,
-  resume = FALSE,
-  module = NULL
-)
+makeOrthoPairDB(input_files, overwrite = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{query_genome}{Path to the query genome file.}

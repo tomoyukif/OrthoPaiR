@@ -7,21 +7,19 @@
 orthopair(
   in_list,
   working_dir = ".",
-  conda = "conda",
-  miniprot_bin = "miniprot",
-  miniprot_condaenv = "miniprot",
-  diamond_exec_path = "diamond",
-  n_threads = NULL,
+  miniprot_path = "",
+  blast_path = "",
+  diamond_path = "",
   target_pair = NULL,
   use_prot = FALSE,
-  verbose = TRUE,
-  overwrite = FALSE,
-  resume = FALSE,
-  module = NULL,
+  run_miniprot = FALSE,
   orthopair = TRUE,
   reorg = TRUE,
   makegraph = TRUE,
-  output_table = FALSE
+  output_table = FALSE,
+  n_threads = NULL,
+  overwrite = FALSE,
+  verbose = TRUE
 )
 }
 \description{

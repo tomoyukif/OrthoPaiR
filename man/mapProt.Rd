@@ -5,25 +5,25 @@
 \title{Map Proteins Between Genomes}
 \usage{
 mapProt(
-  object,
-  out_dir,
-  miniprot_bin = "miniprot",
-  conda = "conda",
-  condaenv = NULL,
-  n_threads,
+  in_list,
+  out_dir = "",
+  miniprot_path = "",
+  overwrite = FALSE,
+  conda_env = NULL,
+  n_threads = 1,
   len_diff = 0.2
 )
 }
 \arguments{
-\item{object}{A OrthoPairDB object.}
-
-\item{miniprot_bin}{A character string specifying the path to the miniprot binary.}
-
 \item{n_threads}{An integer specifying the number of cores to use for the mapping.}
 
 \item{len_diff}{A numeric value specifying the maximum allowable length difference for proteins. Default is 0.2.}
 
+\item{object}{A OrthoPairDB object.}
+
 \item{out_prefix}{A character string specifying the prefix for the output files.}
+
+\item{miniprot_bin}{A character string specifying the path to the miniprot binary.}
 }
 \value{
 None. The function performs the mapping and writes the results to the output files specified by \code{out_prefix}.

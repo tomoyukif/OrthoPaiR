@@ -16,90 +16,41 @@
 #' @return A OrthoPairDB object.
 #' @export
 #'
-makeOrthoPairDB <- function(query_genome, subject_genome,
-                            query_gff, subject_gff,
-                            query_cds, subject_cds,
-                            query_prot, subject_prot,
-                            hdf5_path = "./orthopair.h5",
-                            miniprot_out_dir ="./miniprot",
-                            overwrite = FALSE,
-                            resume = FALSE,
-                            module = NULL){
-    
-    # Create a list containing all input file paths
-    files <- list(query_genome = query_genome,
-                  subject_genome = subject_genome,
-                  query_gff = query_gff,
-                  subject_gff = subject_gff,
-                  query_cds = query_cds,
-                  subject_cds = subject_cds,
-                  query_prot = query_prot,
-                  subject_prot = subject_prot)
-    
+makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
     out <- NULL
-    out$h5 <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
+    out$h5 <- .makeHDF5(hdf5_path = input_files$hdf5_path, 
+                        overwrite = overwrite, verbose = verbose)
     
-    if(is.null(files$query_genome) | is.null(files$subject_genome)){
-        query_genome <- "no_query_genome"
-        subject_genome <- "no_subject_genome"
-        no_genome <- TRUE
-        
-    } else {
-        # Summarize the query and subject genomes
-        out$genome$query <- .genomeSummary(genome = query_genome)
-        out$genome$subject <- .genomeSummary(genome = subject_genome)
-        no_genome <- FALSE
-    }
-    
-    if(is.null(files$query_prot) | is.null(files$subject_prot)){
-        query_prot <- "no_query_prot"
-        subject_prot <- "no_subject_prot"
-        no_prot <- TRUE
-    } else {
-        no_prot <- FALSE
-    }
-    
-    out$resume <- .checkResumePoint(hdf5_path = out$h5,
-                                    resume = resume,
-                                    module = module,
-                                    no_genome = no_genome,
-                                    no_prot = no_prot)
+    out$resume <- .checkResumePoint(hdf5_path = out$h5)
     
     .h5creategroup(out$h5,"files")
-    .h5overwrite(obj = query_genome,
+    .h5overwrite(obj = input_files$query_genome,
                  file = out$h5, "files/query_genome")
-    .h5overwrite(obj = subject_genome,
+    .h5overwrite(obj = input_files$subject_genome,
                  file = out$h5, "files/subject_genome")
-    .h5overwrite(obj = query_prot,
+    .h5overwrite(obj = input_files$query_prot,
                  file = out$h5, "files/query_prot")
-    .h5overwrite(obj = subject_prot,
+    .h5overwrite(obj = input_files$subject_prot,
                  file = out$h5, "files/subject_prot")
-    .h5overwrite(obj = query_gff,
+    .h5overwrite(obj = input_files$query_gff,
                  file = out$h5, "files/query_gff")
-    .h5overwrite(obj = subject_gff,
+    .h5overwrite(obj = input_files$subject_gff,
                  file = out$h5, "files/subject_gff")
-    .h5overwrite(obj = query_cds,
+    .h5overwrite(obj = input_files$query_cds,
                  file = out$h5, "files/query_cds")
-    .h5overwrite(obj = subject_cds,
+    .h5overwrite(obj = input_files$subject_cds,
                  file = out$h5, "files/subject_cds")
-    
-    if(out$resume$set_mp){
-        message("Use gene models including miniprot predicted genes.")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.gff"),
-                     file = out$h5, "files/query_gff")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.gff"),
-                     file = out$h5, "files/subject_gff")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_query.cds"),
-                     file = out$h5, "files/query_cds")
-        .h5overwrite(obj = file.path(miniprot_out_dir, "miniprot_merge_subject.cds"),
-                     file = out$h5, "files/subject_cds")
-    }
+    .h5overwrite(obj = input_files$query_h5,
+                 file = out$h5, "files/query_h5")
+    .h5overwrite(obj = input_files$subject_h5,
+                 file = out$h5, "files/subject_h5")
     
     # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "OrthoPairDB")
     
     .h5creategroup(out$h5, "timestamp")
-    .h5overwrite(obj = as.character(Sys.time()), file = out$h5, "timestamp/makedb")
+    .h5overwrite(obj = as.character(Sys.time()),
+                 file = out$h5, "timestamp/makedb")
     
     return(out)
 }

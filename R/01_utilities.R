@@ -52,14 +52,17 @@
 
 #' @importFrom rhdf5 h5createFile
 # Function to create an HDF5 file
-.makeHDF5 <- function(hdf5_path, overwrite){
+.makeHDF5 <- function(hdf5_path, overwrite, verbose = TRUE){
     if(file.exists(hdf5_path)){
         # Notify if the file already exists
-        message(hdf5_path, " already exists.")
+        if(verbose){
+            message(hdf5_path, " already exists.")
+        }
         
         if(overwrite){
-            message("Since user specified 'overwrite = TRUE', the exsiting HDF5 will be overwritten.")
-            
+            if(verbose){
+                message("Since user specified 'overwrite = TRUE', the exsiting HDF5 will be overwritten.")
+            }
             unlink(x = hdf5_path)
             
             # Create a new HDF5 file

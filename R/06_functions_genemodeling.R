@@ -1,3 +1,4 @@
+
 #' Map Proteins Between Genomes
 #'
 #' This function maps proteins between the query and subject genomes using the specified miniprot binary and number of cores.
@@ -11,32 +12,37 @@
 #' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
 #'
 #' @export
-mapProt <- function(object,
-                    out_dir,
-                    miniprot_bin = "miniprot",
-                    conda = "conda",
-                    condaenv = NULL,
-                    n_threads,
+mapProt <- function(in_list,
+                    out_dir = "", 
+                    miniprot_path = "",
+                    overwrite = FALSE,
+                    conda_env = NULL,
+                    n_threads = 1,
                     len_diff = 0.2){
-    stopifnot(inherits(x = object, "OrthoPairDB"))
+    if(!inherits(x = in_list, what = "OrthoPairInput")){
+        stop("The input object must be a OrthoPairInput class object.",
+             call. = FALSE)
+    }
     
-    # Call the mapping engine function with specified parameters
-    .mapEngine(object = object,
-               out_dir = out_dir,
-               miniprot_bin = miniprot_bin,
-               conda = conda,
-               condaenv = condaenv,
-               n_threads = n_threads)
+    miniprot_out_dir <- file.path(out_dir, "miniprot_out")
+    dir.create(path = miniprot_out_dir, showWarnings = FALSE, recursive = TRUE)
     
-    .createFASTA(object = object, out_dir = out_dir, merge = FALSE)
+    message("Start running Miniprot...")
+    out_files <- .mapEngine(in_list = in_list,
+                            miniprot_out_dir = miniprot_out_dir,
+                            overwrite = overwrite,
+                            miniprot_path = miniprot_path,
+                            n_threads = n_threads)
     
     message("Organize and integrate miniprot predicated gene models...")
     
-    .orgMiniprot(object = object, out_dir = out_dir, len_diff = len_diff)
+    in_list <- .orgMiniprot(in_list = in_list,
+                            out_files = out_files,
+                            out_dir = out_dir, 
+                            len_diff = len_diff)
     
-    .createFASTA(object = object, out_dir = out_dir, merge = TRUE)
-    
-    .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/miniprot")
+    in_list <- .createFASTA(in_list = in_list, out_dir = out_dir)
+    return(in_list)
 }
 
 #' Execute Protein Mapping Between Genomes
@@ -46,65 +52,55 @@ mapProt <- function(object,
 #' @importFrom rtracklayer export.gff3
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom S4Vectors mcols mcols<-
-.mapEngine <- function(object, subject_prot, query_prot,
-                       out_dir, miniprot_bin, conda,
-                       condaenv, n_threads,
-                       overlap, len_diff){
-    # Open the HDF5 file
-    h5 <- H5Fopen(object$h5)
-    # Ensure the HDF5 file is closed when the function exits
-    on.exit(H5Fclose(h5))
+.mapEngine <- function(in_list,
+                       miniprot_out_dir,
+                       overwrite,
+                       miniprot_path,
+                       n_threads){
+    if(all(is.na(in_list$genome))){
+        stop("No genome information is available.")
+    } else {
+        omit_genome <- in_list$name[is.na(in_list$genome)]
+        message("Genome sequences are not available for:\n",
+                omit_genome)
+    }
     
-    # Check if the input object is of class "OrthoPairDB"
-    stopifnot(inherits(x = object, "OrthoPairDB"))
+    if(all(is.na(in_list$prot))){
+        stop("No protein information is available.")
+        
+    } else {
+        omit_prot <- in_list$name[is.na(in_list$prot)]
+        message("Protein sequences are not available for:\n",
+                omit_prot)
+    }
     
-    dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
-    
-    # Define output file paths for both directions of mapping
-    s2q_out <- file.path(out_dir, "query_miniprot_out")
-    q2s_out <- file.path(out_dir, "subject_miniprot_out")
-    
-    # Run miniprot mapping from subject to query genome
-    .miniprot(query_fn = as.vector(h5$files$subject_prot),
-              genome_fn = as.vector(h5$files$query_genome),
-              out_prefix = s2q_out, miniprot_bin = miniprot_bin,
-              conda = conda, condaenv = condaenv,
-              n_threads = n_threads)
-    
-    # Run miniprot mapping from query to subject genome
-    .miniprot(query_fn = as.vector(h5$files$query_prot),
-              genome_fn = as.vector(h5$files$subject_genome),
-              out_prefix = q2s_out, miniprot_bin = miniprot_bin,
-              conda = conda, condaenv = condaenv,
-              n_threads = n_threads)
-    
-    # Create HDF5 group for protein mapping results and save GFF files
-    .h5creategroup(object$h5,"miniprot")
-    .h5overwrite(obj = paste0(q2s_out, ".gff"),
-                 file = object$h5, "miniprot/q2s_gff")
-    .h5overwrite(obj = paste0(s2q_out, ".gff"),
-                 file = object$h5, "miniprot/s2q_gff")
-    #
-    #     # Import existing GFF files for query and subject genomes
-    #     query_gff <- .importAllGFF(object$query_gff)
-    #     query_gff <- c(query_gff, import.gff(paste0(s2q_out, ".gff")))
-    #     subject_gff <- .importAllGFF(object$subject_gff)
-    #     subject_gff <- c(subject_gff, import.gff(paste0(q2s_out, ".gff")))
-    #
-    #     m_query_gff <- mcols(query_gff)
-    #     hit <- names(m_query_gff) %in% c("source", "type", "score", "phase",
-    #                                    "ID", "Name", "gene_id", "Parent", "Target")
-    #     mcols(query_gff) <- m_query_gff[, hit]
-    #     m_subject_gff <- mcols(subject_gff)
-    #     hit <- names(m_subject_gff) %in% c("source", "type", "score", "phase",
-    #                                    "ID", "Name", "gene_id", "Parent", "Target")
-    #     mcols(subject_gff) <- m_subject_gff[, hit]
-    #     query_gff$Name <- query_gff$ID
-    #     subject_gff$Name <- subject_gff$ID
-    #
-    #     # Export the final GFF results to output files
-    #     export.gff3(query_gff, paste0(s2q_out, ".gff"))
-    #     export.gff3(subject_gff, paste0(q2s_out, ".gff"))
+    out_files <- NULL
+    for(i in seq_along(in_list$genome)){
+        out_files_i <- NULL
+        for(j in seq_along(in_list$genome)){
+            if(i == j){
+                next
+            }
+            if(is.na(in_list$genome[i]) | is.na(in_list$prot[j])){
+                next
+            }
+            out_fn <- file.path(miniprot_out_dir, 
+                                paste0(in_list$name[j], "_mapto_", in_list$name[i]))
+            if(file.exists(out_fn) | overwrite){
+                # Run miniprot mapping from subject to query genome
+                .miniprot(query_fn = in_list$prot[j],
+                          genome_fn =  in_list$genome[i],
+                          out_prefix = out_fn,
+                          miniprot_path = miniprot_path,
+                          n_threads = n_threads)
+                
+            }
+            out_files_i <- c(out_files_i, out_fn)
+            names(out_files_i)[length(out_files_i)] <- in_list$name[j]
+        }
+        out_files <- c(out_files, list(out_files_i))
+        names(out_files)[length(out_files)] <- in_list$name[i]
+    }
 }
 
 # # Organize GFF results from subject-to-query and query-to-subject mappings
@@ -140,146 +136,115 @@ mapProt <- function(object,
 # q2s_gff$Name <- q2s_gff$ID
 
 .miniprot <- function(query_fn, genome_fn, out_prefix,
-                      miniprot_bin,
-                      conda, condaenv,
+                      miniprot_path,
                       n_threads = 1){
     
-    if(!is.null(condaenv)){
-        log_fn <- paste0(out_prefix, ".log1")
-        .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
-                  args = paste("-t", n_threads,
-                               "-d", paste0(out_prefix, ".mpi"),
-                               genome_fn),
-                  log_fn = log_fn)
-        
-        log_fn <- paste0(out_prefix, ".log2")
-        error_log_fn <- paste0(out_prefix, "_error.log2")
-        .condaExe(conda = conda, env = condaenv, command = miniprot_bin,
-                  args = paste("-t", n_threads, "--gff",
-                               paste0(out_prefix, ".mpi"),
-                               query_fn, ">", paste0(out_prefix, ".gff")),
-                  log_fn = log_fn)
-        
-    } else {
-        log_fn <- paste0(out_prefix, ".log1")
-        error_log_fn <- paste0(out_prefix, "_error.log1")
-        system2(command = miniprot_bin,
-                args = paste("-t", n_threads,
-                             "-d", paste0(out_prefix, ".mpi"),
-                             genome_fn), 
-                stderr = log_fn)
-        
-        log_fn <- paste0(out_prefix, ".log2")
-        error_log_fn <- paste0(out_prefix, "_error.log2")
-        system2(command = miniprot_bin,
-                args = paste("-t", n_threads,
-                             "--gff",
-                             paste0(out_prefix, ".mpi"),
-                             query_fn, ">", paste0(out_prefix, ".gff")), 
-                stderr = log_fn)
-    }
+    log_fn <- paste0(out_prefix, ".log1")
+    error_log_fn <- paste0(out_prefix, "_error.log1")
+    system2(command = file.path(miniprot_path, "miniprot"),
+            args = paste("-t", n_threads,
+                         "-d", paste0(out_prefix, ".mpi"),
+                         genome_fn), 
+            stderr = log_fn)
+    
+    log_fn <- paste0(out_prefix, ".log2")
+    error_log_fn <- paste0(out_prefix, "_error.log2")
+    system2(command = file.path(miniprot_path, "miniprot"),
+            args = paste("-t", n_threads,
+                         "--gff",
+                         paste0(out_prefix, ".mpi"),
+                         query_fn, ">", paste0(out_prefix, ".gff")), 
+            stderr = log_fn)
 }
 
-.orgMiniprot <- function(object, out_dir, len_diff){
-    # Open the HDF5 file
-    h5 <- H5Fopen(object$h5)
-    on.exit(H5Fclose(h5))
-    
-    out <- .filterGFF(h5 = h5, len_diff = len_diff)
-    
-    # Fix and filter GFF results, retaining only necessary columns
-    out$query <- .fixGFF(gff = out$query)
-    out$subject <- .fixGFF(gff = out$subject)
-    
-    m_query <- mcols(out$query)
-    hit <- names(m_query) %in% c("source", "type", "score", "phase",
-                                 "ID", "Name", "gene_id", "Parent", "Target")
-    mcols(out$query) <- m_query[, hit]
-    m_subject <- mcols( out$subject)
-    hit <- names(m_subject) %in% c("source", "type", "score", "phase",
+.orgMiniprot <- function(in_list, out_files, out_dir, len_diff){
+    in_list$update <- rep(FALSE, length(in_list$name))
+    for(i in seq_along(out_files)){
+        subject_genome <- in_list$name %in% names(out_files)[i]
+        subject_gff_fn <- in_list$gff[subject_genome]
+        cds_fn <- in_list$cds[subject_genome]
+        out_gff <- .filterGFF(in_list = in_list,
+                              subject_gff_fn = subject_gff_fn,
+                              cds_fn = cds_fn,
+                              mp_files = out_files[[i]], 
+                              len_diff = len_diff)
+        added_tx_id <- out_gff$added_tx_id
+        # Fix and filter GFF results, retaining only necessary columns
+        out_gff <- .fixGFF(gff = out_gff$out_gff)
+        
+        m_gff <- mcols(out_gff)
+        hit <- names(m_gff) %in% c("source", "type", "score", "phase",
                                    "ID", "Name", "gene_id", "Parent", "Target")
-    mcols( out$subject) <- m_subject[, hit]
-    out$query$Name <- out$query$ID
-    out$subject$Name <-  out$subject$ID
-    
-    # Export the final GFF results to output files
-    query_fn <- file.path(out_dir, "miniprot_merge_query.gff")
-    subject_fn <- file.path(out_dir, "miniprot_merge_subject.gff")
-    .h5overwrite(obj = query_fn, file = object$h5, name = "files/query_gff")
-    .h5overwrite(obj = subject_fn, file = object$h5, name = "files/subject_gff")
-    
-    export.gff3(out$query, query_fn)
-    export.gff3(out$subject, subject_fn)
+        mcols(out_gff) <- m_gff[, hit]
+        out_gff$Name <- out_gff$ID
+        
+        # Export the final GFF results to output files
+        out_fn <- file.path(out_dir, basename(subject_gff_fn))
+        export.gff3(out_gff, out_fn)
+        in_list$gff[subject_genome] <- out_fn
+        in_list$update[subject_genome] <- TRUE
+    }
+    return(in_list)
 }
 
-.filterGFF <- function(h5, len_diff){
-    # Get the GFF lists
-    gff_ls <- .getGFFlist(h5 = h5, mp = TRUE)
-    
-    # Get the CDS lists
-    cds_ls <- .getCDSlist(h5 = h5, mp = TRUE)
-    
-    gff_ls$mp_query_gff <- .filterIdenticalMiniprotTx(original_gff = gff_ls$query_gff,
-                                                      mp_gff = gff_ls$mp_query_gff)
-    
-    gff_ls$mp_subject_gff <- .filterIdenticalMiniprotTx(original_gff = gff_ls$subject_gff,
-                                                        mp_gff = gff_ls$mp_subject_gff)
-    
-    gff_ls$mp_query_gff <- .filterLongMiniprotTx(mp_gff = gff_ls$mp_query_gff,
-                                                 original_gff = gff_ls$subject_gff,
-                                                 len_diff = len_diff)
-    
-    gff_ls$mp_subject_gff <- .filterLongMiniprotTx(mp_gff = gff_ls$mp_subject_gff,
-                                                   original_gff = gff_ls$query_gff,
-                                                   len_diff = len_diff)
-    
-    mp_query_novel <- .filterMiniprotTxOnNovelLoci(original_gff = gff_ls$query_gff,
-                                                   mp_gff = gff_ls$mp_query_gff,
-                                                   mp_cds = cds_ls$mp_query_cds)
-    
-    mp_subject_novel <- .filterMiniprotTxOnNovelLoci(original_gff = gff_ls$subject_gff,
-                                                     mp_gff = gff_ls$mp_subject_gff,
-                                                     mp_cds = cds_ls$mp_subject_cds)
-    gff_ls$query_gff <- suppressWarnings(c(gff_ls$query_gff, mp_query_novel))
-    cds_ls$query_cds <- c(cds_ls$query_cds,
-                          cds_ls$mp_query_cds[names(cds_ls$mp_query_cds) %in% mp_query_novel$ID])
-    valid_longer_query_mp_gff <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$query_gff,
-                                                             mp_gff = gff_ls$mp_query_gff,
-                                                             original_cds = cds_ls$query_cds,
-                                                             mp_cds = cds_ls$mp_query_cds)
-    
-    gff_ls$subject_gff <- suppressWarnings(c(gff_ls$subject_gff, mp_subject_novel))
-    cds_ls$subject_cds <- c(cds_ls$subject_cds,
-                            cds_ls$mp_subject_cds[names(cds_ls$mp_subject_cds) %in% mp_subject_novel$ID])
-    valid_longer_subject_mp_gff <- .filterMiniprotTxOnGeneLoci(original_gff = gff_ls$subject_gff,
-                                                               mp_gff = gff_ls$mp_subject_gff,
-                                                               original_cds = cds_ls$subject_cds,
-                                                               mp_cds = cds_ls$mp_subject_cds)
-    
-    out <- list(query = suppressWarnings(c(gff_ls$query_gff, valid_longer_query_mp_gff)),
-                subject = suppressWarnings(c(gff_ls$subject_gff, valid_longer_subject_mp_gff)))
-    
-    return(out)
+.filterGFF <- function(in_list, subject_gff_fn, cds_fn, mp_files, len_diff){
+    subject_gff <- .getGFFlist(gff_fn = subject_gff_fn)
+    subject_cds <- .getCDSlist(cds_fn = cds_fn)
+    original_tx_id <- names(subject_cds)
+    for(i in seq_along(mp_files)){
+        query_genome <- in_list$name %in% names(mp_files)[i]
+        query_gff <- .getGFFlist(gff_fn = in_list$gff[query_genome])
+        mp_gff <- .getGFFlist(gff_fn = paste0(mp_files[i], ".gff"))
+        mp_gff <- .setIDforElements(gff = mp_gff)
+        mp_cds <- .getCDSlist(cds_fn = paste0(mp_files[i], ".cds"))
+        
+        mp_gff <- .filterIdenticalMiniprotTx(original_gff = subject_gff,
+                                             mp_gff = mp_gff)
+        
+        mp_gff <- .filterLongMiniprotTx(mp_gff = mp_gff,
+                                        original_gff = query_gff,
+                                        len_diff = len_diff)
+        
+        subject_novel <- .filterMiniprotTxOnNovelLoci(original_gff = subject_gff,
+                                                      mp_gff = mp_gff,
+                                                      mp_cds = mp_cds)
+        
+        subject_gff <- suppressWarnings(c(subject_gff, subject_novel))
+        subject_cds <- c(subject_cds,
+                         mp_cds[names(mp_cds) %in% subject_novel$ID])
+        valid_longer_subject_mp_gff <- .filterMiniprotTxOnGeneLoci(original_gff = subject_gff,
+                                                                   mp_gff = mp_gff,
+                                                                   original_cds = subject_cds,
+                                                                   mp_cds = mp_cds)
+        
+        subject_gff <- suppressWarnings(c(subject_gff, valid_longer_subject_mp_gff))
+        subject_cds <- c(subject_cds,
+                         mp_cds[names(mp_cds) %in% valid_longer_subject_mp_gff$ID])
+    }
+    added_tx_id <- names(subject_cds)[names(subject_cds) %in% original_tx_id]
+    return(list(out_gff = subject_gff, added_tx_id = added_tx_id))
 }
 
-.getCDSlist <- function(h5, mp){
+.setIDforElements <- function(gff){
+    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
+    gff$ID[element_i] <- paste(unlist(gff$Parent[element_i]),
+                               as.character(gff$type[element_i]),
+                               sep = ":")
+    gff$Name <- gff$ID
+    return(gff)
+}
+
+.getCDSlist <- function(h5 = NULL, cds_fn = NULL){
     # Import GFF files for query and subject genomes
-    if(mp){
-        query_cds <- readDNAStringSet(as.vector(h5$files$query_cds))
-        mp_query_cds <- readDNAStringSet(as.vector(h5$miniprot$s2q_cds))
-        subject_cds <- readDNAStringSet(as.vector(h5$files$subject_cds))
-        mp_subject_cds <- readDNAStringSet(as.vector(h5$miniprot$q2s_cds))
-        
-        # Return the ordered cds data as a list
-        out <- list(query_cds = query_cds, subject_cds = subject_cds,
-                    mp_query_cds = mp_query_cds, mp_subject_cds = mp_subject_cds)
-        
-    } else {
+    if(is.null(cds_fn)){
         query_cds <- readDNAStringSet(as.vector(h5$files$query_cds))
         subject_cds <- readDNAStringSet(as.vector(h5$files$subject_cds))
         
         # Return the ordered cds data as a list
         out <- list(query_cds = query_cds, subject_cds = subject_cds)
+        
+    } else {
+        out <- readDNAStringSet(cds_fn)
     }
     
     return(out)
@@ -934,48 +899,23 @@ mapProt <- function(object,
 #'
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom Biostrings writeXStringSet
-.createFASTA <- function(object, out_dir, merge){
-    h5 <- H5Fopen(object$h5)
-    on.exit(H5Fclose(h5))
-    
-    if(merge){
+.createFASTA <- function(in_list, out_dir){
+    for(i in seq_along(in_list$name)){
+        if(!in_list$update[i]){
+            next
+        }
         # Create CDS sequences for query and subject genomes
-        q_cds <- .makeCDS(gff = as.vector(h5$files$query_gff),
-                          genome = as.vector(h5$files$query_genome))
-        s_cds <- .makeCDS(gff = as.vector(h5$files$subject_gff),
-                          genome = as.vector(h5$files$subject_genome))
+        new_cds <- .makeCDS(gff = in_list$gff[i], genome = in_list$genome[i])
         
         # Define filenames for the CDS FASTA files
-        q_cds_fn <- file.path(out_dir, "miniprot_merge_query.cds")
-        s_cds_fn <- file.path(out_dir, "miniprot_merge_subject.cds")
+        new_cds_fn <- file.path(out_dir, basename(in_list$cds[i]))
         
         # Write the CDS sequences to FASTA files
-        writeXStringSet(q_cds, q_cds_fn)
-        writeXStringSet(s_cds, s_cds_fn)
-        
-        # Overwrite the HDF5 file with the new CDS FASTA filenames
-        .h5overwrite(obj = q_cds_fn, file = object$h5, "files/query_cds")
-        .h5overwrite(obj = s_cds_fn, file = object$h5, "files/subject_cds")
-        
-    } else {
-        # Create CDS sequences for query and subject genomes
-        q_cds <- .makeCDS(gff = as.vector(h5$miniprot$s2q_gff),
-                          genome = as.vector(h5$files$query_genome))
-        s_cds <- .makeCDS(gff = as.vector(h5$miniprot$q2s_gff),
-                          genome = as.vector(h5$files$subject_genome))
-        
-        # Define filenames for the CDS FASTA files
-        q_cds_fn <- file.path(out_dir, "miniprot_query.cds")
-        s_cds_fn <- file.path(out_dir, "miniprot_subject.cds")
-        
-        # Write the CDS sequences to FASTA files
-        writeXStringSet(q_cds, q_cds_fn)
-        writeXStringSet(s_cds, s_cds_fn)
-        
-        # Overwrite the HDF5 file with the new CDS FASTA filenames
-        .h5overwrite(obj = q_cds_fn, file = object$h5, "miniprot/s2q_cds")
-        .h5overwrite(obj = s_cds_fn, file = object$h5, "miniprot/q2s_cds")
+        writeXStringSet(new_cds, new_cds_fn)
+        in_list$cds[i] <- new_cds_fn
     }
+    in_list$update <- NULL
+    return(in_list)
 }
 
 #' @importFrom Biostrings readDNAStringSet
@@ -1064,849 +1004,848 @@ mapProt <- function(object,
 #
 
 ################################################################################
-#'
-#' #' Organize GFF Data
-#' #'
-#' #' This function organizes and validates GFF data, filtering transcripts and organizing genes, transcripts, and CDS features.
-#' #'
-#' #' @importFrom BiocGenerics start
-#' .orgGFF <- function(gff1, gff2, gff3, prefix, overlap = FALSE, len_diff){
-#'     # Adjust levels for transcript types
-#'     lv <- levels(gff1$type)
-#'     lv[lv == "mRNA"] <- "transcript"
-#'     levels(gff1$type) <- lv
-#'
-#'     # Filter relevant types and sort GFF data
-#'     gff1 <- gff1[gff1$type %in% c("gene", "transcript", "five_prime_UTR", "CDS", "three_prime_UTR")]
-#'     gff1 <- gff1[order(as.numeric(seqnames(gff1)), start(gff1))]
-#'     gff2 <- gff2[order(as.numeric(seqnames(gff2)), start(gff2))]
-#'
-#'     # Validate GFF data
-#'     gff_valid <- .validTX(gff1 = gff1,
-#'                           gff2 = gff2,
-#'                           gff3 = gff3,
-#'                           overlap = overlap,
-#'                           len_diff = len_diff)
-#'
-#'     # Organize transcripts and CDS features
-#'     gff_tx <- .orgTX(gff = gff_valid, prefix = prefix)
-#'
-#'     .solveChimericTX(gff_valid = gff_valid)
-#'     .solveChimericTX <- function(gff_valid){
-#'         gff_valid_cds_i <- gff_valid$type %in% "CDS"
-#'         ol <- findOverlaps(gff_valid[gff_valid_cds_i],
-#'                            gff_valid[gff_valid_cds_i])
-#'         ol <- as.data.frame(ol)
-#'         ol <- subset(ol, subset = queryHits != subjectHits)
-#'         ol_sort <- apply(ol, 1, sort)
-#'         ol <- subset(ol, subset = !duplicated(t(ol_sort)))
-#'         ol$query_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$queryHits])
-#'         ol$subject_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$subjectHits])
-#'     }
-#'
-#'     gff_cds <- .orgCDS(gff1 = gff1, gff_tx = gff_tx)
-#'     gff_gene <- .orgGene(gff_tx = gff_tx)
-#'
-#'     # Remove old IDs from transcripts and genes
-#'     gff_tx$old_id <- gff_gene$old_id <- NULL
-#'
-#'     # Combine genes, transcripts, and CDS features
-#'     out <- c(gff_gene, gff_tx, gff_cds)
-#'
-#'     # Sort the final output
-#'     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
-#'
-#'     return(out)
-#' }
-#' #' Validate Transcripts
-#' #'
-#' #' This function validates transcripts by checking overlaps and length differences with reference GFF data.
-#' #'
-#' #' @importFrom S4Vectors queryHits
-#' #' @importFrom GenomicRanges findOverlaps
-#' .validTX <- function(gff1, gff2, gff3, overlap, len_diff){
-#'     if(overlap){
-#'         # Get unique CDS blocks from gff1
-#'         gff1_block <- .getCDSblock(gff = gff1)
-#'         gff1_block_uniq <- gff1_block[!duplicated(gff1_block)]
-#'
-#'         # Get CDS blocks from gff2 and remove overlaps from gff1_block_uniq
-#'         gff2_block <- .getCDSblock(gff = gff2)
-#'         gff1_block_uniq <- gff1_block_uniq[!gff1_block_uniq %in% gff2_block]
-#'
-#'         # Get unique transcripts from gff1
-#'         out <- .getUniqTx(gff1 = gff1, gff1_block_uniq = gff1_block_uniq)
-#'
-#'     } else {
-#'         # Find overlaps between gff1 and gff2 transcripts
-#'         tx_i1 <- gff1$type %in% c("transcript", "mRNA")
-#'         tx_i2 <- gff2$type %in% c("transcript", "mRNA")
-#'         ol <- findOverlaps(gff1[tx_i1], gff2[tx_i2])
-#'         hit <- unique(queryHits(ol))
-#'
-#'         # Exclude overlapping transcripts
-#'         out <- gff1[tx_i1][!seq_len(sum(tx_i1)) %in% hit]
-#'     }
-#'
-#'     # Check length differences with gff3
-#'     out <- .checkLength(gff = out, gff3 = gff3, len_diff = len_diff)
-#'
-#'
-#'     return(out)
-#' }
-#' #' Get CDS Blocks
-#' #'
-#' #' This function extracts the concatenated CDS blocks for each transcript in the GFF data.
-#' #'
-#' #' @importFrom BiocGenerics start end
-#' .getCDSblock <- function(gff){
-#'     # Identify CDS and transcript indices
-#'     gff_cds_i <- gff$type == "CDS"
-#'     gff_tx_i <- gff$type %in% c("transcript", "mRNA")
-#'
-#'     # Extract start and end positions of CDS
-#'     gff_cds_start <- start(gff[gff_cds_i])
-#'     gff_cds_end <- end(gff[gff_cds_i])
-#'
-#'     # Create exon strings combining start and end positions
-#'     gff_cds_exon <- paste(gff_cds_start, gff_cds_end, sep = "-")
-#'
-#'     # Map CDS to their parent transcripts
-#'     map_to_tx <- match(unlist(gff$Parent[gff_cds_i]), gff$ID[gff_tx_i])
-#'
-#'     # Identify the first occurrence of each transcript
-#'     first_i <- !duplicated(map_to_tx)
-#'
-#'     # Get the chromosome names for CDS
-#'     gff_cds_chr <- as.character(seqnames(gff[gff_cds_i]))
-#'
-#'     # Add chromosome information to the first occurrence of each transcript's CDS block
-#'     gff_cds_exon[first_i] <- paste(gff_cds_chr[first_i], gff_cds_exon[first_i], sep = ":")
-#'
-#'     # Concatenate CDS blocks for each transcript
-#'     out <- tapply(gff_cds_exon, map_to_tx, paste, collapse = ",")
-#'
-#'     return(out)
-#' }
-#' #' Get Unique Transcripts
-#' #'
-#' #' This function extracts unique transcripts and their associated elements (e.g., CDS) from a GFF object.
-#' #'
-#' #' @importFrom BiocGenerics unlist
-#' .getUniqTx <- function(gff1, gff1_block_uniq){
-#'     # Identify transcript indices
-#'     gff1_tx_i <- gff1$type %in% c("transcript", "mRNA")
-#'
-#'     # Extract unique transcripts using the unique CDS blocks
-#'     out_tx <- gff1[gff1_tx_i][as.numeric(names(gff1_block_uniq))]
-#'
-#'     # Identify and extract elements associated with the unique transcripts
-#'     out_element <- unlist(gff1$Parent[!gff1_tx_i]) %in% out_tx$ID
-#'     out_element <- gff1[!gff1_tx_i][out_element]
-#'
-#'     # Combine unique transcripts and their associated elements
-#'     out <- c(out_tx, out_element)
-#'
-#'     return(out)
-#' }
-#' #' Check Length of Transcripts
-#' #'
-#' #' This function checks the length of transcripts and filters those that meet the length difference criteria.
-#' #'
-#' #' @importFrom BiocGenerics unlist
-#' .checkLength <- function(gff, gff3, len_diff){
-#'     # Calculate CDS lengths for the given GFF data
-#'     gff_cds_len <- .getCDSlen(gff = gff)
-#'     index <- as.numeric(names(gff_cds_len))
-#'     gff_tx_i <- gff$type %in% c("transcript", "mRNA")
-#'     names(gff_cds_len) <- sub("\\s.+", "", gff$Target[gff_tx_i][index])
-#'
-#'     # Calculate CDS lengths for the reference GFF data
-#'     gff3_cds_len <- .getCDSlen(gff = gff3)
-#'     index <- as.numeric(names(gff3_cds_len))
-#'     gff3_tx_i <- gff3$type %in% c("transcript", "mRNA")
-#'     names(gff3_cds_len) <- gff3$ID[gff3_tx_i][index]
-#'
-#'     # Match CDS lengths by transcript IDs
-#'     id_hit <- match(names(gff_cds_len), names(gff3_cds_len))
-#'     gff3_cds_len <- gff3_cds_len[id_hit]
-#'
-#'     # Determine which transcripts are longer
-#'     longer <- gff_cds_len
-#'     is_gff3_longer <- longer < gff3_cds_len
-#'     longer[is_gff3_longer] <- gff3_cds_len[is_gff3_longer]
-#'
-#'     # Calculate valid transcripts based on length difference criteria
-#'     valid <- abs(gff_cds_len - gff3_cds_len) / longer <= len_diff
-#'     valid_tx <- gff[gff_tx_i][as.vector(valid)]
-#'
-#'     # Extract non-transcript elements associated with valid transcripts
-#'     non_tx_gff <- gff[!gff_tx_i]
-#'     out <- c(valid_tx, non_tx_gff[unlist(non_tx_gff$Parent) %in% valid_tx$ID])
-#'
-#'     return(out)
-#' }
-#'
-#' #' Calculate CDS Lengths
-#' #'
-#' #' This function calculates the lengths of coding sequences (CDS) for each transcript in a GFF file.
-#' #'
-#' #' @importFrom BiocGenerics start end
-#' .getCDSlen <- function(gff){
-#'     # Identify indices for CDS and transcript elements
-#'     gff_cds_i <- gff$type == "CDS"
-#'     gff_tx_i <-  gff$type %in% c("transcript", "mRNA")
-#'
-#'     # Extract start and end positions for CDS elements
-#'     gff_cds_start <- start(gff[gff_cds_i])
-#'     gff_cds_end <- end(gff[gff_cds_i])
-#'
-#'     # Calculate the length of each CDS element
-#'     gff_cds_len <- gff_cds_end - gff_cds_start
-#'
-#'     # Map CDS elements to their corresponding transcripts
-#'     map_to_tx <- match(unlist(gff$Parent[gff_cds_i]), gff$ID[gff_tx_i])
-#'
-#'     # Sum the lengths of CDS elements for each transcript
-#'     out <- tapply(gff_cds_len, map_to_tx, sum)
-#'
-#'     return(out)
-#' }
-#'
-#' #' Organize Transcripts
-#' #'
-#' #' This function organizes transcripts in a GFF file by assigning gene IDs and updating transcript IDs.
-#' #'
-#' #' @importFrom BiocGenerics start
-#' #' @importFrom GenomeInfoDb seqnames
-#' #' @importFrom GenomicRanges reduce findOverlaps
-#' #' @importFrom S4Vectors subjectHits
-#' .orgTX <- function(gff, prefix){
-#'     # Identify indices for transcript elements
-#'     tx_i <- gff$type %in% c("transcript", "mRNA")
-#'
-#'     # Extract and order transcript elements by chromosome and start position
-#'     gff_tx <- gff[tx_i]
-#'     gff_tx <- gff_tx[order(as.numeric(seqnames(gff_tx)), start(gff_tx))]
-#'
-#'     # Remove duplicate transcripts
-#'     gff_tx <- unique(gff_tx)
-#'
-#'     # Reduce transcripts to unique loci
-#'     uni_loci <- reduce(gff_tx)
-#'
-#'     # Map transcripts to unique loci
-#'     map_to_loci <- findOverlaps(gff_tx, uni_loci)
-#'
-#'     # Assign gene IDs based on unique loci
-#'     gff_tx$gene_id <- paste0(prefix, "G", sprintf("%05d", subjectHits(map_to_loci)))
-#'
-#'     # Store old transcript IDs
-#'     gff_tx$old_id <- gff_tx$ID
-#'
-#'     # Order transcripts by gene ID
-#'     gff_tx <- gff_tx[order(gff_tx$gene_id)]
-#'
-#'     # Update transcript IDs based on gene ID
-#'     gff_tx$ID <- unlist(tapply(gff_tx$gene_id, gff_tx$gene_id, function(x){
-#'         return(paste0(sub("G", "T", x[1]), ".", sprintf("%02d", seq_len(length(x)))))
-#'     }))
-#'
-#'     # Assign parent gene IDs to transcripts
-#'     gff_tx$Parent <- lapply(gff_tx$gene_id, c)
-#'
-#'     return(gff_tx)
-#' }
-#' #' Organize CDS Elements
-#' #'
-#' #' This function organizes CDS elements in a GFF file by assigning gene IDs and updating parent IDs.
-#' #'
-#' .orgCDS <- function(gff1, gff_tx){
-#'     # Identify indices for non-transcript elements
-#'     cds_i <- !gff1$type %in% c("transcript", "mRNA")
-#'
-#'     # Extract CDS elements that have parents in the organized transcript data
-#'     gff_cds <- gff1[cds_i][unlist(gff1$Parent[cds_i]) %in% gff_tx$old_id]
-#'
-#'     # Assign gene IDs based on organized transcript data
-#'     gff_cds$gene_id <- gff_tx$gene_id[match(unlist(gff_cds$Parent), gff_tx$old_id)]
-#'
-#'     # Update parent IDs based on organized transcript data
-#'     gff_cds$Parent <- lapply(gff_tx$ID[match(unlist(gff_cds$Parent), gff_tx$old_id)], c)
-#'
-#'     # Update CDS IDs based on parent IDs
-#'     gff_cds$ID <- paste0(unlist(gff_cds$Parent), ":CDS")
-#'
-#'     return(gff_cds)
-#' }
-#'
-#' #' Organize Gene Elements
-#' #'
-#' #' This function organizes gene elements in a GFF file by creating gene entries from the organized transcript data.
-#' #'
-#' .orgGene <- function(gff_tx){
-#'     # Extract unique gene entries from the transcript data
-#'     gff_gene <- gff_tx[!duplicated(gff_tx$gene_id)]
-#'
-#'     # Set the type of each entry to "gene"
-#'     gff_gene$type <- "gene"
-#'
-#'     # Assign gene IDs to the ID field
-#'     gff_gene$ID <- gff_gene$gene_id
-#'
-#'     # Remove parent information for gene entries
-#'     gff_gene$Parent <- lapply(seq_along(gff_gene), function(i) character())
-#'
-#'     return(gff_gene)
-#' }
-#' #' Merge GFF Annotations
-#' #'
-#' #' This function merges GFF annotations by combining two GFF files, removing duplicate gene and transcript entries, and creating a unified annotation.
-#' #'
-#' #' @importFrom BiocGenerics start
-#' #' @importFrom GenomeInfoDb seqnames
-#' #' @importFrom GenomicRanges reduce findOverlaps
-#' #' @importFrom S4Vectors subjectHits
-#' .mergeGFF <- function(gff1, gff2 = NULL, ann_priority){
-#'     # Combine the two GFF objects
-#'     gff <- c(gff1, gff2)
-#'
-#'     # Filter for relevant types
-#'     gff <- gff[gff$type %in% c("gene", "transcript", "mRNA",
-#'                                "five_prime_UTR", "CDS", "three_prime_UTR")]
-#'
-#'     # Order and reduce gene entries
-#'     gene_i <- gff$type == "gene"
-#'     gff_gene <- gff[gene_i]
-#'     gff_gene <- gff_gene[order(as.numeric(seqnames(gff_gene)), start(gff_gene))]
-#'     uni_loci <- reduce(gff_gene)
-#'     map_to_loci <- findOverlaps(gff_gene, uni_loci)
-#'
-#'     # Identify overlapping entries and create ID map
-#'     ol_list <- tapply(queryHits(map_to_loci), subjectHits(map_to_loci), c)
-#'     ol_list <- ol_list[sapply(ol_list, length) > 1]
-#'     id_map <- .getIDmap(gff_gene = gff_gene, ol_list = ol_list)
-#'
-#'     # Map IDs in the GFF object based on the ID map
-#'     gff <- .mapID(gff = gff, id_map = id_map)
-#'
-#'     # Order the final merged GFF object
-#'     gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
-#'
-#'     return(gff)
-#' }
-#' #' Create ID Map for Gene Overlaps
-#' #'
-#' #' This function creates an ID map for overlapping genes by selecting a representative gene ID for each set of overlapping genes.
-#' #'
-#' .getIDmap <- function(gff_gene, ol_list){
-#'     # Create ID map for each set of overlapping genes
-#'     out <- lapply(ol_list, function(i){
-#'         gene_id <- gff_gene$ID[i]
-#'         # Select the representative gene ID that does not start with 'query_' or 'subject_'
-#'         set_gene_id <- gene_id[!grepl("^query_|^subject_", gene_id)][1]
-#'         id_map <- cbind(gene_id, set_gene_id)
-#'         return(id_map)
-#'     })
-#'     # Combine all ID maps into a single data frame
-#'     out <- do.call("rbind", out)
-#'     return(out)
-#' }
-#'
-#'
-#' .mapID <- function(gff, id_map){
-#'     gff_parent <- sapply(gff$Parent, function(x){
-#'         if(length(x) == 0){
-#'             return(NA)
-#'         } else {
-#'             return(x)
-#'         }
-#'     })
-#'     hit <- match(gff_parent, id_map[, 1])
-#'     gff$Parent[!is.na(hit)] <- lapply(id_map[na.omit(hit), 2], c)
-#'     gff$gene_id[!is.na(hit)] <- id_map[na.omit(hit), 2]
-#'
-#'     rm_gene <- id_map[id_map[, 1] != id_map[, 2], ]
-#'     gff <- gff[!gff$ID %in% rm_gene[, 1]]
-#'     return(gff)
-#' }
-#'
-#'
-#' #' Fix and Standardize GFF Annotations
-#' #'
-#' #' This function applies a series of fixes and standardizations to GFF annotations.
-#' #'
-#' .fixGFF <- function(gff){
-#'     gff <- .setGeneID(gff = gff)
-#'     gff <- .fixGFFrange(gff = gff)
-#'     gff <- .fixGFFexon(gff = gff)
-#'     gff <- .fixGFFphase(gff = gff)
-#'     return(gff)
-#' }
-#'
-#' #' Set Gene IDs for GFF Annotations
-#' #'
-#' #' This function sets the gene_id attribute for GFF annotations based on their parent-child relationships.
-#' #'
-#' .setGeneID <- function(gff){
-#'     # For transcripts or mRNA, set gene_id to their ID
-#'     tx_i <- gff$type %in% c("transcript", "mRNA")
-#'     hit <- match(unlist(gff$Parent[tx_i]), gff$ID)
-#'     gff$gene_id[tx_i] <- gff$ID[hit]
-#'
-#'     # For other elements, set gene_id based on their parent transcript/mRNA
-#'     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-#'     hit <- match(unlist(gff$Parent[element_i]), gff$ID[tx_i])
-#'     gff$gene_id[element_i] <- gff$gene_id[tx_i][hit]
-#'     return(gff)
-#' }
-#'
-#' #' Fix GFF Range
-#' #'
-#' #' This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
-#' #'
-#' #' @importFrom rtracklayer start end start<- end<-
-#' .fixGFFrange <- function(gff){
-#'     # Fix the start and end positions of each transcript to
-#'     # cover the whole range of member elements (CDS, exon, and UTRs)
-#'     tx_i <- which(gff$type %in% c("transcript", "mRNA"))
-#'     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-#'
-#'     # Determine minimum start and maximum end positions for member elements
-#'     min_start <- tapply(start(gff[element_i]), unlist(gff$Parent[element_i]), min)
-#'     max_end <- tapply(end(gff[element_i]), unlist(gff$Parent[element_i]), max)
-#'
-#'     # Match and update transcript start and end positions
-#'     hit <- match(gff$ID[tx_i], names(min_start))
-#'     tx_start <- min_start[hit]
-#'     tx_end <- max_end[hit]
-#'     not_na_start <- !is.na(tx_start)
-#'     not_na_end <- !is.na(tx_end)
-#'     start(gff[tx_i[not_na_start]]) <- tx_start[not_na_start]
-#'     end(gff[tx_i[not_na_end]]) <- tx_end[not_na_end]
-#'
-#'     # Fix the start and end positions of each gene to
-#'     # cover the whole range of member transcripts
-#'     gene_i <- which(gff$type == "gene")
-#'     tx_i <- which(gff$type %in% c("transcript", "mRNA"))
-#'
-#'     # Determine minimum start and maximum end positions for transcripts
-#'     min_start <- tapply(start(gff[tx_i]), gff$gene_id[tx_i], min)
-#'     max_end <- tapply(end(gff[tx_i]), gff$gene_id[tx_i], max)
-#'
-#'     # Match and update gene start and end positions
-#'     hit <- match(gff$gene_id[gene_i], names(min_start))
-#'     gene_start <- min_start[hit]
-#'     gene_end <- max_end[hit]
-#'     start(gff[gene_i]) <- gene_start
-#'     end(gff[gene_i]) <- gene_end
-#'
-#'     return(gff)
-#' }
-#'
-#'
-#' .fixGFFexon <- function(gff){
-#'     gff <- gff[gff$type != "exon"]
-#'     gff_exon <- gff[gff$type %in% c("CDS", "five_prime_UTR", "three_prime_UTR")]
-#'     gff_exon$type <- "exon"
-#'     gff_exon$Name <- gff_exon$ID <- paste0(unlist(gff_exon$Parent), ":exon")
-#'     gff_exon$score <- gff_exon$phase <- NA
-#'
-#'     tx_i <- gff$type %in% c("transcript", "mRNA")
-#'     non_cds <- gff[tx_i][!gff$ID[tx_i] %in% unlist(gff_exon$Parent)]
-#'     if(length(non_cds) > 0){
-#'         non_cds$type <- "exon"
-#'         non_cds$Parent <- lapply(non_cds$ID, c)
-#'         non_cds$Name <- non_cds$ID <- paste0(non_cds$ID, ":exon")
-#'         non_cds$score <- non_cds$phase <- NA
-#'         gff_exon <- c(gff_exon, non_cds)
-#'     }
-#'
-#'     out <- c(gff, gff_exon)
-#'     out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
-#'                                             "five_prime_UTR", "exon",
-#'                                             "CDS", "three_prime_UTR"))
-#'     out$type <- droplevels(out$type)
-#'     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
-#'     return(out)
-#' }
-#'
-#'
-#' #' Fix GFF Phase
-#' #'
-#' #' This function adjusts the phase of CDS features in GFF annotations.
-#' #'
-#' #' @importFrom BiocGenerics start
-#' .fixGFFphase <- function(gff){
-#'     # Extract CDS features
-#'     gff_cds <- gff[gff$type == "CDS"]
-#'
-#'     # Adjust phase for plus strand
-#'     gff_cds_plus <- .phasePlus(gff_cds = gff_cds)
-#'
-#'     # Adjust phase for minus strand
-#'     gff_cds_minus <- .phaseMinus(gff_cds = gff_cds)
-#'
-#'     # Combine non-CDS features with adjusted CDS features
-#'     out <- c(gff[gff$type != "CDS"], gff_cds_plus, gff_cds_minus)
-#'
-#'     # Set factor levels for feature types
-#'     out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
-#'                                             "five_prime_UTR", "exon",
-#'                                             "CDS", "three_prime_UTR"))
-#'     out$type <- droplevels(out$type)
-#'
-#'     # Order the features by sequence name, start position, and type
-#'     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
-#'     return(out)
-#' }
-#' #' Adjust Phase for CDS Features on Plus Strand
-#' #'
-#' #' This function adjusts the phase for CDS features on the plus strand in GFF annotations.
-#' #'
-#' #' @importFrom BiocGenerics start width
-#' #' @importFrom GenomeInfoDb seqnames
-#' .phasePlus <- function(gff_cds){
-#'     # Filter CDS features on the plus strand
-#'     gff_cds_plus <- gff_cds[as.character(strand(gff_cds)) == "+"]
-#'     gff_cds_plus <- gff_cds_plus[order(as.numeric(seqnames(gff_cds_plus)), start(gff_cds_plus))]
-#'
-#'     # Extract parent IDs for CDS features
-#'     gff_cds_plus_parent <- unlist(gff_cds_plus$Parent)
-#'
-#'     # Initialize phase for the first CDS in each transcript
-#'     target_i <- which(!duplicated(gff_cds_plus_parent))
-#'     gff_cds_plus$phase[target_i] <- 0
-#'
-#'     # Calculate the phase for the next CDS feature
-#'     next_phase <- (3 - (width(gff_cds_plus[target_i]) - gff_cds_plus$phase[target_i]) %% 3) %% 3
-#'     names(next_phase) <- gff_cds_plus_parent[target_i]
-#'     gff_cds_plus_parent[target_i] <- "NA"
-#'
-#'     # Iterate over the remaining CDS features to set their phases
-#'     while(TRUE){
-#'         target_i <- which(!duplicated(gff_cds_plus_parent))[-1]
-#'         if(length(target_i) == 0){
-#'             break
-#'         }
-#'         next_phase <- next_phase[names(next_phase) %in% gff_cds_plus_parent[target_i]]
-#'         gff_cds_plus$phase[target_i] <- next_phase
-#'         next_phase <- (3 - (width(gff_cds_plus[target_i]) - gff_cds_plus$phase[target_i]) %% 3) %% 3
-#'         names(next_phase) <- gff_cds_plus_parent[target_i]
-#'         gff_cds_plus_parent[target_i] <- "NA"
-#'     }
-#'
-#'     return(gff_cds_plus)
-#' }
-#'
-#' #' Adjust Phase for CDS Features on Minus Strand
-#' #'
-#' #' This function adjusts the phase for CDS features on the minus strand in GFF annotations.
-#' #'
-#' #' @importFrom BiocGenerics end width
-#' #' @importFrom GenomeInfoDb seqnames
-#' .phaseMinus <- function(gff_cds){
-#'     # Filter CDS features on the minus strand
-#'     gff_cds_minus <- gff_cds[as.character(strand(gff_cds)) == "-"]
-#'     gff_cds_minus <- gff_cds_minus[order(as.numeric(seqnames(gff_cds_minus)),
-#'                                          end(gff_cds_minus), decreasing = TRUE)]
-#'
-#'     # Extract parent IDs for CDS features
-#'     gff_cds_minus_parent <- unlist(gff_cds_minus$Parent)
-#'
-#'     # Initialize phase for the first CDS in each transcript
-#'     target_i <- which(!duplicated(gff_cds_minus_parent))
-#'     gff_cds_minus$phase[target_i] <- 0
-#'
-#'     # Calculate the phase for the next CDS feature
-#'     next_phase <- (3 - (width(gff_cds_minus[target_i]) - gff_cds_minus$phase[target_i]) %% 3) %% 3
-#'     names(next_phase) <- gff_cds_minus_parent[target_i]
-#'     gff_cds_minus_parent[target_i] <- "NA"
-#'
-#'     # Iterate over the remaining CDS features to set their phases
-#'     while(TRUE){
-#'         target_i <- which(!duplicated(gff_cds_minus_parent))[-1]
-#'         if(length(target_i) == 0){
-#'             break
-#'         }
-#'         next_phase <- next_phase[names(next_phase) %in% gff_cds_minus_parent[target_i]]
-#'         gff_cds_minus$phase[target_i] <- next_phase
-#'         next_phase <- (3 - (width(gff_cds_minus[target_i]) - gff_cds_minus$phase[target_i]) %% 3) %% 3
-#'         names(next_phase) <- gff_cds_minus_parent[target_i]
-#'         gff_cds_minus_parent[target_i] <- "NA"
-#'     }
-#'
-#'     return(gff_cds_minus)
-#' }
-#'
-#' ################################################################################
-#'
+#
+# # Organize GFF Data
+# #
+# # This function organizes and validates GFF data, filtering transcripts and organizing genes, transcripts, and CDS features.
+# #
+# # @importFrom BiocGenerics start
+# .orgGFF <- function(gff1, gff2, gff3, prefix, overlap = FALSE, len_diff){
+#     # Adjust levels for transcript types
+#     lv <- levels(gff1$type)
+#     lv[lv == "mRNA"] <- "transcript"
+#     levels(gff1$type) <- lv
+#
+#     # Filter relevant types and sort GFF data
+#     gff1 <- gff1[gff1$type %in% c("gene", "transcript", "five_prime_UTR", "CDS", "three_prime_UTR")]
+#     gff1 <- gff1[order(as.numeric(seqnames(gff1)), start(gff1))]
+#     gff2 <- gff2[order(as.numeric(seqnames(gff2)), start(gff2))]
+#
+#     # Validate GFF data
+#     gff_valid <- .validTX(gff1 = gff1,
+#                           gff2 = gff2,
+#                           gff3 = gff3,
+#                           overlap = overlap,
+#                           len_diff = len_diff)
+#
+#     # Organize transcripts and CDS features
+#     gff_tx <- .orgTX(gff = gff_valid, prefix = prefix)
+#
+#     .solveChimericTX(gff_valid = gff_valid)
+#     .solveChimericTX <- function(gff_valid){
+#         gff_valid_cds_i <- gff_valid$type %in% "CDS"
+#         ol <- findOverlaps(gff_valid[gff_valid_cds_i],
+#                            gff_valid[gff_valid_cds_i])
+#         ol <- as.data.frame(ol)
+#         ol <- subset(ol, subset = queryHits != subjectHits)
+#         ol_sort <- apply(ol, 1, sort)
+#         ol <- subset(ol, subset = !duplicated(t(ol_sort)))
+#         ol$query_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$queryHits])
+#         ol$subject_tx <- unlist(gff_valid$Parent[gff_valid_cds_i][ol$subjectHits])
+#     }
+#
+#     gff_cds <- .orgCDS(gff1 = gff1, gff_tx = gff_tx)
+#     gff_gene <- .orgGene(gff_tx = gff_tx)
+#
+#     # Remove old IDs from transcripts and genes
+#     gff_tx$old_id <- gff_gene$old_id <- NULL
+#
+#     # Combine genes, transcripts, and CDS features
+#     out <- c(gff_gene, gff_tx, gff_cds)
+#
+#     # Sort the final output
+#     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
+#
+#     return(out)
+# }
+# # Validate Transcripts
+# #
+# # This function validates transcripts by checking overlaps and length differences with reference GFF data.
+# #
+# # @importFrom S4Vectors queryHits
+# # @importFrom GenomicRanges findOverlaps
+# .validTX <- function(gff1, gff2, gff3, overlap, len_diff){
+#     if(overlap){
+#         # Get unique CDS blocks from gff1
+#         gff1_block <- .getCDSblock(gff = gff1)
+#         gff1_block_uniq <- gff1_block[!duplicated(gff1_block)]
+#
+#         # Get CDS blocks from gff2 and remove overlaps from gff1_block_uniq
+#         gff2_block <- .getCDSblock(gff = gff2)
+#         gff1_block_uniq <- gff1_block_uniq[!gff1_block_uniq %in% gff2_block]
+#
+#         # Get unique transcripts from gff1
+#         out <- .getUniqTx(gff1 = gff1, gff1_block_uniq = gff1_block_uniq)
+#
+#     } else {
+#         # Find overlaps between gff1 and gff2 transcripts
+#         tx_i1 <- gff1$type %in% c("transcript", "mRNA")
+#         tx_i2 <- gff2$type %in% c("transcript", "mRNA")
+#         ol <- findOverlaps(gff1[tx_i1], gff2[tx_i2])
+#         hit <- unique(queryHits(ol))
+#
+#         # Exclude overlapping transcripts
+#         out <- gff1[tx_i1][!seq_len(sum(tx_i1)) %in% hit]
+#     }
+#
+#     # Check length differences with gff3
+#     out <- .checkLength(gff = out, gff3 = gff3, len_diff = len_diff)
+#
+#
+#     return(out)
+# }
+# # Get CDS Blocks
+# #
+# # This function extracts the concatenated CDS blocks for each transcript in the GFF data.
+# #
+# # @importFrom BiocGenerics start end
+# .getCDSblock <- function(gff){
+#     # Identify CDS and transcript indices
+#     gff_cds_i <- gff$type == "CDS"
+#     gff_tx_i <- gff$type %in% c("transcript", "mRNA")
+#
+#     # Extract start and end positions of CDS
+#     gff_cds_start <- start(gff[gff_cds_i])
+#     gff_cds_end <- end(gff[gff_cds_i])
+#
+#     # Create exon strings combining start and end positions
+#     gff_cds_exon <- paste(gff_cds_start, gff_cds_end, sep = "-")
+#
+#     # Map CDS to their parent transcripts
+#     map_to_tx <- match(unlist(gff$Parent[gff_cds_i]), gff$ID[gff_tx_i])
+#
+#     # Identify the first occurrence of each transcript
+#     first_i <- !duplicated(map_to_tx)
+#
+#     # Get the chromosome names for CDS
+#     gff_cds_chr <- as.character(seqnames(gff[gff_cds_i]))
+#
+#     # Add chromosome information to the first occurrence of each transcript's CDS block
+#     gff_cds_exon[first_i] <- paste(gff_cds_chr[first_i], gff_cds_exon[first_i], sep = ":")
+#
+#     # Concatenate CDS blocks for each transcript
+#     out <- tapply(gff_cds_exon, map_to_tx, paste, collapse = ",")
+#
+#     return(out)
+# }
+# # Get Unique Transcripts
+# #
+# # This function extracts unique transcripts and their associated elements (e.g., CDS) from a GFF object.
+# #
+# # @importFrom BiocGenerics unlist
+# .getUniqTx <- function(gff1, gff1_block_uniq){
+#     # Identify transcript indices
+#     gff1_tx_i <- gff1$type %in% c("transcript", "mRNA")
+#
+#     # Extract unique transcripts using the unique CDS blocks
+#     out_tx <- gff1[gff1_tx_i][as.numeric(names(gff1_block_uniq))]
+#
+#     # Identify and extract elements associated with the unique transcripts
+#     out_element <- unlist(gff1$Parent[!gff1_tx_i]) %in% out_tx$ID
+#     out_element <- gff1[!gff1_tx_i][out_element]
+#
+#     # Combine unique transcripts and their associated elements
+#     out <- c(out_tx, out_element)
+#
+#     return(out)
+# }
+# # Check Length of Transcripts
+# #
+# # This function checks the length of transcripts and filters those that meet the length difference criteria.
+# #
+# # @importFrom BiocGenerics unlist
+# .checkLength <- function(gff, gff3, len_diff){
+#     # Calculate CDS lengths for the given GFF data
+#     gff_cds_len <- .getCDSlen(gff = gff)
+#     index <- as.numeric(names(gff_cds_len))
+#     gff_tx_i <- gff$type %in% c("transcript", "mRNA")
+#     names(gff_cds_len) <- sub("\\s.+", "", gff$Target[gff_tx_i][index])
+#
+#     # Calculate CDS lengths for the reference GFF data
+#     gff3_cds_len <- .getCDSlen(gff = gff3)
+#     index <- as.numeric(names(gff3_cds_len))
+#     gff3_tx_i <- gff3$type %in% c("transcript", "mRNA")
+#     names(gff3_cds_len) <- gff3$ID[gff3_tx_i][index]
+#
+#     # Match CDS lengths by transcript IDs
+#     id_hit <- match(names(gff_cds_len), names(gff3_cds_len))
+#     gff3_cds_len <- gff3_cds_len[id_hit]
+#
+#     # Determine which transcripts are longer
+#     longer <- gff_cds_len
+#     is_gff3_longer <- longer < gff3_cds_len
+#     longer[is_gff3_longer] <- gff3_cds_len[is_gff3_longer]
+#
+#     # Calculate valid transcripts based on length difference criteria
+#     valid <- abs(gff_cds_len - gff3_cds_len) / longer <= len_diff
+#     valid_tx <- gff[gff_tx_i][as.vector(valid)]
+#
+#     # Extract non-transcript elements associated with valid transcripts
+#     non_tx_gff <- gff[!gff_tx_i]
+#     out <- c(valid_tx, non_tx_gff[unlist(non_tx_gff$Parent) %in% valid_tx$ID])
+#
+#     return(out)
+# }
+#
+# # Calculate CDS Lengths
+# #
+# # This function calculates the lengths of coding sequences (CDS) for each transcript in a GFF file.
+# #
+# # @importFrom BiocGenerics start end
+# .getCDSlen <- function(gff){
+#     # Identify indices for CDS and transcript elements
+#     gff_cds_i <- gff$type == "CDS"
+#     gff_tx_i <-  gff$type %in% c("transcript", "mRNA")
+#
+#     # Extract start and end positions for CDS elements
+#     gff_cds_start <- start(gff[gff_cds_i])
+#     gff_cds_end <- end(gff[gff_cds_i])
+#
+#     # Calculate the length of each CDS element
+#     gff_cds_len <- gff_cds_end - gff_cds_start
+#
+#     # Map CDS elements to their corresponding transcripts
+#     map_to_tx <- match(unlist(gff$Parent[gff_cds_i]), gff$ID[gff_tx_i])
+#
+#     # Sum the lengths of CDS elements for each transcript
+#     out <- tapply(gff_cds_len, map_to_tx, sum)
+#
+#     return(out)
+# }
+#
+# # Organize Transcripts
+# #
+# # This function organizes transcripts in a GFF file by assigning gene IDs and updating transcript IDs.
+# #
+# # @importFrom BiocGenerics start
+# # @importFrom GenomeInfoDb seqnames
+# # @importFrom GenomicRanges reduce findOverlaps
+# # @importFrom S4Vectors subjectHits
+# .orgTX <- function(gff, prefix){
+#     # Identify indices for transcript elements
+#     tx_i <- gff$type %in% c("transcript", "mRNA")
+#
+#     # Extract and order transcript elements by chromosome and start position
+#     gff_tx <- gff[tx_i]
+#     gff_tx <- gff_tx[order(as.numeric(seqnames(gff_tx)), start(gff_tx))]
+#
+#     # Remove duplicate transcripts
+#     gff_tx <- unique(gff_tx)
+#
+#     # Reduce transcripts to unique loci
+#     uni_loci <- reduce(gff_tx)
+#
+#     # Map transcripts to unique loci
+#     map_to_loci <- findOverlaps(gff_tx, uni_loci)
+#
+#     # Assign gene IDs based on unique loci
+#     gff_tx$gene_id <- paste0(prefix, "G", sprintf("%05d", subjectHits(map_to_loci)))
+#
+#     # Store old transcript IDs
+#     gff_tx$old_id <- gff_tx$ID
+#
+#     # Order transcripts by gene ID
+#     gff_tx <- gff_tx[order(gff_tx$gene_id)]
+#
+#     # Update transcript IDs based on gene ID
+#     gff_tx$ID <- unlist(tapply(gff_tx$gene_id, gff_tx$gene_id, function(x){
+#         return(paste0(sub("G", "T", x[1]), ".", sprintf("%02d", seq_len(length(x)))))
+#     }))
+#
+#     # Assign parent gene IDs to transcripts
+#     gff_tx$Parent <- lapply(gff_tx$gene_id, c)
+#
+#     return(gff_tx)
+# }
+# # Organize CDS Elements
+# #
+# # This function organizes CDS elements in a GFF file by assigning gene IDs and updating parent IDs.
+# #
+# .orgCDS <- function(gff1, gff_tx){
+#     # Identify indices for non-transcript elements
+#     cds_i <- !gff1$type %in% c("transcript", "mRNA")
+#
+#     # Extract CDS elements that have parents in the organized transcript data
+#     gff_cds <- gff1[cds_i][unlist(gff1$Parent[cds_i]) %in% gff_tx$old_id]
+#
+#     # Assign gene IDs based on organized transcript data
+#     gff_cds$gene_id <- gff_tx$gene_id[match(unlist(gff_cds$Parent), gff_tx$old_id)]
+#
+#     # Update parent IDs based on organized transcript data
+#     gff_cds$Parent <- lapply(gff_tx$ID[match(unlist(gff_cds$Parent), gff_tx$old_id)], c)
+#
+#     # Update CDS IDs based on parent IDs
+#     gff_cds$ID <- paste0(unlist(gff_cds$Parent), ":CDS")
+#
+#     return(gff_cds)
+# }
+#
+# # Organize Gene Elements
+# #
+# # This function organizes gene elements in a GFF file by creating gene entries from the organized transcript data.
+# #
+# .orgGene <- function(gff_tx){
+#     # Extract unique gene entries from the transcript data
+#     gff_gene <- gff_tx[!duplicated(gff_tx$gene_id)]
+#
+#     # Set the type of each entry to "gene"
+#     gff_gene$type <- "gene"
+#
+#     # Assign gene IDs to the ID field
+#     gff_gene$ID <- gff_gene$gene_id
+#
+#     # Remove parent information for gene entries
+#     gff_gene$Parent <- lapply(seq_along(gff_gene), function(i) character())
+#
+#     return(gff_gene)
+# }
+# # Merge GFF Annotations
+# #
+# # This function merges GFF annotations by combining two GFF files, removing duplicate gene and transcript entries, and creating a unified annotation.
+# #
+# # @importFrom BiocGenerics start
+# # @importFrom GenomeInfoDb seqnames
+# # @importFrom GenomicRanges reduce findOverlaps
+# # @importFrom S4Vectors subjectHits
+# .mergeGFF <- function(gff1, gff2 = NULL, ann_priority){
+#     # Combine the two GFF objects
+#     gff <- c(gff1, gff2)
+#
+#     # Filter for relevant types
+#     gff <- gff[gff$type %in% c("gene", "transcript", "mRNA",
+#                                "five_prime_UTR", "CDS", "three_prime_UTR")]
+#
+#     # Order and reduce gene entries
+#     gene_i <- gff$type == "gene"
+#     gff_gene <- gff[gene_i]
+#     gff_gene <- gff_gene[order(as.numeric(seqnames(gff_gene)), start(gff_gene))]
+#     uni_loci <- reduce(gff_gene)
+#     map_to_loci <- findOverlaps(gff_gene, uni_loci)
+#
+#     # Identify overlapping entries and create ID map
+#     ol_list <- tapply(queryHits(map_to_loci), subjectHits(map_to_loci), c)
+#     ol_list <- ol_list[sapply(ol_list, length) > 1]
+#     id_map <- .getIDmap(gff_gene = gff_gene, ol_list = ol_list)
+#
+#     # Map IDs in the GFF object based on the ID map
+#     gff <- .mapID(gff = gff, id_map = id_map)
+#
+#     # Order the final merged GFF object
+#     gff <- gff[order(as.numeric(seqnames(gff)), start(gff), as.numeric(gff$type))]
+#
+#     return(gff)
+# }
+# # Create ID Map for Gene Overlaps
+# #
+# # This function creates an ID map for overlapping genes by selecting a representative gene ID for each set of overlapping genes.
+# #
+# .getIDmap <- function(gff_gene, ol_list){
+#     # Create ID map for each set of overlapping genes
+#     out <- lapply(ol_list, function(i){
+#         gene_id <- gff_gene$ID[i]
+#         # Select the representative gene ID that does not start with 'query_' or 'subject_'
+#         set_gene_id <- gene_id[!grepl("^query_|^subject_", gene_id)][1]
+#         id_map <- cbind(gene_id, set_gene_id)
+#         return(id_map)
+#     })
+#     # Combine all ID maps into a single data frame
+#     out <- do.call("rbind", out)
+#     return(out)
+# }
+#
+#
+# .mapID <- function(gff, id_map){
+#     gff_parent <- sapply(gff$Parent, function(x){
+#         if(length(x) == 0){
+#             return(NA)
+#         } else {
+#             return(x)
+#         }
+#     })
+#     hit <- match(gff_parent, id_map[, 1])
+#     gff$Parent[!is.na(hit)] <- lapply(id_map[na.omit(hit), 2], c)
+#     gff$gene_id[!is.na(hit)] <- id_map[na.omit(hit), 2]
+#
+#     rm_gene <- id_map[id_map[, 1] != id_map[, 2], ]
+#     gff <- gff[!gff$ID %in% rm_gene[, 1]]
+#     return(gff)
+# }
+#
+#
+# # Fix and Standardize GFF Annotations
+# #
+# # This function applies a series of fixes and standardizations to GFF annotations.
+# #
+# .fixGFF <- function(gff){
+#     gff <- .setGeneID(gff = gff)
+#     gff <- .fixGFFrange(gff = gff)
+#     gff <- .fixGFFexon(gff = gff)
+#     gff <- .fixGFFphase(gff = gff)
+#     return(gff)
+# }
+#
+# # Set Gene IDs for GFF Annotations
+# #
+# # This function sets the gene_id attribute for GFF annotations based on their parent-child relationships.
+# #
+# .setGeneID <- function(gff){
+#     # For transcripts or mRNA, set gene_id to their ID
+#     tx_i <- gff$type %in% c("transcript", "mRNA")
+#     hit <- match(unlist(gff$Parent[tx_i]), gff$ID)
+#     gff$gene_id[tx_i] <- gff$ID[hit]
+#
+#     # For other elements, set gene_id based on their parent transcript/mRNA
+#     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
+#     hit <- match(unlist(gff$Parent[element_i]), gff$ID[tx_i])
+#     gff$gene_id[element_i] <- gff$gene_id[tx_i][hit]
+#     return(gff)
+# }
+#
+# # Fix GFF Range
+# #
+# # This function adjusts the start and end positions of transcripts and genes to cover the complete range of their member elements.
+# #
+# # @importFrom rtracklayer start end start<- end<-
+# .fixGFFrange <- function(gff){
+#     # Fix the start and end positions of each transcript to
+#     # cover the whole range of member elements (CDS, exon, and UTRs)
+#     tx_i <- which(gff$type %in% c("transcript", "mRNA"))
+#     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
+#
+#     # Determine minimum start and maximum end positions for member elements
+#     min_start <- tapply(start(gff[element_i]), unlist(gff$Parent[element_i]), min)
+#     max_end <- tapply(end(gff[element_i]), unlist(gff$Parent[element_i]), max)
+#
+#     # Match and update transcript start and end positions
+#     hit <- match(gff$ID[tx_i], names(min_start))
+#     tx_start <- min_start[hit]
+#     tx_end <- max_end[hit]
+#     not_na_start <- !is.na(tx_start)
+#     not_na_end <- !is.na(tx_end)
+#     start(gff[tx_i[not_na_start]]) <- tx_start[not_na_start]
+#     end(gff[tx_i[not_na_end]]) <- tx_end[not_na_end]
+#
+#     # Fix the start and end positions of each gene to
+#     # cover the whole range of member transcripts
+#     gene_i <- which(gff$type == "gene")
+#     tx_i <- which(gff$type %in% c("transcript", "mRNA"))
+#
+#     # Determine minimum start and maximum end positions for transcripts
+#     min_start <- tapply(start(gff[tx_i]), gff$gene_id[tx_i], min)
+#     max_end <- tapply(end(gff[tx_i]), gff$gene_id[tx_i], max)
+#
+#     # Match and update gene start and end positions
+#     hit <- match(gff$gene_id[gene_i], names(min_start))
+#     gene_start <- min_start[hit]
+#     gene_end <- max_end[hit]
+#     start(gff[gene_i]) <- gene_start
+#     end(gff[gene_i]) <- gene_end
+#
+#     return(gff)
+# }
+#
+#
+# .fixGFFexon <- function(gff){
+#     gff <- gff[gff$type != "exon"]
+#     gff_exon <- gff[gff$type %in% c("CDS", "five_prime_UTR", "three_prime_UTR")]
+#     gff_exon$type <- "exon"
+#     gff_exon$Name <- gff_exon$ID <- paste0(unlist(gff_exon$Parent), ":exon")
+#     gff_exon$score <- gff_exon$phase <- NA
+#
+#     tx_i <- gff$type %in% c("transcript", "mRNA")
+#     non_cds <- gff[tx_i][!gff$ID[tx_i] %in% unlist(gff_exon$Parent)]
+#     if(length(non_cds) > 0){
+#         non_cds$type <- "exon"
+#         non_cds$Parent <- lapply(non_cds$ID, c)
+#         non_cds$Name <- non_cds$ID <- paste0(non_cds$ID, ":exon")
+#         non_cds$score <- non_cds$phase <- NA
+#         gff_exon <- c(gff_exon, non_cds)
+#     }
+#
+#     out <- c(gff, gff_exon)
+#     out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
+#                                             "five_prime_UTR", "exon",
+#                                             "CDS", "three_prime_UTR"))
+#     out$type <- droplevels(out$type)
+#     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
+#     return(out)
+# }
+#
+#
+# # Fix GFF Phase
+# #
+# # This function adjusts the phase of CDS features in GFF annotations.
+# #
+# # @importFrom BiocGenerics start
+# .fixGFFphase <- function(gff){
+#     # Extract CDS features
+#     gff_cds <- gff[gff$type == "CDS"]
+#
+#     # Adjust phase for plus strand
+#     gff_cds_plus <- .phasePlus(gff_cds = gff_cds)
+#
+#     # Adjust phase for minus strand
+#     gff_cds_minus <- .phaseMinus(gff_cds = gff_cds)
+#
+#     # Combine non-CDS features with adjusted CDS features
+#     out <- c(gff[gff$type != "CDS"], gff_cds_plus, gff_cds_minus)
+#
+#     # Set factor levels for feature types
+#     out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
+#                                             "five_prime_UTR", "exon",
+#                                             "CDS", "three_prime_UTR"))
+#     out$type <- droplevels(out$type)
+#
+#     # Order the features by sequence name, start position, and type
+#     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
+#     return(out)
+# }
+# # Adjust Phase for CDS Features on Plus Strand
+# #
+# # This function adjusts the phase for CDS features on the plus strand in GFF annotations.
+# #
+# # @importFrom BiocGenerics start width
+# # @importFrom GenomeInfoDb seqnames
+# .phasePlus <- function(gff_cds){
+#     # Filter CDS features on the plus strand
+#     gff_cds_plus <- gff_cds[as.character(strand(gff_cds)) == "+"]
+#     gff_cds_plus <- gff_cds_plus[order(as.numeric(seqnames(gff_cds_plus)), start(gff_cds_plus))]
+#
+#     # Extract parent IDs for CDS features
+#     gff_cds_plus_parent <- unlist(gff_cds_plus$Parent)
+#
+#     # Initialize phase for the first CDS in each transcript
+#     target_i <- which(!duplicated(gff_cds_plus_parent))
+#     gff_cds_plus$phase[target_i] <- 0
+#
+#     # Calculate the phase for the next CDS feature
+#     next_phase <- (3 - (width(gff_cds_plus[target_i]) - gff_cds_plus$phase[target_i]) %% 3) %% 3
+#     names(next_phase) <- gff_cds_plus_parent[target_i]
+#     gff_cds_plus_parent[target_i] <- "NA"
+#
+#     # Iterate over the remaining CDS features to set their phases
+#     while(TRUE){
+#         target_i <- which(!duplicated(gff_cds_plus_parent))[-1]
+#         if(length(target_i) == 0){
+#             break
+#         }
+#         next_phase <- next_phase[names(next_phase) %in% gff_cds_plus_parent[target_i]]
+#         gff_cds_plus$phase[target_i] <- next_phase
+#         next_phase <- (3 - (width(gff_cds_plus[target_i]) - gff_cds_plus$phase[target_i]) %% 3) %% 3
+#         names(next_phase) <- gff_cds_plus_parent[target_i]
+#         gff_cds_plus_parent[target_i] <- "NA"
+#     }
+#
+#     return(gff_cds_plus)
+# }
+#
+# # Adjust Phase for CDS Features on Minus Strand
+# #
+# # This function adjusts the phase for CDS features on the minus strand in GFF annotations.
+# #
+# # @importFrom BiocGenerics end width
+# # @importFrom GenomeInfoDb seqnames
+# .phaseMinus <- function(gff_cds){
+#     # Filter CDS features on the minus strand
+#     gff_cds_minus <- gff_cds[as.character(strand(gff_cds)) == "-"]
+#     gff_cds_minus <- gff_cds_minus[order(as.numeric(seqnames(gff_cds_minus)),
+#                                          end(gff_cds_minus), decreasing = TRUE)]
+#
+#     # Extract parent IDs for CDS features
+#     gff_cds_minus_parent <- unlist(gff_cds_minus$Parent)
+#
+#     # Initialize phase for the first CDS in each transcript
+#     target_i <- which(!duplicated(gff_cds_minus_parent))
+#     gff_cds_minus$phase[target_i] <- 0
+#
+#     # Calculate the phase for the next CDS feature
+#     next_phase <- (3 - (width(gff_cds_minus[target_i]) - gff_cds_minus$phase[target_i]) %% 3) %% 3
+#     names(next_phase) <- gff_cds_minus_parent[target_i]
+#     gff_cds_minus_parent[target_i] <- "NA"
+#
+#     # Iterate over the remaining CDS features to set their phases
+#     while(TRUE){
+#         target_i <- which(!duplicated(gff_cds_minus_parent))[-1]
+#         if(length(target_i) == 0){
+#             break
+#         }
+#         next_phase <- next_phase[names(next_phase) %in% gff_cds_minus_parent[target_i]]
+#         gff_cds_minus$phase[target_i] <- next_phase
+#         next_phase <- (3 - (width(gff_cds_minus[target_i]) - gff_cds_minus$phase[target_i]) %% 3) %% 3
+#         names(next_phase) <- gff_cds_minus_parent[target_i]
+#         gff_cds_minus_parent[target_i] <- "NA"
+#     }
+#
+#     return(gff_cds_minus)
+# }
+#
+# ################################################################################
+#
 
-#'
-#' #' Create CDS sequences from GFF and genome files
-#' #'
-#' #' This function generates CDS sequences from provided GFF and genome files.
-#' #'
-#' #' @param gff Path to the GFF file.
-#' #' @param genome Path to the genome file.
-#' #'
-#' #' @return A DNAStringSet object containing CDS sequences.
-#' #' @importFrom Biostrings readDNAStringSet
-#' #' @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
-#' #' @importFrom txdbmaker makeTxDbFromGFF
-#' #' @import BSgenome
-#' #'
-#' .makeCDS <- function(gff, genome){
-#'     # Create a TxDb object from the GFF file
-#'     txdb <- makeTxDbFromGFF(file = gff)
-#'
-#'     # Read the genome file as a DNAStringSet object
-#'     genome <- readDNAStringSet(filepath = genome)
-#'
-#'     # Extract CDS sequences from the TxDb object
-#'     cds_db <- cdsBy(x = txdb, by = "tx", use.names = TRUE)
-#'     cds <- extractTranscriptSeqs(x = genome, transcripts = cds_db)
-#'
-#'     # Order CDS sequences by their names
-#'     cds <- cds[order(names(cds))]
-#'     return(cds)
-#' }
-#'
-#' #' Update OrthoPairDB files
-#' #'
-#' #' This function updates the GFF and CDS files in a OrthoPairDB object from the HDF5 file.
-#' #'
-#' #' @param object A OrthoPairDB object.
-#' #'
-#' #' @return The updated OrthoPairDB object.
-#' #' @importFrom rhdf5 H5Fopen H5Fclose
-#' .updateFiles <- function(object){
-#'     h5 <- H5Fopen(object$h5)
-#'     on.exit(H5Fclose(h5))
-#'
-#'     # Update GFF and CDS file paths from the HDF5 file
-#'     object$query_gff <- as.vector(h5$miniprot$s2q_gff)
-#'     object$subject_gff <- as.vector(h5$miniprot$q2s_gff)
-#'     object$query_cds <- as.vector(h5$miniprot$s2q_cds)
-#'     object$subject_cds <- as.vector(h5$miniprot$q2s_cds)
-#'     return(object)
-#' }
-#'
-#' # .makeLCBgr <- function(object, h5){
-#' #     # Order the LCB pairs
-#' #     pairs <- list(lcb_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_1to1),
-#' #                   lcb_non_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_non_1to1))
-#' #
-#' #     # Convert data frames to GRanges objects
-#' #     gr <- .df2gr(pairs = pairs)
-#' #
-#' #     # Create GRanges objects for gaps in the query and subject genomes
-#' #     gap_gr <- list(query = .gapGR(gr = gr$query_1to1,
-#' #                                   chrLen = object$genome$query),
-#' #                    subject = .gapGR(gr = gr$subject_1to1,
-#' #                                     chrLen = object$genome$subject))
-#' #     out <- list(gr = gr,
-#' #                 gap_gr = gap_gr)
-#' #     return(out)
-#' # }
-#' #
-#' # .remakeAnchor <- function(gff_ls, lcb_gr, h5){
-#' #     df1 <- .makeMiniprotPairDF(gff1 = gff_ls$query_gff,
-#' #                                gff2 = gff_ls$subject_gff)
-#' #     df1 <- .filterMPtx(df = df1, gff_ls = gff_ls, query = TRUE)
-#' #
-#' #     df2 <- .makeMiniprotPairDF(gff1 = gff_ls$subject_gff,
-#' #                                gff2 = gff_ls$query_gff)
-#' #     df2 <- .filterMPtx(df = df2, gff_ls = gff_ls, query = FALSE)
-#' #
-#' #     new_anchor <- .getNewAnchors(df1 = df1,
-#' #                                  df2 = df2,
-#' #                                  h5 = h5,
-#' #                                  lcb_gr = lcb_gr,
-#' #                                  gff_ls = gff_ls)
-#' #
-#' #     out <- rbind(subset(h5$anchor, select = c(qseqid, sseqid)),
-#' #                  subset(new_anchor, select = c(qseqid, sseqid)))
-#' #
-#' #     # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
-#' #     .h5overwrite(obj = out, file = object$h5, "anchor")
-#' # }
-#' #
-#' # .filterMPtx <- function(df, gff_ls, query = TRUE){
-#' #     if(query){
-#' #         df <- subset(df, subset = grepl("query_", gene))
-#' #         df$tx_single <- .isSingleExon(tx = df$tx,
-#' #                                       gff = gff_ls$query_gff)
-#' #         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
-#' #                                              gff = gff_ls$subject_gff)
-#' #         df <- subset(df, subset = !tx_single & !target_tx_single)
-#' #
-#' #     } else {
-#' #         df <- subset(df, subset = grepl("subject_", gene))
-#' #         df$tx_single <- .isSingleExon(tx = df$tx,
-#' #                                       gff = gff_ls$subject_gff)
-#' #         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
-#' #                                              gff = gff_ls$query_gff)
-#' #         df <- subset(df, subset = !tx_single & !target_tx_single)
-#' #     }
-#' #     return(df)
-#' # }
-#' #
-#' # .isSingleExon <- function(tx, gff){
-#' #     cds_i <- gff$type == "CDS"
-#' #     query_cds_parents <- unlist(gff$Parent[cds_i])
-#' #     n_query_cds_parents <- table(query_cds_parents)
-#' #     hit <- match(tx, names(n_query_cds_parents))
-#' #     out <- n_query_cds_parents[hit] == 1
-#' #     return(out)
-#' # }
-#' #
-#' # .getNewAnchors <- function(df1, df2, h5, lcb_gr, gff_ls){
-#' #     df1 <- .omitPairedGenes(df = df1,
-#' #                             geneid = h5$orthopair_gene$orthopairs$sgeneid,
-#' #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
-#' #     df2 <- .omitPairedGenes(df = df2,
-#' #                             geneid = h5$orthopair_gene$orthopairs$qgeneid,
-#' #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
-#' #
-#' #     rbbh <- data.frame(qseqid = c(df1$tx, df2$target_tx),
-#' #                        sseqid = c(df1$target_tx, df2$tx))
-#' #     rbbh$index <- seq_len(nrow(rbbh))
-#' #
-#' #     obj <- list(gr = lcb_gr$gr,
-#' #                 gap_gr = lcb_gr$gap_gr,
-#' #                 rbbh = rbbh,
-#' #                 gff = list(query = gff_ls$query_gff,
-#' #                            subject = gff_ls$subject_gff))
-#' #
-#' #     # Filter orthologs in 1-to-1 LCBs
-#' #     obj <- .orthoIn1to1lcb(obj = obj)
-#' #
-#' #     # Filter orthologs in non-1-to-1 LCBs if specified
-#' #     obj <- .orthoInNon1to1lcb(obj = obj)
-#' #
-#' #     # Filter orthologs in 1-to-1 CBI
-#' #     obj <- .orthoIn1to1cbi(obj = obj)
-#' #
-#' #     return(obj$out)
-#' # }
-#' #
-#' # .omitPairedGenes <- function(df, geneid, syntenic){
-#' #     hit <- match(df$target_gene, geneid)
-#' #     df$paired[!is.na(hit)] <- TRUE
-#' #     df$syntenic <- as.logical(syntenic[hit])
-#' #     df$orthopair <- df$paired & df$syntenic
-#' #     df$orthopair[is.na(df$orthopair)] <- FALSE
-#' #     df <- subset(df, subset = !orthopair)
-#' #     return(df)
-#' # }
-#'
-#'
-#' .makeQueryDF <- function(query_gff, subject_gff, query_cds){
-#'     query_cds_init <- .checkInitCodon(cds = query_cds)
-#'     query_cds_term <- .checkTermCodon(cds = query_cds)
-#'     query_gff_tx_index <- query_gff$type %in% c("transcript", "mRNA")
-#'     query_df <- data.frame(tx = query_gff$ID[query_gff_tx_index],
-#'                            gene = query_gff$gene_id[query_gff_tx_index])
-#'     hit <- match(query_df$tx, names(query_cds_init))
-#'     query_df$init <- query_cds_init[hit]
-#'     query_df$term <- query_cds_term[hit]
-#'     query_df$valid <- query_df$init & query_df$term
-#'     query_df$len <- width(query_cds)[hit]
-#'     hit <- match(query_df$tx, query_gff$ID)
-#'     query_df$target <- sub("\\s.+", "", query_gff$Target[hit])
-#'     hit <- match(query_df$target, subject_gff$ID)
-#'     query_df$target <- subject_gff$gene_id[hit]
-#'     query_df$pair_id <- paste(query_df$gene, query_df$target, sep = "_")
-#'     return(query_df)
-#' }
-#'
-#' .makeSubjectDF <- function(subject_gff, query_gff, subject_cds){
-#'     subject_cds_init <- .checkInitCodon(cds = subject_cds)
-#'     subject_cds_term <- .checkTermCodon(cds = subject_cds)
-#'     subject_gff_tx_index <- subject_gff$type %in% c("transcript", "mRNA")
-#'     subject_df <- data.frame(tx = subject_gff$ID[subject_gff_tx_index],
-#'                              gene = subject_gff$gene_id[subject_gff_tx_index])
-#'     hit <- match(subject_df$tx, names(subject_cds_init))
-#'     subject_df$init <- subject_cds_init[hit]
-#'     subject_df$term <- subject_cds_term[hit]
-#'     subject_df$valid <- subject_df$init & subject_df$term
-#'     subject_df$len <- width(subject_cds)[hit]
-#'     hit <- match(subject_df$tx, subject_gff$ID)
-#'     subject_df$target <- sub("\\s.+", "", subject_gff$Target[hit])
-#'     hit <- match(subject_df$target, query_gff$ID)
-#'     subject_df$target <- query_gff$gene_id[hit]
-#'     subject_df$pair_id <- paste(subject_df$gene, subject_df$target, sep = "_")
-#'     return(subject_df)
-#' }
-#'
-#' .checkInitCodon <- function(cds){
-#'     return(substr(cds, 1, 3) == "ATG")
-#' }
-#'
-#' .checkTermCodon <- function(cds){
-#'     len <- width(cds)
-#'     return(substr(cds, len - 2, len) %in% c("TAA", "TGA", "TAG"))
-#' }
-#'
-#' .filterMPgenes <- function(df, pattern = "^query_"){
-#'     df <- df[order(df$gene), ]
-#'     mp_tx_index <- grepl(pattern, df$tx)
-#'     eval <- data.frame(id = unique(df$gene))
-#'
-#'     mp_valid_max_len <- tapply(df$len[mp_tx_index][df$valid[mp_tx_index]],
-#'                                df$gene[mp_tx_index][df$valid[mp_tx_index]],
-#'                                max)
-#'     hit <- match(eval$id, names(mp_valid_max_len))
-#'     eval$mp_valid_max_len <- mp_valid_max_len[hit]
-#'     eval$mp_valid_max_len[is.na(eval$mp_valid_max_len)] <- 0
-#'
-#'     non_mp_valid_max_len <- tapply(df$len[!mp_tx_index][df$valid[!mp_tx_index]],
-#'                                    df$gene[!mp_tx_index][df$valid[!mp_tx_index]],
-#'                                    max)
-#'     hit <- match(eval$id, names(non_mp_valid_max_len))
-#'     eval$non_mp_valid_max_len <- non_mp_valid_max_len[hit]
-#'     eval$non_mp_valid_max_len[is.na(eval$non_mp_valid_max_len)] <- 0
-#'
-#'     max_tx_index <- tapply(df$len[df$valid],
-#'                            df$gene[df$valid],
-#'                            which.max)
-#'     max_tx_index <- sapply(max_tx_index, function(x){
-#'         if(length(x) == 0){
-#'             x <- NA
-#'         }
-#'         return(x)
-#'     })
-#'     hit <- match(eval$id, names(max_tx_index))
-#'     eval$max_tx_index <- max_tx_index[hit]
-#'
-#'     max_tx_is_na <- is.na(eval$max_tx_index)
-#'     hit <- match(grep(pattern, eval$id[max_tx_is_na], value = TRUE),
-#'                  df$gene)
-#'     max_tx_index <- tapply(df$len[hit],
-#'                            df$gene[hit],
-#'                            which.max)
-#'     hit <- match(eval$id[max_tx_is_na], names(max_tx_index))
-#'     eval$max_tx_index[max_tx_is_na] <- max_tx_index[hit]
-#'
-#'     start_index <- match(df$gene, df$gene)
-#'     hit <- match(df$gene, eval$id)
-#'     df$index <- eval$max_tx_index[hit] + start_index - 1
-#'     out <- grep(pattern, df$tx[df$index], value = TRUE)
-#'     return(out)
-#' }
-#'
-#' .removeInvalidMP <- function(gff, valid_id, pattern){
-#'     parent <- sapply(gff$Parent, function(x){
-#'         if(length(x) == 0){
-#'             x <- NA
-#'         }
-#'         return(x)
-#'     })
-#'     valid_tx <- gff$ID %in% valid_id
-#'     valid_elemetns <- parent %in% valid_id
-#'     non_mp_entries <- !grepl(pattern, gff$ID)
-#'     valid_entries <- valid_tx | valid_elemetns | non_mp_entries
-#'     return(gff[valid_entries])
-#' }
-#'
+#
+# # Create CDS sequences from GFF and genome files
+# #
+# # This function generates CDS sequences from provided GFF and genome files.
+# #
+# # @param gff Path to the GFF file.
+# # @param genome Path to the genome file.
+# #
+# # @return A DNAStringSet object containing CDS sequences.
+# # @importFrom Biostrings readDNAStringSet
+# # @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
+# # @importFrom txdbmaker makeTxDbFromGFF
+# # @import BSgenome
+# #
+# .makeCDS <- function(gff, genome){
+#     # Create a TxDb object from the GFF file
+#     txdb <- makeTxDbFromGFF(file = gff)
+#
+#     # Read the genome file as a DNAStringSet object
+#     genome <- readDNAStringSet(filepath = genome)
+#
+#     # Extract CDS sequences from the TxDb object
+#     cds_db <- cdsBy(x = txdb, by = "tx", use.names = TRUE)
+#     cds <- extractTranscriptSeqs(x = genome, transcripts = cds_db)
+#
+#     # Order CDS sequences by their names
+#     cds <- cds[order(names(cds))]
+#     return(cds)
+# }
+#
+# # Update OrthoPairDB files
+# #
+# # This function updates the GFF and CDS files in a OrthoPairDB object from the HDF5 file.
+# #
+# # @param object A OrthoPairDB object.
+# #
+# # @return The updated OrthoPairDB object.
+# # @importFrom rhdf5 H5Fopen H5Fclose
+# .updateFiles <- function(object){
+#     h5 <- H5Fopen(object$h5)
+#     on.exit(H5Fclose(h5))
+#
+#     # Update GFF and CDS file paths from the HDF5 file
+#     object$query_gff <- as.vector(h5$miniprot$s2q_gff)
+#     object$subject_gff <- as.vector(h5$miniprot$q2s_gff)
+#     object$query_cds <- as.vector(h5$miniprot$s2q_cds)
+#     object$subject_cds <- as.vector(h5$miniprot$q2s_cds)
+#     return(object)
+# }
+#
+# # .makeLCBgr <- function(object, h5){
+# #     # Order the LCB pairs
+# #     pairs <- list(lcb_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_1to1),
+# #                   lcb_non_1to1 = .order(df = h5$sibeliaz$lcb_pairs$lcb_non_1to1))
+# #
+# #     # Convert data frames to GRanges objects
+# #     gr <- .df2gr(pairs = pairs)
+# #
+# #     # Create GRanges objects for gaps in the query and subject genomes
+# #     gap_gr <- list(query = .gapGR(gr = gr$query_1to1,
+# #                                   chrLen = object$genome$query),
+# #                    subject = .gapGR(gr = gr$subject_1to1,
+# #                                     chrLen = object$genome$subject))
+# #     out <- list(gr = gr,
+# #                 gap_gr = gap_gr)
+# #     return(out)
+# # }
+# #
+# # .remakeAnchor <- function(gff_ls, lcb_gr, h5){
+# #     df1 <- .makeMiniprotPairDF(gff1 = gff_ls$query_gff,
+# #                                gff2 = gff_ls$subject_gff)
+# #     df1 <- .filterMPtx(df = df1, gff_ls = gff_ls, query = TRUE)
+# #
+# #     df2 <- .makeMiniprotPairDF(gff1 = gff_ls$subject_gff,
+# #                                gff2 = gff_ls$query_gff)
+# #     df2 <- .filterMPtx(df = df2, gff_ls = gff_ls, query = FALSE)
+# #
+# #     new_anchor <- .getNewAnchors(df1 = df1,
+# #                                  df2 = df2,
+# #                                  h5 = h5,
+# #                                  lcb_gr = lcb_gr,
+# #                                  gff_ls = gff_ls)
+# #
+# #     out <- rbind(subset(h5$anchor, select = c(qseqid, sseqid)),
+# #                  subset(new_anchor, select = c(qseqid, sseqid)))
+# #
+# #     # Overwrite the "anchor" group in the HDF5 file with the filtered orthologs
+# #     .h5overwrite(obj = out, file = object$h5, "anchor")
+# # }
+# #
+# # .filterMPtx <- function(df, gff_ls, query = TRUE){
+# #     if(query){
+# #         df <- subset(df, subset = grepl("query_", gene))
+# #         df$tx_single <- .isSingleExon(tx = df$tx,
+# #                                       gff = gff_ls$query_gff)
+# #         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
+# #                                              gff = gff_ls$subject_gff)
+# #         df <- subset(df, subset = !tx_single & !target_tx_single)
+# #
+# #     } else {
+# #         df <- subset(df, subset = grepl("subject_", gene))
+# #         df$tx_single <- .isSingleExon(tx = df$tx,
+# #                                       gff = gff_ls$subject_gff)
+# #         df$target_tx_single <- .isSingleExon(tx = df$target_tx,
+# #                                              gff = gff_ls$query_gff)
+# #         df <- subset(df, subset = !tx_single & !target_tx_single)
+# #     }
+# #     return(df)
+# # }
+# #
+# # .isSingleExon <- function(tx, gff){
+# #     cds_i <- gff$type == "CDS"
+# #     query_cds_parents <- unlist(gff$Parent[cds_i])
+# #     n_query_cds_parents <- table(query_cds_parents)
+# #     hit <- match(tx, names(n_query_cds_parents))
+# #     out <- n_query_cds_parents[hit] == 1
+# #     return(out)
+# # }
+# #
+# # .getNewAnchors <- function(df1, df2, h5, lcb_gr, gff_ls){
+# #     df1 <- .omitPairedGenes(df = df1,
+# #                             geneid = h5$orthopair_gene$orthopairs$sgeneid,
+# #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
+# #     df2 <- .omitPairedGenes(df = df2,
+# #                             geneid = h5$orthopair_gene$orthopairs$qgeneid,
+# #                             syntenic = h5$orthopair_gene$orthopairs$syntenic)
+# #
+# #     rbbh <- data.frame(qseqid = c(df1$tx, df2$target_tx),
+# #                        sseqid = c(df1$target_tx, df2$tx))
+# #     rbbh$index <- seq_len(nrow(rbbh))
+# #
+# #     obj <- list(gr = lcb_gr$gr,
+# #                 gap_gr = lcb_gr$gap_gr,
+# #                 rbbh = rbbh,
+# #                 gff = list(query = gff_ls$query_gff,
+# #                            subject = gff_ls$subject_gff))
+# #
+# #     # Filter orthologs in 1-to-1 LCBs
+# #     obj <- .orthoIn1to1lcb(obj = obj)
+# #
+# #     # Filter orthologs in non-1-to-1 LCBs if specified
+# #     obj <- .orthoInNon1to1lcb(obj = obj)
+# #
+# #     # Filter orthologs in 1-to-1 CBI
+# #     obj <- .orthoIn1to1cbi(obj = obj)
+# #
+# #     return(obj$out)
+# # }
+# #
+# # .omitPairedGenes <- function(df, geneid, syntenic){
+# #     hit <- match(df$target_gene, geneid)
+# #     df$paired[!is.na(hit)] <- TRUE
+# #     df$syntenic <- as.logical(syntenic[hit])
+# #     df$orthopair <- df$paired & df$syntenic
+# #     df$orthopair[is.na(df$orthopair)] <- FALSE
+# #     df <- subset(df, subset = !orthopair)
+# #     return(df)
+# # }
+#
+#
+# .makeQueryDF <- function(query_gff, subject_gff, query_cds){
+#     query_cds_init <- .checkInitCodon(cds = query_cds)
+#     query_cds_term <- .checkTermCodon(cds = query_cds)
+#     query_gff_tx_index <- query_gff$type %in% c("transcript", "mRNA")
+#     query_df <- data.frame(tx = query_gff$ID[query_gff_tx_index],
+#                            gene = query_gff$gene_id[query_gff_tx_index])
+#     hit <- match(query_df$tx, names(query_cds_init))
+#     query_df$init <- query_cds_init[hit]
+#     query_df$term <- query_cds_term[hit]
+#     query_df$valid <- query_df$init & query_df$term
+#     query_df$len <- width(query_cds)[hit]
+#     hit <- match(query_df$tx, query_gff$ID)
+#     query_df$target <- sub("\\s.+", "", query_gff$Target[hit])
+#     hit <- match(query_df$target, subject_gff$ID)
+#     query_df$target <- subject_gff$gene_id[hit]
+#     query_df$pair_id <- paste(query_df$gene, query_df$target, sep = "_")
+#     return(query_df)
+# }
+#
+# .makeSubjectDF <- function(subject_gff, query_gff, subject_cds){
+#     subject_cds_init <- .checkInitCodon(cds = subject_cds)
+#     subject_cds_term <- .checkTermCodon(cds = subject_cds)
+#     subject_gff_tx_index <- subject_gff$type %in% c("transcript", "mRNA")
+#     subject_df <- data.frame(tx = subject_gff$ID[subject_gff_tx_index],
+#                              gene = subject_gff$gene_id[subject_gff_tx_index])
+#     hit <- match(subject_df$tx, names(subject_cds_init))
+#     subject_df$init <- subject_cds_init[hit]
+#     subject_df$term <- subject_cds_term[hit]
+#     subject_df$valid <- subject_df$init & subject_df$term
+#     subject_df$len <- width(subject_cds)[hit]
+#     hit <- match(subject_df$tx, subject_gff$ID)
+#     subject_df$target <- sub("\\s.+", "", subject_gff$Target[hit])
+#     hit <- match(subject_df$target, query_gff$ID)
+#     subject_df$target <- query_gff$gene_id[hit]
+#     subject_df$pair_id <- paste(subject_df$gene, subject_df$target, sep = "_")
+#     return(subject_df)
+# }
+#
+# .checkInitCodon <- function(cds){
+#     return(substr(cds, 1, 3) == "ATG")
+# }
+#
+# .checkTermCodon <- function(cds){
+#     len <- width(cds)
+#     return(substr(cds, len - 2, len) %in% c("TAA", "TGA", "TAG"))
+# }
+#
+# .filterMPgenes <- function(df, pattern = "^query_"){
+#     df <- df[order(df$gene), ]
+#     mp_tx_index <- grepl(pattern, df$tx)
+#     eval <- data.frame(id = unique(df$gene))
+#
+#     mp_valid_max_len <- tapply(df$len[mp_tx_index][df$valid[mp_tx_index]],
+#                                df$gene[mp_tx_index][df$valid[mp_tx_index]],
+#                                max)
+#     hit <- match(eval$id, names(mp_valid_max_len))
+#     eval$mp_valid_max_len <- mp_valid_max_len[hit]
+#     eval$mp_valid_max_len[is.na(eval$mp_valid_max_len)] <- 0
+#
+#     non_mp_valid_max_len <- tapply(df$len[!mp_tx_index][df$valid[!mp_tx_index]],
+#                                    df$gene[!mp_tx_index][df$valid[!mp_tx_index]],
+#                                    max)
+#     hit <- match(eval$id, names(non_mp_valid_max_len))
+#     eval$non_mp_valid_max_len <- non_mp_valid_max_len[hit]
+#     eval$non_mp_valid_max_len[is.na(eval$non_mp_valid_max_len)] <- 0
+#
+#     max_tx_index <- tapply(df$len[df$valid],
+#                            df$gene[df$valid],
+#                            which.max)
+#     max_tx_index <- sapply(max_tx_index, function(x){
+#         if(length(x) == 0){
+#             x <- NA
+#         }
+#         return(x)
+#     })
+#     hit <- match(eval$id, names(max_tx_index))
+#     eval$max_tx_index <- max_tx_index[hit]
+#
+#     max_tx_is_na <- is.na(eval$max_tx_index)
+#     hit <- match(grep(pattern, eval$id[max_tx_is_na], value = TRUE),
+#                  df$gene)
+#     max_tx_index <- tapply(df$len[hit],
+#                            df$gene[hit],
+#                            which.max)
+#     hit <- match(eval$id[max_tx_is_na], names(max_tx_index))
+#     eval$max_tx_index[max_tx_is_na] <- max_tx_index[hit]
+#
+#     start_index <- match(df$gene, df$gene)
+#     hit <- match(df$gene, eval$id)
+#     df$index <- eval$max_tx_index[hit] + start_index - 1
+#     out <- grep(pattern, df$tx[df$index], value = TRUE)
+#     return(out)
+# }
+#
+# .removeInvalidMP <- function(gff, valid_id, pattern){
+#     parent <- sapply(gff$Parent, function(x){
+#         if(length(x) == 0){
+#             x <- NA
+#         }
+#         return(x)
+#     })
+#     valid_tx <- gff$ID %in% valid_id
+#     valid_elemetns <- parent %in% valid_id
+#     non_mp_entries <- !grepl(pattern, gff$ID)
+#     valid_entries <- valid_tx | valid_elemetns | non_mp_entries
+#     return(gff[valid_entries])
+# }
