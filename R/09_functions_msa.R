@@ -130,7 +130,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
 }
 
 #' @importFrom parallel mclapply
-#' @importFrom Biostrings readAAStringSet
+#' @importFrom Biostrings readAAStringSet AAStringSet
 .compareSeqEngine <- function(cds1, prot1, promoter1, genome1, gff1, 
                               cds2, prot2, promoter2, genome2, gff2,
                               orthopair_gene,
