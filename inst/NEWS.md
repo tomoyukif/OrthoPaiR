@@ -1,3 +1,6 @@
+Changes in version 0.5.3 (2025-10-21)
++ Update the handling of input files
+
 Changes in version 0.5.2 (2025-06-16)
 + Anchor genes is filtered based on if the genes are possibly TEs that have 
 + a large number of multiple hits in RBH.

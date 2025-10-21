@@ -57,8 +57,10 @@ mapProt <- function(in_list,
         stop("No genome information is available.")
     } else {
         omit_genome <- in_list$name[is.na(in_list$genome)]
-        message("Genome sequences are not available for:\n",
-                omit_genome)
+        if(length(omit_genome) > 0){
+            message("Genome sequences are not available for:\n",
+                            paste(omit_genome, collapse = "\n"))
+        }
     }
     
     if(all(is.na(in_list$prot))){
@@ -66,8 +68,10 @@ mapProt <- function(in_list,
         
     } else {
         omit_prot <- in_list$name[is.na(in_list$prot)]
-        message("Protein sequences are not available for:\n",
-                omit_prot)
+        if(length(omit_prot) > 0){
+            message("Protein sequences are not available for:\n",
+                            paste(omit_prot, collapse = "\n"))
+        }
     }
     
     out_files <- NULL
@@ -90,6 +94,9 @@ mapProt <- function(in_list,
                           miniprot_path = miniprot_path,
                           n_threads = n_threads)
                 
+                new_cds <- .makeCDS(gff = paste0(out_fn, ".gff"),
+                                    genome = in_list$genome[i])
+                writeXStringSet(new_cds, paste0(out_fn, ".cds"))
             }
             out_files_i <- c(out_files_i, out_fn)
             names(out_files_i)[length(out_files_i)] <- in_list$name[j]
@@ -97,6 +104,7 @@ mapProt <- function(in_list,
         out_files <- c(out_files, list(out_files_i))
         names(out_files)[length(out_files)] <- in_list$name[i]
     }
+    return(out_files)
 }
 
 # # Organize GFF results from subject-to-query and query-to-subject mappings
@@ -872,21 +880,21 @@ mapProt <- function(in_list,
 }
 
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-#' @importFrom Biostrings writeXStringSet
+#' @importFrom Biostrings writeXStringSet translate
 .createFASTA <- function(in_list, out_dir){
     for(i in seq_along(in_list$name)){
         if(!in_list$update[i]){
             next
         }
-        # Create CDS sequences for query and subject genomes
         new_cds <- .makeCDS(gff = in_list$gff[i], genome = in_list$genome[i])
-        
-        # Define filenames for the CDS FASTA files
         new_cds_fn <- file.path(out_dir, basename(in_list$cds[i]))
-        
-        # Write the CDS sequences to FASTA files
         writeXStringSet(new_cds, new_cds_fn)
         in_list$cds[i] <- new_cds_fn
+        
+        new_prot <- translate(new_cds, if.fuzzy.codon = "solve")
+        new_prot_fn <- file.path(out_dir, basename(in_list$prot[i]))
+        writeXStringSet(new_prot, new_prot_fn)
+        in_list$prot[i] <- new_prot_fn
     }
     in_list$update <- NULL
     return(in_list)

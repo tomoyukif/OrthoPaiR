@@ -196,6 +196,9 @@ syntenicOrtho <- function(object){
 .collapseMtoM <- function(orthopair, g2g_graph){
     id_map <- NULL
     orthopair_MtoM <- orthopair[orthopair$class == "MtoM", ]
+    if(nrow(orthopair_MtoM) == 0){
+        return(id_map)
+    }
     orthopair_MtoM$class <- "Mto1"
     MtoM_id_map_Mto1 <- .collapseMto1(orthopair = orthopair_MtoM, 
                                       g2g_graph = g2g_graph)

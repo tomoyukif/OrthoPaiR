@@ -234,7 +234,7 @@ orthopair <- function(in_list,
             .h5overwrite(obj = rep_cds, file = h5_fn, "cds")
             .makeblastdb(blast_path = blast_path, fn = new_cds_fn)
         }
-        in_list$cds[i] <- new_cds_fn
+        .h5overwrite(obj = new_cds_fn, file = h5_fn, "cds_fn")
         
         if(!is.na(in_list$prot[i]) & use_prot){
             new_prot_fn <- file.path(out_dir_i, "prot.fa")
@@ -246,7 +246,7 @@ orthopair <- function(in_list,
                 writeXStringSet(rep_prot, new_prot_fn)
                 .makediamonddb(diamond_path = diamond_path, fn = new_prot_fn)
             }
-            in_list$prot[i] <- new_prot_fn
+            .h5overwrite(obj = new_prot_fn, file = h5_fn, "prot_fn")
         }
     }
     return(in_list)
@@ -501,7 +501,7 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
         stop("Empty name is not allowed.", call. = FALSE)
     }
     
-    if(!is.na(genome)){
+    if(all(!is.na(genome))){
         check <- !file.exists(genome)
         if(check){
             stop('The file "genome" does not exist.', call. = FALSE)
@@ -518,14 +518,14 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
         stop('The file "cds" does not exist.', call. = FALSE)
     }
     
-    if(!is.na(prot)){
+    if(all(!is.na(prot))){
         check <- !file.exists(prot)
         if(check){
             stop('The file "prot" does not exist.', call. = FALSE)
         }
     }
     
-    if(!is.na(genome)){
+    if(any(!is.na(genome))){
         genome <- readDNAStringSet(filepath = genome)
         genome_seq_name <- names(genome)
     }
@@ -557,7 +557,7 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
              call. = FALSE)
     }
     
-    if(!is.na(genome)){
+    if(all(!is.na(genome))){
         check <-  gff_seq_lev %in% genome_seq_name
         if(!all(check)){
             stop(paste0("In input data validation for ", name),
@@ -575,7 +575,7 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
                    collapse = ", "), call. = FALSE)
     }
     
-    if(!is.na(prot[1])){
+    if(all(!is.na(prot))){
         prot_names <- names(prot)
         check <- prot_names %in% gff$ID
         if(!all(check)){

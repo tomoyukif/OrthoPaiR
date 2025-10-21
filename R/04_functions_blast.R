@@ -24,11 +24,10 @@ rbh <- function(object,
     # on.exit(H5Fclose(h5))
     files <- h5read(object$h5, "files")
     
-    fa1_fn <- files$query_cds
-    fa2_fn <- files$subject_cds
+    fa1_fn <- h5read(files$query_h5, "cds_fn")
+    fa2_fn <- h5read(files$subject_h5, "cds_fn")
     
-    # Set scientific notation options
-    options(scipen = 9999)
+    # Avoid changing global options; keep defaults for performance
     
     # Perform BLAST searches in both directions
     message("BLAST: query to subject.")
@@ -49,11 +48,13 @@ rbh <- function(object,
     
     if(use_prot){
         # Generate FASTA files from the CDS sequences
-        check1 <- "no_query_prot" %in% files$query_prot
-        check2 <- "no_subject_prot" %in% files$subject_prot
+        query_prot <- h5read(files$query_h5, "prot_fn")
+        subject_prot <- h5read(files$subject_h5, "prot_fn")
+        check1 <- "no_query_prot" %in% query_prot
+        check2 <- "no_subject_prot" %in% subject_prot
         if(!check1 & !check2){
-            fa1_fn <- files$query_prot
-            fa2_fn <- files$subject_prot
+            fa1_fn <- query_prot
+            fa2_fn <- subject_prot
             
             # Perform BLAST searches in both directions
             message("DIAMOND: query to subject.")
@@ -83,7 +84,7 @@ rbh <- function(object,
     .h5creategroup(object$h5,"blast")
     .h5overwrite(obj = rbh_out, file = object$h5, "blast/rbh")
     .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/blast")
-    options(scipen = 0)
+    # Done
 }
 
 .getRepTx <- function(gff_cds){
@@ -173,7 +174,7 @@ rbh <- function(object,
     # Construct the BLAST arguments string
     blast_args <- paste(paste("-query", fa),
                         paste("-db", db),
-                        "-task blastn -max_target_seqs 100000",
+                        "-task blastn -max_target_seqs 200",
                         "-evalue 1e-4 -strand plus",
                         "-outfmt '6 qseqid sseqid pident qcovs qlen qstart qend sstart send'",
                         paste("-num_threads", n_threads))
@@ -209,7 +210,7 @@ rbh <- function(object,
     diamond_args <- paste("blastp",
                           paste("--db", db),
                           paste("--query", fa),
-                          "--max-target-seqs 100000 --evalue 1e-4",
+                          "--max-target-seqs 200 --evalue 1e-4",
                           "--strand plus",
                           "--outfmt 6 qseqid sseqid pident qcovhsp qlen qstart qend sstart send",
                           "--quiet --ultra-sensitive", 
@@ -238,66 +239,48 @@ rbh <- function(object,
     return(out)
 }
 
-#' @importFrom dplyr inner_join
-#' 
+# Compute RBH using best-hit prefiltering to reduce join size drastically
 .getRBH <- function(df1, df2){
-    if(all(is.na(df1)) | all(is.na(df2))){
+    if(all(is.na(df1)) || all(is.na(df2))){
         return(NA)
     }
     names(df1) <- c("qseqid", "sseqid", "pident", "qcovs_q2s", "qlen", 
                     "qstart", "qend", "sstart", "send")
     names(df2) <- c("sseqid", "qseqid", "pident", "qcovs_s2q", "slen", 
                     "sstart", "send", "qstart", "qend")
-    rbh <- inner_join(df1, df2, 
-                      c("qseqid", "sseqid", "qstart", "qend", "sstart", "send", "pident"),
-                      relationship = "many-to-many")
-    rbh <- .orgBLASTout(rbh = rbh)
-    rbh$ci_q2s <- rbh$pident * rbh$qcovs_q2s * 1e-4
-    rbh$ci_s2q <- rbh$pident * rbh$qcovs_s2q * 1e-4
+    # Coerce numeric columns used in scoring
+    suppressWarnings({
+        df1$pident <- as.numeric(df1$pident)
+        df1$qcovs_q2s <- as.numeric(df1$qcovs_q2s)
+        df2$pident <- as.numeric(df2$pident)
+        df2$qcovs_s2q <- as.numeric(df2$qcovs_s2q)
+    })
+    # Score = pident * coverage
+    df1$score <- df1$pident * df1$qcovs_q2s
+    df2$score <- df2$pident * df2$qcovs_s2q
+    # Best subject per query (q->s)
+    df1 <- df1[order(-df1$score, df1$qseqid), ]
+    df1_best <- df1[!duplicated(df1$qseqid), c("qseqid","sseqid","pident","qcovs_q2s")]
+    # Best query per subject (s->q)
+    df2 <- df2[order(-df2$score, df2$sseqid), ]
+    df2_best <- df2[!duplicated(df2$sseqid), c("qseqid","sseqid","pident","qcovs_s2q")]
+    # RBH on ids only
+    rbh <- merge(df1_best, df2_best, by = c("qseqid","sseqid"), all = FALSE, suffixes = c("_q2s","_s2q"))
+    if(nrow(rbh) == 0){
+        return(NA)
+    }
+    # Confidence indices
+    rbh$ci_q2s <- rbh$pident_q2s * rbh$qcovs_q2s * 1e-4
+    rbh$ci_s2q <- rbh$pident_s2q * rbh$qcovs_s2q * 1e-4
     rbh$mutual_ci <- rbh$ci_q2s * rbh$ci_s2q
-    rbh <- rbh[order(rbh$mutual_ci, decreasing = TRUE), ]
+    rbh <- rbh[order(-rbh$mutual_ci), ]
+    # Rename for downstream compatibility
+    names(rbh)[names(rbh) == "pident_q2s"] <- "pident"
     return(rbh)
 }
 
 
+## .orgBLASTout no longer needed with best-hit prefilter; keep minimal passthrough
 .orgBLASTout <- function(rbh){
-    rbh <- lapply(rbh, as.numeric)
-    rbh <- as.data.frame(rbh)
-    rbh$id <- paste(rbh$qseqid, rbh$sseqid, sep = "_")
-    id_dup <- duplicated(rbh$id)
-    dup_id <- unique(rbh$id[id_dup])
-    hit <- !rbh$id %in% dup_id
-    uniq_rbh <- rbh[hit, ]
-    dup_rbh <- rbh[!hit, ]
-    q_aln <- GRanges(seqnames = dup_rbh$id,
-                     ranges = IRanges(start = dup_rbh$qstart,
-                                      end = dup_rbh$qend))
-    q_ol <- findOverlaps(q_aln, q_aln, type = "within")
-    q_ol <- as.matrix(q_ol)
-    q_ol <- subset(q_ol, subset = q_ol[, 1] != q_ol[, 2])
-    s_aln <- GRanges(seqnames = dup_rbh$id,
-                     ranges = IRanges(start = dup_rbh$sstart,
-                                      end = dup_rbh$send))
-    s_ol <- findOverlaps(s_aln, s_aln, type = "within")
-    s_ol <- as.matrix(s_ol)
-    s_ol <- subset(s_ol, subset = s_ol[, 1] != s_ol[, 2])
-    ol <- as.vector(rbind(q_ol, s_ol))
-    ol <- sort(unique(ol))
-    dup_rbh_ol <- dup_rbh[ol, ]
-    first_hit <- tapply(seq_along(dup_rbh_ol$id), dup_rbh_ol$id, min)
-    dup_rbh_ol_first_hit <- dup_rbh_ol[first_hit, ]
-    dup_rbh <- rbind(dup_rbh[-ol, ], dup_rbh_ol_first_hit)
-    
-    aln <- GRanges(seqnames = dup_rbh$id,
-                   ranges = IRanges(start = dup_rbh$qstart,
-                                    end = dup_rbh$qend))
-    n_aln <- tapply(width(aln), as.character(seqnames(aln)), sum)
-    n_ident <- dup_rbh$pident * 1e-2 * width(aln)
-    n_ident <- tapply(n_ident, dup_rbh$id, sum)
-    dup_rbh <- subset(dup_rbh, subset = !duplicated(id))
-    hit <- match(dup_rbh$id, names(n_ident))
-    dup_rbh$pident <- n_ident[hit] / n_aln[hit] * 100
-    rbh <- rbind(subset(dup_rbh, select = c(qseqid:qcovs_q2s, qcovs_s2q)),
-                 subset(uniq_rbh, select = c(qseqid:qcovs_q2s, qcovs_s2q)))
     return(rbh)
 }

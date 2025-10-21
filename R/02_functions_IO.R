@@ -101,22 +101,28 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     
     orthopair <- h5$orthopair_gene
     query <- subset(orthopair, subset = !duplicated(orthopair$query_gene))
-    query_summary <- table(query$class)
+    query_summary <- table(factor(query$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
     subject <- subset(orthopair, subset = !duplicated(orthopair$subject_gene))
-    subject_summary <- table(subject$class)
+    subject_summary <- table(factor(subject$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
     query_orphan <- length(h5$orphan_query)
     subject_orphan <- length(h5$orphan_subject)
     query_total <- sum(query_summary) + query_orphan
     subject_total <- sum(subject_summary) + subject_orphan
-    df <- data.frame(Query = c(query_total,
+    files <- h5$files
+    query_name <- basename(sub("/input.h5", "", files$query_h5))
+    subject_name <- basename(sub("/input.h5", "", files$subject_h5))
+    df <- data.frame(Query = c(query_name,
+                               query_total,
                                query_total - query_orphan,
                                query_summary,
                                query_orphan),
-                     Subject = c(subject_total,
+                     Subject = c(subject_name,
+                                 subject_total,
                                  subject_total - subject_orphan,
                                  subject_summary,
                                  subject_orphan))
-    rownames(df) <- c("Total",
+    rownames(df) <- c("Name",
+                      "Total",
                       "Classified",
                       "1to1",
                       "1toM",

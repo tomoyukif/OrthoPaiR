@@ -43,16 +43,17 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
             } else {
                 orthopair_gene <- h5$orthopair_gene[[pair_id]]
             }
-            out_i <- .compareSeqEngine(cds1 = in_files$cds[genome1_index],
-                                       prot1 = in_files$prot[genome1_index],
-                                       promoter1 = in_files$promoter[genome1_index],
-                                       genome1 = in_files$genome[[genome1_index]],
-                                       gff1 = in_files$gff[genome1_index],
-                                       cds2 = in_files$cds[genome2_index],
-                                       prot2 = in_files$prot[genome2_index],
-                                       promoter2 = in_files$promoter[genome2_index],
-                                       genome2 = in_files$genome[[genome2_index]],
-                                       gff2 = in_files$gff[genome2_index],
+            out_i <- .compareSeqEngine(h5 = h5,
+                                       cds1 = as.character(in_files$cds[genome1_index]),
+                                       prot1 = as.character(in_files$prot[genome1_index]),
+                                       promoter1 = as.character(in_files$promoter[genome1_index]),
+                                       genome1 = as.character(in_files$genome[[genome1_index]]),
+                                       gff1 = as.character(in_files$gff[genome1_index]),
+                                       cds2 = as.character(in_files$cds[genome2_index]),
+                                       prot2 = as.character(in_files$prot[genome2_index]),
+                                       promoter2 = as.character(in_files$promoter[genome2_index]),
+                                       genome2 = as.character(in_files$genome[[genome2_index]]),
+                                       gff2 = as.character(in_files$gff[genome2_index]),
                                        orthopair_gene = orthopair_gene,
                                        query_id = query_id,
                                        subject_id = subject_id,
@@ -68,20 +69,23 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         promoter2 <- h5$files$subject_promoter
         promoter1[is.null(promoter1)] <- "null/path"
         promoter2[is.null(promoter2)] <- "null/path"
-        out <- .compareSeqEngine(cds1 = h5$files$query_cds,
-                                 prot1 = h5$files$query_prot,
+        query_id <- basename(sub("/input.h5", "", h5$files$query_h5))
+        subject_id <- basename(sub("/input.h5", "", h5$files$subject_h5))
+        out <- .compareSeqEngine(h5 = h5,
+                                 cds1 = as.character(h5$files$query_cds),
+                                 prot1 = as.character(h5$files$query_prot),
                                  promoter1 = promoter1,
-                                 genome1 = h5$files$query_genome,
-                                 gff1 = h5$files$query_gff,
-                                 cds2 = h5$files$subject_cds,
-                                 prot2 = h5$files$subject_prot,
+                                 genome1 = as.character(h5$files$query_genome),
+                                 gff1 = as.character(h5$files$query_gff),
+                                 cds2 = as.character(h5$files$subject_cds),
+                                 prot2 = as.character(h5$files$subject_prot),
                                  promoter2 = promoter2,
-                                 genome2 = h5$files$subject_genome,
-                                 gff2 = h5$files$subject_gff,
+                                 genome2 = as.character(h5$files$subject_genome),
+                                 gff2 = as.character(h5$files$subject_gff),
                                  orthopair_gene = h5$orthopair_gene,
-                                 query_id = "",
-                                 subject_id = "",
-                                 pair_id = "",
+                                 query_id = query_id,
+                                 subject_id = subject_id,
+                                 pair_id = paste(query_id, subject_id, sep = "_"),
                                  n_threads = n_threads,
                                  verbose = verbose)
         out <- list(out)
@@ -137,18 +141,18 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         if(verbose){
             message("Preparing a promoter FASTA file for the query genome.")
         }
-        out_fn <- file.path(dirname(gff1),
+        promoter1 <- file.path(dirname(gff1),
                             paste0(query_id, "_orthopair.promoter"))
-        .getPromoterSeq(gff = gff1, genome = genome1, out_fn = out_fn)
+        .getPromoterSeq(gff = gff1, genome = genome1, out_fn = promoter1)
     }
     
     if(!file.exists(promoter2)){
         if(verbose){
             message("Preparing a promoter FASTA file for the subject genome.")
         }
-        out_fn <- file.path(dirname(gff2), 
+        promoter2 <- file.path(dirname(gff2), 
                             paste0(subject_id, "_orthopair.promoter"))
-        .getPromoterSeq(gff = gff2, genome = genome2, out_fn = out_fn)
+        .getPromoterSeq(gff = gff2, genome = genome2, out_fn = promoter2)
     }
     
     file_list <- c(cds1, cds2, prot2, prot2, promoter1, promoter2)
