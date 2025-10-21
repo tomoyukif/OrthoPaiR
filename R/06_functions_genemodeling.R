@@ -892,6 +892,7 @@ mapProt <- function(in_list,
         in_list$cds[i] <- new_cds_fn
         
         new_prot <- translate(new_cds, if.fuzzy.codon = "solve")
+        new_prot <- AAStringSet(sub("\\*.+", "", new_prot))
         new_prot_fn <- file.path(out_dir, basename(in_list$prot[i]))
         writeXStringSet(new_prot, new_prot_fn)
         in_list$prot[i] <- new_prot_fn

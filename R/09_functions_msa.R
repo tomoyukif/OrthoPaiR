@@ -4,7 +4,7 @@
 compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = TRUE){
     h5 <- H5Fopen(hdf5_fn)
     on.exit(H5Fclose(h5))
-    out_dir <- file.paht(dirname(dirname(hdf5_fn)), "msa_out")
+    out_dir <- file.path(dirname(dirname(hdf5_fn)), "msa_out")
     check <- h5$data_type == "reorg_orthopair"
     if(verbose){
         message("The input data type: reorg_orthopair")
@@ -174,6 +174,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     prot2 <- readAAStringSet(filepath = prot2)
     names(prot1) <- sub("\\s.+", "", names(prot1))
     names(prot2) <- sub("\\s.+", "", names(prot2))
+    prot1 <- AAStringSet(sub("\\*.+", "", prot1))
+    prot2 <- AAStringSet(sub("\\*.+", "", prot2))
     aa_out <- mclapply(X = seq_along(orthopair_gene$SOG),
                        mc.cores = n_threads,
                        FUN = .doMSA, 

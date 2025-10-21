@@ -1,6 +1,8 @@
-Changes in version 0.5.4 (2025-10-21)
+Changes in version 0.5.5 (2025-10-21)
 + Update the handling of input files
 + Update the output directory of compareOrthoSeq().
++ Add code to remove AA sequences after the terminal codon in each AA sequence 
++ in compareOrthoSeq().
 
 Changes in version 0.5.2 (2025-06-16)
 + Anchor genes is filtered based on if the genes are possibly TEs that have 
