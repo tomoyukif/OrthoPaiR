@@ -4,7 +4,7 @@
 compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = TRUE){
     h5 <- H5Fopen(hdf5_fn)
     on.exit(H5Fclose(h5))
-    out_dir <- dirname(dirname(hdf5_fn))
+    out_dir <- file.paht(dirname(dirname(hdf5_fn)), "msa_out")
     check <- h5$data_type == "reorg_orthopair"
     if(verbose){
         message("The input data type: reorg_orthopair")
