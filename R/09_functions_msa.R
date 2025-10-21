@@ -4,7 +4,7 @@
 compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = TRUE){
     h5 <- H5Fopen(hdf5_fn)
     on.exit(H5Fclose(h5))
-    
+    out_dir <- dirname(dirname(hdf5_fn))
     check <- h5$data_type == "reorg_orthopair"
     if(verbose){
         message("The input data type: reorg_orthopair")
@@ -57,6 +57,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                                        query_id = query_id,
                                        subject_id = subject_id,
                                        pair_id = pair_id,
+                                       out_dir = out_dir,
                                        n_threads = n_threads,
                                        verbose = verbose)
             out <- c(out, list(out_i))
@@ -84,6 +85,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                                  query_id = query_id,
                                  subject_id = subject_id,
                                  pair_id = paste(query_id, subject_id, sep = "_"),
+                                 out_dir = out_dir,
                                  n_threads = n_threads,
                                  verbose = verbose)
         out <- list(out)
@@ -133,6 +135,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                               cds2, prot2, promoter2, genome2, gff2,
                               orthopair_gene,
                               query_id = "", subject_id = "", pair_id = "",
+                              out_dir,
                               n_threads, verbose){
     
     if(!file.exists(promoter1)){
@@ -165,8 +168,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     if(verbose){
         message("Performing pairwise protein sequence alignments.")
     }
-    out_dir <- file.path(dirname(gff1), paste("aa_msa", pair_id, sep = "_"))
-    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    out_aa <- file.path(out_dir, paste("aa_msa", pair_id, sep = "_"))
+    dir.create(out_aa, showWarnings = FALSE, recursive = TRUE)
     prot1 <- readAAStringSet(filepath = prot1)
     prot2 <- readAAStringSet(filepath = prot2)
     names(prot1) <- sub("\\s.+", "", names(prot1))
@@ -178,7 +181,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                        seq2 = prot2,
                        orthopair_gene = orthopair_gene,
                        type = "aa",
-                       out_dir = out_dir)
+                       out_dir = out_aa)
     aa_out <- do.call("rbind", aa_out)
     aa_out_fn <- file.path(out_dir, "msa_AA_summary.csv")
     write.csv(aa_out, aa_out_fn, row.names = FALSE)
@@ -186,8 +189,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     if(verbose){
         message("Performing pairwise CDS alignments.")
     }
-    out_dir <- file.path(dirname(gff1), paste("cds_msa", pair_id, sep = "_"))
-    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    out_cds <- file.path(out_dir, paste("cds_msa", pair_id, sep = "_"))
+    dir.create(out_cds, showWarnings = FALSE, recursive = TRUE)
     cds1 <- readDNAStringSet(filepath = cds1)
     cds2 <- readDNAStringSet(filepath = cds2)
     names(cds1) <- sub("\\s.+", "", names(cds1))
@@ -199,7 +202,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                         seq2 = cds2,
                         orthopair_gene = orthopair_gene,
                         type = "cds",
-                        out_dir = out_dir)
+                        out_dir = out_cds)
     cds_out <- do.call("rbind", cds_out)
     cds_out_fn <- file.path(out_dir, "msa_CDS_summary.csv")
     write.csv(cds_out, cds_out_fn, row.names = FALSE)
@@ -207,8 +210,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     if(verbose){
         message("Performing pairwise promoter sequence alignments.")
     }
-    out_dir <- file.path(dirname(gff1), paste("promoter_msa", pair_id, sep = "_"))
-    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    out_promoter <- file.path(out_dir, paste("promoter_msa", pair_id, sep = "_"))
+    dir.create(out_promoter, showWarnings = FALSE, recursive = TRUE)
     promoter1 <- readDNAStringSet(filepath = promoter1)
     promoter2 <- readDNAStringSet(filepath = promoter2)
     names(promoter1) <- sub("\\s.+", "", names(promoter1))
@@ -220,7 +223,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                              seq2 = promoter2,
                              orthopair_gene = orthopair_gene,
                              type = "promoter",
-                             out_dir = out_dir)
+                             out_dir = out_promoter)
     promoter_out <- do.call("rbind", promoter_out)
     promoter_out_fn <- file.path(out_dir, "msa_PROMOTER_summary.csv")
     write.csv(promoter_out, promoter_out_fn, row.names = FALSE)
