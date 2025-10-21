@@ -43,8 +43,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
             } else {
                 orthopair_gene <- h5$orthopair_gene[[pair_id]]
             }
-            out_i <- .compareSeqEngine(h5 = h5,
-                                       cds1 = as.character(in_files$cds[genome1_index]),
+            out_i <- .compareSeqEngine(cds1 = as.character(in_files$cds[genome1_index]),
                                        prot1 = as.character(in_files$prot[genome1_index]),
                                        promoter1 = as.character(in_files$promoter[genome1_index]),
                                        genome1 = as.character(in_files$genome[[genome1_index]]),
@@ -71,8 +70,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         promoter2[is.null(promoter2)] <- "null/path"
         query_id <- basename(sub("/input.h5", "", h5$files$query_h5))
         subject_id <- basename(sub("/input.h5", "", h5$files$subject_h5))
-        out <- .compareSeqEngine(h5 = h5,
-                                 cds1 = as.character(h5$files$query_cds),
+        out <- .compareSeqEngine(cds1 = as.character(h5$files$query_cds),
                                  prot1 = as.character(h5$files$query_prot),
                                  promoter1 = promoter1,
                                  genome1 = as.character(h5$files$query_genome),
