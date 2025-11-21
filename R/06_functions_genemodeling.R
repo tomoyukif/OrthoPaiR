@@ -59,7 +59,7 @@ mapProt <- function(in_list,
         omit_genome <- in_list$name[is.na(in_list$genome)]
         if(length(omit_genome) > 0){
             message("Genome sequences are not available for:\n",
-                            paste(omit_genome, collapse = "\n"))
+                    paste(omit_genome, collapse = "\n"))
         }
     }
     
@@ -70,7 +70,7 @@ mapProt <- function(in_list,
         omit_prot <- in_list$name[is.na(in_list$prot)]
         if(length(omit_prot) > 0){
             message("Protein sequences are not available for:\n",
-                            paste(omit_prot, collapse = "\n"))
+                    paste(omit_prot, collapse = "\n"))
         }
     }
     
@@ -487,8 +487,11 @@ mapProt <- function(in_list,
     
     valid_longer_mp_tx_gff <- mp_gff[mp_gff$ID %in% valid_longer_mp_tx]
     valid_longer_mp_tx_gff$Parent <- lapply(valid_longer_mp_tx_locus, c)
+    valid_longer_mp_tx_gff$gene_id <- unlist(valid_longer_mp_tx_gff$Parent)
     mp_gff_element_i <- !mp_gff$type %in% c("gene", "transcript", "mRNA")
     valid_longer_mp_tx_element <- mp_gff[mp_gff_element_i][unlist(mp_gff$Parent[mp_gff_element_i]) %in% valid_longer_mp_tx_gff$ID]
+    hit <- match(unlist(valid_longer_mp_tx_element$Parent), valid_longer_mp_tx_gff$ID)
+    valid_longer_mp_tx_element$gene_id <- valid_longer_mp_tx_gff$gene_id[hit]
     valid_longer_mp_gff <- suppressWarnings(c(valid_longer_mp_tx_gff, valid_longer_mp_tx_element))
     return(valid_longer_mp_gff)
 }

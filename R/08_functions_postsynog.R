@@ -819,22 +819,26 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
     gene_list$assign <- FALSE
     genomes <- sort(unique(gene_list$genome))
     n_genomes <- length(genomes)
+    v <- vertex_attr(graph)
+    v$name <- paste(v$genome, v$name, sep = "&")
+    vertex_attr(graph) <- v
     ego_list <- ego(graph = graph, order = n_genomes)
     ego_list <- lapply(ego_list, names)
+    ego_list_genomes <- lapply(ego_list, sub, pattern = "&.+", replace = "")
+    ego_list_genomes_len <- sapply(ego_list_genomes, length)
+    ego_list_genomes_unique <- lapply(ego_list_genomes, unique)
+    ego_list_genomes_unique_len <- sapply(ego_list_genomes_unique, length)
+    all_genomes <- ego_list_genomes_unique_len == n_genomes
+    solo_entries <- ego_list_genomes_len == n_genomes
+    is_full_pair <- all_genomes & solo_entries
+    valid_group1 <- ego_list[is_full_pair]
+    valid_group1 <- lapply(valid_group1, sort)
+    valid_group1 <- do.call(rbind, valid_group1)
+    valid_group1_dup <- duplicated(valid_group1)
+    valid_group1 <- valid_group1[!valid_group1_dup, ]
     
-    ego_list_genomes <- lapply(ego_list, sub, pattern = "_.+", replace = "")
-    ego_list_genomes_genome_hit <- sapply(ego_list_genomes, function(x) {
-        return(all(genomes %in% x))
-    })
-    n_ego_list_genomes <- sapply(ego_list_genomes, length) == n_genomes
-    valid_group1 <- ego_list[ego_list_genomes_genome_hit & n_ego_list_genomes]
-    valid_group1 <- unlist(valid_group1)
-    valid_group1 <- matrix(valid_group1, nrow = n_genomes)
-    valid_group1 <- apply(valid_group1, 2, sort)
-    valid_group1 <- unique(t(valid_group1))
-    
-    rest_list <- ego_list[!(ego_list_genomes_genome_hit & n_ego_list_genomes)]
-    rest_list_genomes <- lapply(rest_list, sub, pattern = "_.+", replace = "")
+    rest_list <- ego_list[!is_full_pair]
+    rest_list_genomes <- lapply(rest_list, sub, pattern = "&.+", replace = "")
     rest_list_genomes <- lapply(rest_list_genomes, factor, levels = genomes)
     rest_list <- mapply(split, x = rest_list, f = rest_list_genomes, SIMPLIFY = FALSE)
     rest_list <- lapply(rest_list, function(x){
@@ -853,8 +857,12 @@ graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
     valid_group2_sog <- unlist(valid_group2_sog)[!valid_group2_dup] + nrow(valid_group1)
     out <- rbind(data.frame(valid_group1, SOG = seq_len(nrow(valid_group1))),
                  data.frame(valid_group2, SOG = valid_group2_sog))
-    colnames(out)[seq_len(n_genomes)] <- genomes
-    
+    out_label <- apply(out[, -ncol(out)], 2, sub, pattern = "&.+", replace = "")
+    out_label <- apply(out_label, 2, unique)
+    out_label <- apply(out_label, 2, na.omit)
+    out_values <- apply(out[, -ncol(out)], 2, sub, pattern = ".+&", replace = "")
+    out[, -ncol(out)] <- out_values
+    colnames(out)[-ncol(out)] <- out_label
     write.csv(out, file = orthopair_fn, row.names = FALSE)
     invisible(orthopair_fn)
 }

@@ -1,3 +1,6 @@
+Changes in version 0.5.5 (2025-11-21)
++ Bug fix in mapProt() and graph2df()
+
 Changes in version 0.5.5 (2025-10-21)
 + Update the handling of input files
 + Update the output directory of compareOrthoSeq().
