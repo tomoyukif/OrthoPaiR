@@ -197,9 +197,12 @@ mapProt <- function(in_list,
     original_tx_id <- names(subject_cds)
     for(i in seq_along(mp_files)){
         query_genome <- in_list$name %in% names(mp_files)[i]
+        base_fn <- basename(in_list$gff[query_genome])
+        prefix <- regmatches(base_fn, regexec("(.*)_mapto_(.*).gff", base_fn))[[1]][-1]
+        prefix <- paste(prefix, collapse = "_")
         query_gff <- .getGFFlist(gff_fn = in_list$gff[query_genome])
         mp_gff <- .getGFFlist(gff_fn = paste0(mp_files[i], ".gff"))
-        mp_gff <- .setIDforElements(gff = mp_gff)
+        mp_gff <- .setIDforElements(gff = mp_gff, prefix = prefix)
         mp_cds <- .getCDSlist(cds_fn = paste0(mp_files[i], ".cds"))
         
         mp_gff <- .filterIdenticalMiniprotTx(original_gff = subject_gff,
@@ -229,11 +232,12 @@ mapProt <- function(in_list,
     return(list(out_gff = subject_gff, added_tx_id = added_tx_id))
 }
 
-.setIDforElements <- function(gff){
+.setIDforElements <- function(gff, prefix){
     element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
     gff$ID[element_i] <- paste(unlist(gff$Parent[element_i]),
                                as.character(gff$type[element_i]),
                                sep = ":")
+    gff$ID <- paste0(prefix, "_", gff$ID)
     gff$Name <- gff$ID
     return(gff)
 }

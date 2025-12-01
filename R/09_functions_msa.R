@@ -185,7 +185,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                        type = "aa",
                        out_dir = out_aa)
     aa_out <- do.call("rbind", aa_out)
-    aa_out_fn <- file.path(out_dir, "msa_AA_summary.csv")
+    aa_out_fn <- file.path(out_dir, paste0("aa_msa_summary_", pair_id, ".csv"))
     write.csv(aa_out, aa_out_fn, row.names = FALSE)
     
     if(verbose){
@@ -206,7 +206,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                         type = "cds",
                         out_dir = out_cds)
     cds_out <- do.call("rbind", cds_out)
-    cds_out_fn <- file.path(out_dir, "msa_CDS_summary.csv")
+    cds_out_fn <- file.path(out_dir, paste0("cds_msa_summary_", pair_id, ".csv"))
     write.csv(cds_out, cds_out_fn, row.names = FALSE)
     
     if(verbose){
@@ -227,7 +227,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
                              type = "promoter",
                              out_dir = out_promoter)
     promoter_out <- do.call("rbind", promoter_out)
-    promoter_out_fn <- file.path(out_dir, "msa_PROMOTER_summary.csv")
+    promoter_out_fn <- file.path(out_dir, paste0("promoter_msa_summary_", pair_id, ".csv"))
     write.csv(promoter_out, promoter_out_fn, row.names = FALSE)
     
     out <- c(aa = aa_out_fn, cds = cds_out_fn, promoter = promoter_out_fn)
