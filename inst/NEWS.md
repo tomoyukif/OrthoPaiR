@@ -1,4 +1,4 @@
-Changes in version 0.5.8 (2025-12-01)
+Changes in version 0.5.9 (2025-12-01)
 + Bug fix in .getRBH()
 
 Changes in version 0.5.5 (2025-11-21)

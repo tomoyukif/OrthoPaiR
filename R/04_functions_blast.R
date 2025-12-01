@@ -240,6 +240,7 @@ rbh <- function(object,
 }
 
 # Compute RBH using best-hit prefiltering to reduce join size drastically
+#' @importFrom dplyr inner_join
 .getRBH <- function(df1, df2){
     if(all(is.na(df1[1])) || all(is.na(df2[1]))){
         return(NA)
