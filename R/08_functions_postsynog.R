@@ -190,7 +190,7 @@ reorgOrthopiars <- function(hdf5_fn,
     }
     
     if(reorg){
-        orthopair <- h5$orthopair_gene
+        orthopair <- h5$orthopair[[1]]
         if(i_target_data == "query"){
             gff <- .getMiniprotGFF(gff = gff,
                                    gene = orthopair$query_gene,
@@ -506,7 +506,7 @@ reorgOrthopiars <- function(hdf5_fn,
     for(i in genomewise_list$comb_id){
         h5 <- H5Fopen(name = hdf5_fn[i])
         on.exit(H5Fclose(h5))
-        orthopair_gene <- h5$orthopair_gene
+        orthopair_gene <- h5$orthopair[[1]]
         orthopair_gene <- .renameMPorthopair(df = orthopair_gene, genome = genomewise_list[i, ])
         
         if(!is.null(id2id_list)){
@@ -663,7 +663,7 @@ reorgOrthopiars <- function(hdf5_fn,
     hdf5_path <- file.path(out_dir, out_fn)
     hdf5_fn <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
     
-    .h5creategroup(hdf5_fn, "orthopair_gene")
+    .h5creategroup(hdf5_fn, "orthopair")
     for(i in seq_along(orthopair_list$genomewise_list$comb_id)){
         if(orthopair_list$genomewise_list$target[i] == "query"){
             data_name <- paste(orthopair_list$genomewise_list$target_genome[i],
@@ -677,7 +677,7 @@ reorgOrthopiars <- function(hdf5_fn,
         }
         .h5overwrite(obj = orthopair_list$gene[[i]],
                      file = hdf5_fn,
-                     name = paste0("orthopair_gene/", data_name))
+                     name = paste0("orthopair/", data_name))
     }
     
     orphan_list <- .orgOrphan(hdf5_fn = hdf5_fn, 
@@ -777,11 +777,11 @@ makeOrthoGraph <- function(hdf5_fn){
         stop("This function onyl accepts an output hdf5 file created",
              " by the reorgOrthopiars() function.")
     }
-    n_files <- length(h5$orthopair_gene)
-    orphan_gene <- unlist(h5$orphan_gene)
+    n_files <- length(h5$orthopair)
+    orphan_gene <- unlist(h5$orphan)
     gene_list <- h5$gene_list
     graph <- make_empty_graph(n = 0, directed = FALSE)
-    orthopair_gene <- h5$orthopair_gene
+    orthopair_gene <- h5$orthopair
     check_orthopair <- sapply(orthopair_gene, function(x){x[1, 1] == "NA"})
     orthopair_gene <- orthopair_gene[!check_orthopair]
     orthopair_gene <- lapply(orthopair_gene, subset,

@@ -23,6 +23,8 @@ makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
     
     out$resume <- .checkResumePoint(hdf5_path = out$h5)
     
+    .h5overwrite(obj = input_files$pair_id,
+                 file = out$h5, "pair_id")
     .h5creategroup(out$h5,"files")
     .h5overwrite(obj = input_files$query_genome,
                  file = out$h5, "files/query_genome")
@@ -79,7 +81,7 @@ makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
 #'
 #' @export
 #'
-summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
+summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
         
@@ -88,7 +90,7 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     }
     on.exit(H5Fclose(h5))
     
-    if(!H5Lexists(h5, "orthopair_gene")){
+    if(!H5Lexists(h5, "orthopair")){
         stop("No genewise ortholog info.")
     }
     
@@ -99,13 +101,13 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
              call. = FALSE)
     }
     
-    orthopair <- h5$orthopair_gene
+    orthopair <- h5$orthopair[[1]]
     query <- subset(orthopair, subset = !duplicated(orthopair$query_gene))
     query_summary <- table(factor(query$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
     subject <- subset(orthopair, subset = !duplicated(orthopair$subject_gene))
     subject_summary <- table(factor(subject$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
-    query_orphan <- length(h5$orphan_query)
-    subject_orphan <- length(h5$orphan_subject)
+    query_orphan <- length(h5$orphan[[1]])
+    subject_orphan <- length(h5$orphan[[2]])
     query_total <- sum(query_summary) + query_orphan
     subject_total <- sum(subject_summary) + subject_orphan
     files <- h5$files
@@ -144,7 +146,10 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
 #' @return A dataframe containing ortholog pairs.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
-getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
+getOrthoPair <- function(object = NULL,
+                         hdf5_fn = NULL, 
+                         score = FALSE,
+                         loc = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
         
@@ -153,41 +158,45 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
     }
     on.exit(H5Fclose(h5))
     
-    check <- h5$data_type == "reorg_orthopair"
-    
-    if(gene){
-        if(!H5Lexists(h5, "orthopair_gene")){
-            stop("Run syntenicOrtho() to obtain genewise ortholog info.")
-        }
-        if(check){
-            out <- NULL
-            name <- names(h5$orthopair_gene)
-            for(i in seq_along(name)){
-                out <- c(out, list(h5$orthopair_gene[[i]]))
-            }
-            names(out) <- name
-            
-        } else {
-            out <- h5$orthopair_gene
-        }
-        
-    } else {
-        if(!H5Lexists(h5, "orthopair_tx")){
-            stop("Run syntenicOrtho() to obtain genewise ortholog info.")
-        }
-        
-        if(check){
-            out <- NULL
-            name <- names(h5$orthopair_tx)
-            for(i in seq_along(name)){
-                out <- c(out, list(h5$orthopair_tx[[i]]))
-            }
-            names(out) <- name
-            
-        } else {
-            out <- h5$orthopair_tx
-        }
+    if(!H5Lexists(h5, "orthopair")){
+        stop("Run syntenicOrtho() to obtain genewise ortholog info.")
     }
+    
+    target_col <- c("original_query_gene", "original_subject_gene", 
+                    "query_gene", "query_tx", 
+                    "subject_gene", "subject_tx", 
+                    "query_synteny_block", "subject_synteny_block",
+                    "class", "SOG", 
+                    "query_collapse", "subject_collapse")
+    if(score){
+        target_col <- c(target_col, 
+                        "pident", "qcovs_q2s", "qcovs_s2q", 
+                        "ci_q2s", "ci_s2q", "mutual_ci")
+    }
+    
+    if(loc){
+        target_col <- c(target_col, 
+                        "query_chr", "query_start",
+                        "query_end", "query_strand",
+                        "subject_chr", "subject_start",
+                        "subject_end", "subject_strand")
+    }
+    
+    out <- NULL
+    name <- names(h5$orthopair)
+    for(i in seq_along(name)){
+        col_names <- names(h5$orthopair[[i]])
+        out_i <- h5$orthopair[[i]][, target_col]
+        
+        if(all(out_i$query_collapse == 0)){
+            out_i$query_collapse <- NA
+        }
+        if(all(out_i$subject_collapse == 0)){
+            out_i$subject_collapse <- NA
+        }
+        out <- c(out, list(out_i))
+    }
+    names(out) <- name
     return(out)
 }
 
@@ -204,7 +213,7 @@ getOrthoPair <- function(object = NULL, hdf5_fn = NULL, gene = FALSE){
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
 #'
-getOrphan <- function(object = NULL, hdf5_fn = NULL){
+getOrphan <- function(object = NULL, hdf5_fn = NULL, loc = FALSE){
     if(is.null(object)){
         h5 <- H5Fopen(hdf5_fn)
         
@@ -218,11 +227,11 @@ getOrphan <- function(object = NULL, hdf5_fn = NULL){
         out <- h5$orphan_gene
         
     } else {
-        if(!H5Lexists(h5, "orphan_query")){
+        if(!H5Lexists(h5, "orphan")){
             stop("Run geneOrtho to obtain genewise ortholog info.")
         }
-        out <- list(query = unique(h5$orphan_query),
-                    subject = unique(h5$orphan_subject))
+        out <- list(query = unique(h5$orphan[[1]]),
+                    subject = unique(h5$orphan[[2]]))
     }
     return(out)
 }

@@ -12,6 +12,7 @@ syntenicOrtho <- function(object){
     
     # Open the HDF5 file
     h5 <- H5Fopen(object$h5)
+    pair_id <- h5$pair_id
     # Ensure the HDF5 file is closed when the function exits
     on.exit(H5Fclose(h5))
     
@@ -91,9 +92,13 @@ syntenicOrtho <- function(object){
     }
     
     orphan <- .getOrphan(orthopair = orthopair, g2g_graph = g2g_graph)
-    .h5overwrite(obj = orthopair, file = object$h5, "orthopair_gene")
-    .h5overwrite(obj = orphan$query, file = object$h5, "orphan_query")
-    .h5overwrite(obj = orphan$subject, file = object$h5, "orphan_subject")
+    .h5creategroup(file = object$h5, name = "orthopair")
+    .h5creategroup(file = object$h5, name = "orphan")
+    .h5overwrite(obj = orthopair, file = object$h5, paste0("orthopair/", pair_id))
+    query_id <- sub("_.*", "", pair_id)
+    subject_id <- sub(".*_", "", pair_id)
+    .h5overwrite(obj = orphan$query, file = object$h5, paste0("orphan/", query_id))
+    .h5overwrite(obj = orphan$subject, file = object$h5, paste0("orphan/", subject_id))
     
     .h5overwrite(obj = "orthopair",
                  file = object$h5,
@@ -124,12 +129,12 @@ syntenicOrtho <- function(object){
     hit <- match(orthopair$query_gene, id_map$old)
     query_collapse <- id_map$new[hit]
     if(length(query_collapse) == 0){
-        query_collapse <- NA
+        query_collapse <- 0
     }
     hit <- match(orthopair$subject_gene, id_map$old)
     subject_collapse <- id_map$new[hit]
     if(length(subject_collapse) == 0){
-        subject_collapse <- NA
+        subject_collapse <- 0
     }
     out <- list(query_collapse = query_collapse, subject_collapse = subject_collapse)
     return(out)
@@ -951,6 +956,11 @@ syntenicOrtho <- function(object){
 .reformatOrthoPair <- function(orthopair, g2g_graph){
     q_tx_hit <- match(orthopair$query_tx, g2g_graph$query_gff$tx_index)
     orthopair$query_tx <- g2g_graph$query_gff$Parent[q_tx_hit]
+    orthopair$query_start <- g2g_graph$query_gff$start[q_tx_hit]
+    orthopair$query_end <- g2g_graph$query_gff$end[q_tx_hit]
+    orthopair$query_strand <- g2g_graph$query_gff$strand[q_tx_hit]
+    orthopair$query_strand[orthopair$query_strand == "1"] <- "+"
+    orthopair$query_strand[orthopair$query_strand == "2"] <- "-"
     q_split <- which(orthopair$query_gene < 0)
     orthopair$query_gene <- g2g_graph$query_gff$gene_id[q_tx_hit]
     orthopair$original_query_gene <- orthopair$query_gene
@@ -958,17 +968,20 @@ syntenicOrtho <- function(object){
     
     s_tx_hit <- match(orthopair$subject_tx, g2g_graph$subject_gff$tx_index)
     orthopair$subject_tx <- g2g_graph$subject_gff$Parent[s_tx_hit]
+    orthopair$subject_start <- g2g_graph$subject_gff$start[s_tx_hit]
+    orthopair$subject_end <- g2g_graph$subject_gff$end[s_tx_hit]
+    orthopair$subject_strand <- g2g_graph$subject_gff$strand[s_tx_hit]
+    orthopair$subject_strand[orthopair$subject_strand == "1"] <- "+"
+    orthopair$subject_strand[orthopair$subject_strand == "2"] <- "-"
     s_split <- which(orthopair$subject_gene < 0)
     orthopair$subject_gene <- g2g_graph$subject_gff$gene_id[s_tx_hit]
     orthopair$original_subject_gene <- orthopair$subject_gene
     orthopair$subject_gene[s_split] <- paste0(orthopair$subject_tx[s_split], ":split")
     
-    orthopair <- subset(orthopair, 
-                        select = c(original_query_gene, 
-                                   original_subject_gene,
-                                   query_gene:subject_chr,
+    orthopair <- subset(orthopair,
+                        select = c(query_gene:subject_chr,
                                    pident:mutual_ci,
-                                   is_anchor_pair:SOG))
+                                   query_synteny_block:original_subject_gene))
     orthopair$query_synteny_block <- factor(orthopair$query_synteny_block)
     orthopair$subject_synteny_block <- factor(orthopair$subject_synteny_block)
     orthopair$SOG <- factor(orthopair$SOG)

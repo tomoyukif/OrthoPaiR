@@ -317,7 +317,8 @@ orthopair <- function(in_list,
         # input_dir <- file.path(working_dir, "input", prefix)
         # dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
         
-        fn_list <- list(query_genome = in_list$genome[combs[1, i]],
+        fn_list <- list(pair_id = prefix,
+                        query_genome = in_list$genome[combs[1, i]],
                         subject_genome = in_list$genome[combs[2, i]],
                         query_gff = in_list$gff[combs[1, i]],
                         subject_gff = in_list$gff[combs[2, i]],
