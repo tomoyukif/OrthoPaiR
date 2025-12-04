@@ -1,178 +1,384 @@
-#' Riparian plot of syntenic blocks
-#'
-#' This function draws a \"riparian\" style plot to visualize syntenic blocks
-#' between genomes using the orthologous pairs table produced by OrthoPaiR
-#' (e.g. `orthopair.csv` created by `graph2df()` / `orthopair()`).
-#'
-#' The basic use case is a single pair of genomes, where the first genome
-#' (query) is shown on the top row and the second genome (subject) on the
-#' second row. Syntenic blocks are defined by the integer columns
-#' `query_synteny_block` and `subject_synteny_block`; for each pair of blocks
-#' with the same block IDs, a ribbon is drawn connecting the corresponding
-#' regions between the two genomes.
-#'
-#' You can optionally filter out small blocks by specifying a minimum number
-#' of genes per block via the `min_block_genes` argument (default: 10).
-#'
-#' For more than two genomes, you can pass a named list of ortholog tables in
-#' `orthopair_list`. Each element should be a data.frame for one adjacent pair
-#' of genomes (e.g. NB–OL, OL–WK21, ...), having the same columns as
-#' `orthopair`. The pairs are stacked vertically in the order of the list,
-#' so additional genomes appear below the first two in the plot.
-#'
-#' @param orthopair A data.frame of ortholog pairs for a single query–subject
-#'   genome pair. It must contain at least the following columns:
-#'   `query_gene`, `subject_gene`, `query_synteny_block`,
-#'   `subject_synteny_block`. If the chromosome columns `query_chr` and
-#'   `subject_chr` are missing, they are inferred from the GFF files via the
-#'   `query_gff` and `subject_gff` arguments.
-#' @param orthopair_list Optional named list of ortholog tables for more than
-#'   two genomes. If supplied, `orthopair` can be omitted. Each element must
-#'   have the same required columns as `orthopair`. Names are used for
-#'   labelling genome rows; if a name has the form \"A_B\", the top row is
-#'   labelled \"A\" and the bottom row \"B\".
-#' @param query_gff Path to a query genome GFF file used to obtain gene
-#'   locations when `orthopair` does not already contain `query_chr`.
-#' @param subject_gff Path to a subject genome GFF file used to obtain gene
-#'   locations when `orthopair` does not already contain `subject_chr`.
-#' @param min_block_genes Integer, minimum number of genes per block to retain
-#'   (on both query and subject sides). Default is 10.
-#' @param genome_names Optional character vector of labels for genome rows.
-#'   For a single pair this must be length 2 (query, subject). For a list of
-#'   pairs it must be length `2 * length(orthopair_list)`. If `NULL`, labels
-#'   are derived from `orthopair_list` names or set to generic values.
-#' @return A `ggplot` object (the plot is also printed as a side effect).
-#' @export
-#'
-#' @importFrom ggplot2 ggplot geom_segment geom_rect aes theme_void theme
-#'   scale_y_continuous scale_fill_manual guides guide_legend
-plot_riparian <- function(object = NULL, hdf5_fn = NULL, min_block_genes = 10, genome_order = NULL) {
-    if(is.null(object)){
-        op <- getOrthoPair(hdf5_fn = hdf5_fn, score = FALSE, loc = TRUE)
-        
-    } else {
-        op <- getOrthoPair(object = object, score = FALSE, loc = TRUE)
+##' @title Riparian-style plot from orthopair HDF5 data
+##' @description
+##' `plot_riparian` draws a riparian / braided-river style plot directly
+##' from an HDF5 orthology file or an in-memory orthology object that can
+##' be passed to `getOrthoPair()`.
+##'
+##' Internally the function calls `getOrthoPair(score = FALSE, loc = TRUE)`
+##' to obtain a list of data.frames (`op`) and then builds the
+##' plot from the synteny block information, similar to `devel_script.R`.
+##'
+##' Each element of the resulting `op` should contain at least
+##' the columns defined in the `target_col` object from `devel_script.R`,
+##' in particular:
+##'   - `query_chr`, `query_synteny_block`
+##'   - `subject_chr`, `subject_synteny_block`
+##'
+##' The function aggregates genes into synteny blocks on each side,
+##' arranges blocks along the x–axis, and draws curved ribbons connecting
+##' matched query/subject blocks between two genome rows.
+##'
+##' @param hdf5_fn character scalar, path to the HDF5 file used by
+##'   `getOrthoPair()`. Exactly one of `hdf5_fn` or `object` must be non-NULL.
+##' @param object optional in-memory object accepted by `getOrthoPair()`
+##'   (see that function for details). Exactly one of `hdf5_fn` or `object`
+##'   must be non-NULL.
+##' @param min_block_genes integer, minimum number of unique genes that a
+##'   synteny block must contain on *both* query and subject sides to be kept.
+##' @param genome_names optional character vector of genome row labels.
+##'   If `NULL`, the function tries to derive names from `names(op)`
+##'   assuming patterns like `"GENOME1_GENOME2"`.
+##' @param ribbon_alpha numeric (0–1), transparency of ribbons.
+##' @param ribbon_width numeric, half–width of each block in x units.
+##' @param y_gap numeric, vertical gap between the two genomes of a pair.
+##' @param curve_npts integer, number of points used to generate the cosine
+##'   curve in `calc_curvePolygon`.
+##' @param curve_keepat integer, thinning parameter passed to
+##'   `calc_curvePolygon` (controls how many points are retained).
+##' @param chr_lwd numeric, line width for chromosome segments.
+##' @param chr_palette function that takes an integer `n` and returns `n`
+##'   colors for chromosomes.
+##' @param ribbon_palette function that takes an integer `n` and returns `n`
+##'   colors for block pairs.
+##'
+##' @return A `ggplot` object.
+##'
+##' @details
+##' This function is meant as a light-weight alternative to the full
+##' GENESPACE `plot_riparian` pipeline, for cases where orthology and
+##' synteny are already summarised in an HDF5 file that can be read
+##' with `getOrthoPair()`. It does **not** require GENESPACE block files
+##' and instead works directly from the query/subject synteny block IDs.
+##'
+##' The function expects that each element of `op` corresponds
+##' to a pair of genomes (query vs subject). For each pair, two horizontal
+##' rows are drawn (query on top, subject below), and curved ribbons are
+##' plotted between matching synteny blocks.
+##'
+##' @seealso `getOrthoPair`, `calc_curvePolygon`, `round_rect`
+##'
+##' @import ggplot2
+##' @export
+plot_riparian <- function(hdf5_fn = NULL,
+                          object = NULL,
+                          min_block_genes = 5L,
+                          genome_names = NULL,
+                          ribbon_alpha = 0.4,
+                          ribbon_width = 0.45,
+                          y_gap = 1,
+                          curve_npts = 250L,
+                          curve_keepat = round(curve_npts / 20),
+                          chr_lwd = 2,
+                          chr_palette = function(n) grDevices::hcl.colors(n, "Dark 3"),
+                          ribbon_palette = function(n) grDevices::hcl.colors(n, "Zissou 1")) {
+
+  if (is.null(hdf5_fn) && is.null(object)) {
+    stop("Provide either `hdf5_fn` (HDF5 path) or `object`, but not both.")
+  }
+  if (!is.null(hdf5_fn) && !is.null(object)) {
+    stop("Provide only one of `hdf5_fn` (HDF5 path) or `object`, not both.")
+  }
+
+  if (!is.null(hdf5_fn)) {
+    op <- getOrthoPair(hdf5_fn = hdf5_fn, score = FALSE, loc = TRUE)
+  } else {
+    op <- getOrthoPair(object = object, score = FALSE, loc = TRUE)
+  }
+
+  if (!is.list(op) || length(op) == 0L) {
+    stop("`op` must be a non-empty list of data.frames.")
+  }
+
+  n_pairs <- length(op)
+
+  all_chrom <- list()
+  all_ribbons <- list()
+  y_levels <- c()
+  row_labels <- c()
+
+  for (i in seq_along(op)) {
+    op_i <- op[[i]]
+
+    if (!is.data.frame(op_i)) {
+      warning("Element ", i, " of `op` is not a data.frame; skipping.")
+      next
     }
-    
-    # Prepare data for plotting
-    all_chrom <- list()
-    all_ribbons <- list()
-    y_levels <- c()
-    row_labels <- c()
-    
-    for (i in seq_len(n_pairs)) {
-        # Basic sanity check
-        req_cols <- c("query_chr", "subject_chr",
-                      "query_synteny_block", "subject_synteny_block",
-                      "query_gene", "subject_gene")
-        if (!all(req_cols %in% names(df))) {
-            stop("Element ", i,
-                 " of 'orthopair_list' is missing required columns.", call. = FALSE)
+
+    needed_cols <- c(
+      "query_gene", "subject_gene",
+      "query_chr", "query_synteny_block",
+      "subject_chr", "subject_synteny_block"
+    )
+    missing_cols <- setdiff(needed_cols, colnames(op_i))
+    if (length(missing_cols) > 0L) {
+      warning("Element ", i, " is missing required columns: ",
+              paste(missing_cols, collapse = ", "), "; skipping.")
+      next
+    }
+
+    # Count genes per block on each side
+    q_block_sizes <- tapply(op_i$query_gene,
+                            op_i$query_synteny_block,
+                            function(x) length(unique(x)))
+    s_block_sizes <- tapply(op_i$subject_gene,
+                            op_i$subject_synteny_block,
+                            function(x) length(unique(x)))
+
+    # For each row, require both blocks >= threshold
+    q_ok <- q_block_sizes[as.character(op_i$query_synteny_block)] >= min_block_genes
+    s_ok <- s_block_sizes[as.character(op_i$subject_synteny_block)] >= min_block_genes
+    keep <- q_ok & s_ok
+    op_i <- op_i[keep, , drop = FALSE]
+    if (nrow(op_i) == 0L) {
+      next
+    }
+
+    # Define vertical positions for this pair (top row higher y)
+    # Pairs are stacked from top (first) to bottom (last)
+    y_query   <- (n_pairs - i) * (y_gap + 1)
+    y_subject <- y_query - y_gap
+
+    # Summarize unique blocks for positioning on x-axis
+    q_blocks <- unique(op_i[, c("query_chr", "query_synteny_block")])
+    q_blocks <- q_blocks[order(q_blocks$query_chr, q_blocks$query_synteny_block), ]
+    q_blocks$x_idx <- seq_len(nrow(q_blocks))
+
+    s_blocks <- unique(op_i[, c("subject_chr", "subject_synteny_block")])
+    s_blocks <- s_blocks[order(s_blocks$subject_chr, s_blocks$subject_synteny_block), ]
+    s_blocks$x_idx <- seq_len(nrow(s_blocks))
+
+    # Map block ID to x index
+    q_key <- paste(q_blocks$query_chr, q_blocks$query_synteny_block, sep = "::")
+    s_key <- paste(s_blocks$subject_chr, s_blocks$subject_synteny_block, sep = "::")
+    op_i$q_key <- paste(op_i$query_chr, op_i$query_synteny_block, sep = "::")
+    op_i$s_key <- paste(op_i$subject_chr, op_i$subject_synteny_block, sep = "::")
+    q_map <- q_blocks$x_idx
+    names(q_map) <- q_key
+    s_map <- s_blocks$x_idx
+    names(s_map) <- s_key
+    op_i$q_x <- as.numeric(q_map[op_i$q_key])
+    op_i$s_x <- as.numeric(s_map[op_i$s_key])
+
+    # Summarize one record per block pair
+    pair_summary <- unique(op_i[, c("query_chr", "subject_chr",
+                                    "query_synteny_block", "subject_synteny_block",
+                                    "q_x", "s_x")])
+    pair_summary$pair_id <- seq_len(nrow(pair_summary))
+
+    # Build chromosome segments for this pair
+    # query side
+    q_chr_op <- stats::aggregate(x_idx ~ query_chr, data = q_blocks, FUN = range)
+    q_chr_out <- data.frame(
+      chr   = q_chr_op$query_chr,
+      xmin  = vapply(q_chr_op$x_idx, function(x) min(x) - 0.5, numeric(1)),
+      xmax  = vapply(q_chr_op$x_idx, function(x) max(x) + 0.5, numeric(1)),
+      y     = y_query,
+      side  = "query",
+      pair  = i,
+      stringsAsFactors = FALSE
+    )
+    # subject side
+    s_chr_op <- stats::aggregate(x_idx ~ subject_chr, data = s_blocks, FUN = range)
+    s_chr_out <- data.frame(
+      chr   = s_chr_op$subject_chr,
+      xmin  = vapply(s_chr_op$x_idx, function(x) min(x) - 0.5, numeric(1)),
+      xmax  = vapply(s_chr_op$x_idx, function(x) max(x) + 0.5, numeric(1)),
+      y     = y_subject,
+      side  = "subject",
+      pair  = i,
+      stringsAsFactors = FALSE
+    )
+    all_chrom[[length(all_chrom) + 1L]] <- rbind(q_chr_out, s_chr_out)
+
+    # Build ribbons as curved polygons for each block pair
+    ribbon_list_i <- vector("list", nrow(pair_summary))
+    for (j in seq_len(nrow(pair_summary))) {
+      ps <- pair_summary[j, ]
+
+      start1 <- ps$q_x - ribbon_width
+      end1   <- ps$q_x + ribbon_width
+      start2 <- ps$s_x - ribbon_width
+      end2   <- ps$s_x + ribbon_width
+
+      poly <- calc_curvePolygon(
+        start1 = start1,
+        end1   = end1,
+        start2 = start2,
+        end2   = end2,
+        y1     = y_query - 0.1,
+        y2     = y_subject + 0.1,
+        npts   = curve_npts,
+        keepat = curve_keepat
+      )
+
+      poly$pair       <- i
+      poly$block_pair <- paste(ps$query_synteny_block,
+                               ps$subject_synteny_block,
+                               sep = "->")
+      poly$poly_id    <- paste0("pair", i, "_", poly$block_pair, "_", j)
+
+      ribbon_list_i[[j]] <- poly
+    }
+
+    ribbon_op <- do.call(rbind, ribbon_list_i)
+    all_ribbons[[length(all_ribbons) + 1L]] <- ribbon_op
+
+    # Row labels
+    if (is.null(genome_names)) {
+      # Try to derive from list names like "NB_OL"
+      nm <- if (!is.null(names(op))) names(op)[i] else ""
+      if (!is.null(nm) && !is.na(nm) && nzchar(nm)) {
+        sp <- strsplit(nm, "_")[[1L]]
+        if (length(sp) >= 2L) {
+          row_labels <- c(row_labels, sp[1L], sp[2L])
+        } else {
+          row_labels <- c(row_labels,
+                          paste0("pair", i, "_query"),
+                          paste0("pair", i, "_subject"))
         }
-        # Remove NA blocks
-        df <- df[!is.na(df$query_synteny_block) &
-                     !is.na(df$subject_synteny_block), ]
-        if (nrow(df) == 0L) next
+      } else {
+        row_labels <- c(row_labels,
+                        paste0("pair", i, "_query"),
+                        paste0("pair", i, "_subject"))
+      }
+    }
 
-        # Count genes per block on each side
-        q_block_sizes <- tapply(df$query_gene,
-                                df$query_synteny_block,
-                                function(x) length(unique(x)))
-        s_block_sizes <- tapply(df$subject_gene,
-                                df$subject_synteny_block,
-                                function(x) length(unique(x)))
-        # For each row, require both blocks >= threshold
-        q_ok <- q_block_sizes[as.character(df$query_synteny_block)] >= min_block_genes
-        s_ok <- s_block_sizes[as.character(df$subject_synteny_block)] >= min_block_genes
-        keep <- q_ok & s_ok
-        df <- df[keep, ]
-        if (nrow(df) == 0L) next
+    y_levels <- c(y_levels, y_query, y_subject)
+  }
 
-        # Define vertical positions for this pair (top row higher y)
-        y_query   <- (n_pairs - i) * 2 + 2
-        y_subject <- y_query - 1
+  if (length(all_ribbons) == 0L) {
+    stop("No syntenic blocks left after filtering; try lowering 'min_block_genes'.",
+         call. = FALSE)
+  }
 
-        # Summarize unique blocks for positioning on x-axis
-        q_blocks <- unique(df[, c("query_chr", "query_synteny_block")])
-        q_blocks <- q_blocks[order(q_blocks$query_chr, q_blocks$query_synteny_block), ]
-        q_blocks$x_idx <- seq_len(nrow(q_blocks))
+  chrom_op <- do.call(rbind, all_chrom)
+  ribbon_op <- do.call(rbind, all_ribbons)
 
-        s_blocks <- unique(df[, c("subject_chr", "subject_synteny_block")])
-        s_blocks <- s_blocks[order(s_blocks$subject_chr, s_blocks$subject_synteny_block), ]
-        s_blocks$x_idx <- seq_len(nrow(s_blocks))
+  # Final genome labels
+  if (!is.null(genome_names)) {
+    if (length(genome_names) != length(y_levels)) {
+      stop("Length of 'genome_names' (", length(genome_names),
+           ") does not match number of genome rows (", length(y_levels), ").",
+           call. = FALSE)
+    }
+    labels <- genome_names
+  } else {
+    labels <- row_labels
+  }
 
-        # Map block ID to x index
-        q_key <- paste(q_blocks$query_chr, q_blocks$query_synteny_block, sep = "::")
-        s_key <- paste(s_blocks$subject_chr, s_blocks$subject_synteny_block, sep = "::")
-        df$q_key <- paste(df$query_chr, df$query_synteny_block, sep = "::")
-        df$s_key <- paste(df$subject_chr, df$subject_synteny_block, sep = "::")
-        q_map <- q_blocks$x_idx
-        names(q_map) <- q_key
-        s_map <- s_blocks$x_idx
-        names(s_map) <- s_key
-        df$q_x <- as.numeric(q_map[df$q_key])
-        df$s_x <- as.numeric(s_map[df$s_key])
+  # Build palettes
+  chr_levels <- sort(unique(chrom_op$chr))
+  chr_cols <- chr_palette(length(chr_levels))
+  names(chr_cols) <- chr_levels
 
-        # Summarize one record per block pair
-        pair_summary <- unique(df[, c("query_chr", "subject_chr",
-                                      "query_synteny_block", "subject_synteny_block",
-                                      "q_x", "s_x")])
-        pair_summary$pair_id <- seq_len(nrow(pair_summary))
+  bp_levels <- sort(unique(ribbon_op$block_pair))
+  bp_cols <- ribbon_palette(length(bp_levels))
+  names(bp_cols) <- bp_levels
 
-        # Build chromosome segments for this pair
-        # query side
-        q_chr_df <- aggregate(q_x ~ query_chr, data = q_blocks, FUN = range)
-        q_chr_out <- data.frame(
-            chr   = q_chr_df$query_chr,
-            xmin  = vapply(q_chr_df$q_x, function(x) min(x) - 0.5, numeric(1)),
-            xmax  = vapply(q_chr_df$q_x, function(x) max(x) + 0.5, numeric(1)),
-            y     = y_query,
-            side  = "query",
-            pair  = i,
-            stringsAsFactors = FALSE
+  # Build plot
+  p <- ggplot() +
+    geom_segment(
+      data = chrom_op,
+      aes(x = xmin, xend = xmax, y = y, yend = y, colour = chr),
+      linewidth = chr_lwd
+    ) +
+    geom_polygon(
+      data = ribbon_op,
+      aes(x = x, y = y, group = poly_id, fill = block_pair),
+      alpha = ribbon_alpha,
+      colour = NA
+    ) +
+    scale_colour_manual(values = chr_cols) +
+    scale_fill_manual(values = bp_cols) +
+    scale_y_continuous(
+      breaks = sort(unique(y_levels)),
+      labels = labels[order(y_levels)]
+    ) +
+    theme_void() +
+    theme(
+      legend.position = "none",
+      axis.text.y = element_text(size = 10),
+      plot.margin = margin(5.5, 20, 5.5, 5.5, unit = "pt")
+    )
+
+  print(p)
+  invisible(p)
+}
+
+## -------------------------------------------------------------------------
+## Local helpers (only used if not already available in the environment)
+## -------------------------------------------------------------------------
+
+if (!exists("scale_between")) {
+  scale_between <- function(x, min, max) {
+    rng <- range(x, na.rm = TRUE)
+    if (!is.finite(rng[1]) || !is.finite(rng[2]) || rng[1] == rng[2]) {
+      return(rep((min + max) / 2, length(x)))
+    }
+    ( (x - rng[1]) / (rng[2] - rng[1]) ) * (max - min) + min
+  }
+}
+
+if (!exists("calc_curvePolygon")) {
+  calc_curvePolygon <- function(start1,
+                                end1 = NULL,
+                                start2,
+                                end2 = NULL,
+                                y1,
+                                y2,
+                                npts = 250,
+                                keepat = round(npts / 20)) {
+    cosine_points <- function(npts, keepat) {
+      # initial number of points
+      # grid to keep always
+      grid <- seq(from = 0, to = pi, length.out = npts) # grid
+      x <- (1 - cos(grid)) / max((1 - cos(grid))) # scaled cosine
+      y <- grid / max(grid) # scaled grid
+      # calculate slope for each point
+      x1 <- x[-1];  y1 <- y[-1]
+      x2 <- x[-length(x)];  y2 <- y[-length(y)]
+      s <-  (y1 - y2) / (x1 - x2)
+      # choose points that capture changes in slope
+      ds <- cumsum(abs(diff(s))) * 5
+      wh <- c(1, which(!duplicated(round(ds))), length(x))
+      wh2 <- c(wh, seq(from = 0, to = length(x), by = round(keepat)))
+      wh <- c(wh, wh2)[!duplicated(c(wh, wh2))]
+      wh <- wh[order(wh)]
+      cbind(x[wh], y[wh])
+    }
+
+    scaledCurve <- cosine_points(npts = npts, keepat = keepat)
+    if (!is.null(end1) | !is.null(end2)) {
+      sc1 <- scaledCurve[, 1]
+      sc2 <- scaledCurve[, 2]
+
+      tp <- rbind(
+        start1 = data.frame(
+          x = start1, y = y1
+        ),
+        poly1 = data.frame(
+          x = scale_between(x = sc1, min = start1, max = start2),
+          y = scale_between(x = sc2, min = y1, max = y2)
+        ),
+        start2 = data.frame(x = start2, y = y2),
+        end2 = data.frame(
+          x = end2, y = y2
+        ),
+        poly2 = data.frame(
+          x = scale_between(x = sc1, min = end2, max = end1),
+          y = scale_between(x = sc2, min = y2, max = y1)
+        ),
+        end1 = data.frame(
+          x = end1, y = y1
         )
-        # subject side
-        s_chr_df <- aggregate(s_x ~ subject_chr, data = s_blocks, FUN = range)
-        s_chr_out <- data.frame(
-            chr   = s_chr_df$subject_chr,
-            xmin  = vapply(s_chr_df$s_x, function(x) min(x) - 0.5, numeric(1)),
-            xmax  = vapply(s_chr_df$s_x, function(x) max(x) + 0.5, numeric(1)),
-            y     = y_subject,
-            side  = "subject",
-            pair  = i,
-            stringsAsFactors = FALSE
-        )
-        all_chrom[[length(all_chrom) + 1L]] <- rbind(q_chr_out, s_chr_out)
+      )
+    } else {
+      tp <- data.frame(
+        x = scale_between(x = scaledCurve[, 1], min = start1, max = start2),
+        y = scale_between(x = scaledCurve[, 2], min = y1, max = y2)
+      )
+    }
 
-        # Build ribbons (as simple quadrilaterals) for each block pair
-        rib_df <- data.frame(
-            xmin = pair_summary$q_x - 0.45,
-            xmax = pair_summary$q_x + 0.45,
-            ymin = y_subject + 0.05,
-            ymax = y_query   - 0.05,
-            pair = i,
-            block_pair = paste(pair_summary$query_synteny_block,
-                               pair_summary$subject_synteny_block,
-                               sep = "->"),
-            stringsAsFactors = FALSE
-        )
-        all_ribbons[[length(all_ribbons) + 1L]] <- rib_df
-
-        # Row labels
-        if (is.null(genome_names)) {
-            # Try to derive from list names like "NB_OL"
-            if (!is.null(names(orthopair_list)) && names(orthopair_list)[i] != "") {
-                nm <- names(orthopair_list)[i]
-                sp <- strsplit(nm, "_")[[1L]]
-                if (length(sp) >= 2L) {
-                    row_labels <- c(row_labels, sp[1L], sp[2L])
-                } else {
-                    row_labels <- c(row_labels,
-                                    paste0("pair", i, "_query"),
-                                    paste0("pair", i, "_subject"))
-                }
-            } else {n+                row_labels <- c(row_labels,
-                                paste0("pair", i, "_query"),
-                                paste0("pair", i, "_subject"))n+            }n+        }n+        y_levels <- c(y_levels, y_query, y_subject)n+    }n+n+    chrom_df <- do.call(rbind, all_chrom)n+    ribbon_df <- do.call(rbind, all_ribbons)n+n+    if (nrow(ribbon_df) == 0L) {n+        stop("No syntenic blocks left after filtering; try lowering 'min_block_genes'.",n+             call. = FALSE)n+    }n+n+    # Final genome labelsn+    if (!is.null(genome_names)) {n+        if (length(genome_names) != length(y_levels)) {n+            stop("Length of 'genome_names' (", length(genome_names),n+                 ") does not match number of genome rows (", length(y_levels), ").",n+                 call. = FALSE)n+        }n+        labels <- genome_namesn+    } else {n+        labels <- row_labelsn+    }n+n+    # Build plotn+    suppressWarnings({n+        p <- ggplot2::ggplot() +n+            ggplot2::geom_segment(n+                data = chrom_df,n+                ggplot2::aes(x = xmin, xend = xmax, y = y, yend = y,n+                             colour = chr),n+                linewidth = 2n+            ) +n+            ggplot2::geom_rect(n+                data = ribbon_df,n+                ggplot2::aes(xmin = xmin, xmax = xmax,n+                             ymin = ymin, ymax = ymax,n+                             fill = factor(block_pair)),n+                alpha = 0.4,n+                colour = NAn+            ) +n+            ggplot2::scale_y_continuous(n+                breaks = sort(unique(y_levels)),n+                labels = labels[order(y_levels)]n+            ) +n+            ggplot2::theme_void() +n+            ggplot2::theme(n+                legend.position = "none",n+                axis.text.y = ggplot2::element_text(size = 10),n+                plot.margin = ggplot2::margin(5.5, 20, 5.5, 5.5, unit = "pt")n+            )n+    })n+n+    print(p)n+    invisible(p)n+}n+n*** End Patch"}]}/>
-        
-        
+    tp
+  }
+}

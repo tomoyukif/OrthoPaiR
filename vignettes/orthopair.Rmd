@@ -8,8 +8,8 @@ vignette: >
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
   ---
-  
-  ```{r setup, include=FALSE}
+
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(
 collapse = TRUE,
 comment = "#>"
@@ -18,81 +18,239 @@ comment = "#>"
 
 # Introduction
 
-The `OrthoPaiR` package provides tools for conducting syntenic orthologous gene pairing between given genomes. This vignette demonstrates how to use the package functions to perform syntenic orthologous gene pairing and analyze the results.
+`OrthoPaiR` is an R package for identifying **syntenic orthologous genes** across multiple genomes.
+The main user-facing workflow consists of:
 
-# Installation of Prerequisite Packages
+1. Preparing a list of input files with `orgInputFiles()`.
+2. Running the full pipeline with `orthopair()`.
+3. Exploring ortholog pairs and orphans from the output files.
 
-Before using the `OrthoPaiR` package, make sure you have the following prerequisite packages installed:
+This vignette explains how to prepare inputs, run the pipeline for two or more genomes, and interpret the output files.
 
-```{r}
+# Prerequisites
+
+```{r, eval=FALSE}
+install.packages("devtools")
 install.packages("BiocManager")
-BiocManager::install(c("GenomicRanges", "GenomeInfoDb", "rhdf5", "rtracklayer", "Biostrings", "S4Vectors"))
-install.packages(c("ggplot2", "data.table"))
+
+BiocManager::install(c(
+  "GenomicRanges", "GenomeInfoDb", "GenomicFeatures",
+  "rhdf5", "BiocGenerics", "Biobase", "IRanges",
+  "rtracklayer", "Biostrings", "S4Vectors", "BSgenome"
+))
+
+install.packages(c("parallel", "ggplot2", "dplyr", "rBLAST"))
 ```
 
-Ensure you also have Miniprot and SibeliaZ installed and executable. You can follow their installation guides on their respective websites.
+External command‑line tools:
 
-# Quick start
-You can go through the OrthoPaiR pipeline using the `orthopair()` function that is a 
-wrapper functions to execute a series of the functions to go through the OrthoPaiR 
-pipeline.
-```{r}
-object <- orthopair(query_genome = query_genome,
-                    subject_genome = subject_genome,
-                    query_gff = query_gff,
-                    subject_gff = subject_gff,
-                    query_cds = query_cds,
-                    subject_cds = subject_cds,
-                    query_prot = query_prot,
-                    subject_prot = subject_prot,
-                    hdf5_path = hdf5_path,
-                    conda = "/home/ftom/miniforge/miniforge3/bin/conda",
-                    miniprot_bin = "miniprot",
-                    miniprot_condaenv = "miniprot",
-                    n_threads = 30,
-                    omit_chr = "chrUn|chrSy")
-```
-The orthopair() function output a OrthoPaiRDB object that contains a link to the hdf5 
-file storing syntenic ortholog pairing results. Those results can be accessed by
-the following functions.
+- **BLAST+** (`makeblastdb` must be on `blast_path`) – used for DNA sequence similarity searches.
+- **DIAMOND** (`diamond` must be on `diamond_path`) – required when `use_prot = TRUE` for protein sequence similarity searches.
+- **Miniprot** (optional; used when `run_miniprot = TRUE` to predict missing ORFs) – requires genome FASTA files to be specified in `orgInputFiles()`.
 
-```{r}
-txwise_summary <- summaryOrthoPaiR(object = object, gene = FALSE)
-genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
-genewise_orthopair <- getOrthoPaiR(object = object, gene = TRUE)
-orphan_genewise <- getOrphan(object = object, gene = TRUE)
-```
-See the [Output results] section in this vignette for more details of output resutls.
+# Preparing input files with `orgInputFiles()`
 
-# Creating a OrthoPaiRDB Object
+The function `orgInputFiles()` collects file paths for each genome and performs basic validation.
+You call it once per genome, optionally appending to an existing input object:
 
-First, create a `OrthoPaiRDB` object using the `makeOrthoPaiRDB` function. 
-This object will hold all necessary input files and parameters.
-
-```{r create-OrthoPaiRdb}
+```{r, eval=FALSE}
 library(OrthoPaiR)
+
+in_list <- orgInputFiles(
+  name   = "Osat",
+  genome = NA,                            # optional genome FASTA
+  gff    = "path/to/osat.gff",
+  cds    = "path/to/osat_cds.fa",
+  prot   = "path/to/osat_prot.fa"         # optional; NA if not used
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name   = "Hvul",
+  genome = NA,
+  gff    = "path/to/hvul.gff",
+  cds    = "path/to/hvul_cds.fa",
+  prot   = "path/to/hvul_prot.fa"
+)
 ```
 
+## Required GFF and FASTA formats
 
-```{r create-OrthoPaiRdb}
-query_genome <- system.file("extdata", "query_genome.fa", package = "OrthoPaiR")
-subject_genome <- system.file("extdata", "subject_genome.fa", package = "OrthoPaiR")
-query_gff <- system.file("extdata", "query.gff", package = "OrthoPaiR")
-subject_gff <- system.file("extdata", "subject.gff", package = "OrthoPaiR")
-query_cds <- system.file("extdata", "query_cds.fa", package = "OrthoPaiR")
-subject_cds <- system.file("extdata", "subject_cds.fa", package = "OrthoPaiR")
-query_prot <- system.file("extdata", "query_prot.fa", package = "OrthoPaiR")
-subject_prot <- system.file("extdata", "subject_prot.fa", package = "OrthoPaiR")
-out_dir <- tempdir()
-hdf5_path <- file.path(out_dir, "OrthoPaiR.h5")
+The requirements enforced internally by `.validateInput()` (see `R/07_functions_pipeline.R`) can be summarised as:
 
-object <- makeOrthoPaiRDB(query_genome = "inst/extdata/query_genome.fa",
-                          subject_genome = "inst/extdata/subject_genome.fa",
-                          query_gff = "inst/extdata/query.gff",
-                          subject_gff = "inst/extdata/subject.gff",
-                          query_cds = "inst/extdata/query_cds.fa",
-                          subject_cds = "inst/extdata/subject_cds.fa",
-                          query_prot = "inst/extdata/query_prot.fa",
-                          subject_prot = "inst/extdata/subject_prot.fa",
-                          hdf5_path = hdf5_path)
+- **GFF3 file**
+  - Must contain at least `gene` and transcript features (`mRNA` or `transcript`) and `CDS` features.
+  - Must have a non‑empty `gene_id` column with no `NA`.
+  - The `Parent` column of transcripts must match the `ID` of genes one‑to‑one (and vice versa).
+- **CDS FASTA**
+  - FASTA record names must correspond to `ID` values in the GFF (for CDS features).
+  - All CDS names must be present in the GFF; otherwise `orgInputFiles()` stops with an error.
+- **Protein FASTA** (only if `prot` is provided)
+  - Protein record names must also match `ID` values in the same GFF.
+- **Genome FASTA** (optional, but **required if `run_miniprot = TRUE`**)
+  - If supplied, all `seqlevels(gff)` must be present in the genome FASTA sequence names.
+  - **Important**: If you set `run_miniprot = TRUE` in `orthopair()` to reciprocally predict missing ORFs, you **must** provide the `genome` parameter (path to the genome FASTA file) for each genome in `orgInputFiles()`.
+
+During `.orgInput()` (inside `orthopair()`), OrthoPaiR also:
+
+- Selects a **representative transcript** per gene based on exon structure (`.getRepTx()`).
+- Writes representative CDS sequences to `input/<name>/cds.fa` and (optionally) proteins to `input/<name>/prot.fa`.
+- Builds local BLAST databases for CDS (`makeblastdb`) and DIAMOND databases for proteins (`diamond makedb`).
+
+# Running the pipeline with `orthopair()`
+
+The high‑level pipeline is implemented in `orthopair()` (see `R/07_functions_pipeline.R`):
+
+```{r, eval=FALSE}
+wd <- "path/to/output/orthopair"
+
+out_files <- orthopair(
+  in_list      = in_list,
+  working_dir  = wd,
+  miniprot_path = "/path/to/miniprot/bin",
+  blast_path    = "/path/to/blast/bin",
+  diamond_path  = "/path/to/diamond/bin",
+  n_threads     = 30,
+  overwrite     = TRUE,
+  target_pair   = NULL,
+  use_prot      = FALSE,
+  run_miniprot  = FALSE,
+  orthopair     = TRUE,
+  reorg         = TRUE,
+  makegraph     = TRUE,
+  output_table  = TRUE
+)
 ```
+
+For each pair of genomes in `in_list`, `orthopair()`:
+
+1. Organises input data and creates per‑genome HDF5 files (`input/<name>/input.h5`).
+2. Prepares pairwise input definitions and HDF5 output paths (`hdf5_out/*.h5`).
+3. Runs reciprocal BLAST/DIAMOND searches and synteny‑aware ortholog pairing (`.runOrthoPair()`).
+   - If `use_prot = FALSE` (default): uses BLAST+ for DNA sequence similarity searches.
+   - If `use_prot = TRUE`: uses DIAMOND for protein sequence similarity searches instead of (or in addition to) DNA-based searches.
+4. Optionally **reorganises orthopairs across all genomes** (`reorg = TRUE`).
+5. Optionally **builds an orthology network graph** (`makegraph = TRUE`).
+6. Optionally **exports ortholog tables** (`output_table = TRUE`).
+
+The return value is a named character vector with paths to the final HDF5, graph, and table files.
+
+## Two‑genome vs multi‑genome use
+
+When you analyse **only two genomes**, you usually:
+
+- Focus on the pairwise HDF5 file for that genome pair.
+- Do **not need** to call the multi‑genome reorganisation and graph steps.
+
+In this case you can leave:
+
+- `reorg = FALSE`, `makegraph = FALSE`, and `output_table = FALSE`
+
+and work directly from the HDF5 output for the single pair (e.g. `hdf5_out/Osat_Hvul.h5`).
+
+When you analyse **three or more genomes**, setting:
+
+- `reorg = TRUE`, `makegraph = TRUE`, and `output_table = TRUE`
+
+enables OrthoPaiR to:
+
+1. Merge pairwise orthopairs into a unified multi‑species representation (`reorg_out/reorg_orthopair.h5`).
+2. Construct an orthology **network graph** (`orthopair.graphml`) where nodes are genes and edges connect orthologous genes.
+3. Define ortholog groups based on graph connectivity and export them as tables (`orthopair_list.csv`, `orphan_list.csv`).
+
+# Example: four‑genome analysis (sample script)
+
+The file `sample_data/sample_script.R` provides a full example with four plant genomes:
+
+```{r, eval=FALSE}
+root_dir   <- "/home/ftom/workspace/orthology"
+input_dir  <- file.path(root_dir, "input/benchmark_plant")
+output_dir <- file.path(root_dir, "output/benchmark_plant")
+
+devtools::load_all("/home/ftom/01_wd/softDevel/OrthoPaiR")
+
+in_list <- orgInputFiles(
+  name = "Osat",
+  genome = NA,
+  gff = file.path(input_dir, "osat.gff"),
+  cds = file.path(input_dir, "osat_cds.fa"),
+  prot = file.path(input_dir, "osat_prot.fa")
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name = "Hvul",
+  genome = NA,
+  gff = file.path(input_dir, "hvul.gff"),
+  cds = file.path(input_dir, "hvul_cds.fa"),
+  prot = file.path(input_dir, "hvul_prot.fa")
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name = "Atha",
+  genome = NA,
+  gff = file.path(input_dir, "atha.gff"),
+  cds = file.path(input_dir, "atha_cds.fa"),
+  prot = file.path(input_dir, "atha_prot.fa")
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name = "Mpol",
+  genome = NA,
+  gff = file.path(input_dir, "mpol.gff"),
+  cds = file.path(input_dir, "mpol_cds.fa"),
+  prot = file.path(input_dir, "mpol_prot.fa")
+)
+
+wd <- file.path(output_dir, "orthopair")
+
+out_files <- orthopair(
+  in_list      = in_list,
+  working_dir  = wd,
+  miniprot_path = "/home/ftom/miniforge/miniforge3/envs/miniprot/bin",
+  blast_path    = "/home/ftom/tools/bin",
+  diamond_path  = "/home/ftom/miniforge/miniforge3/envs/diamond/bin",
+  n_threads     = 30,
+  overwrite     = TRUE,
+  verbose       = TRUE,
+  use_prot      = FALSE,
+  target_pair   = NULL,
+  orthopair     = TRUE,
+  run_miniprot  = FALSE,
+  reorg         = TRUE,
+  makegraph     = TRUE,
+  output_table  = TRUE
+)
+```
+
+This script corresponds to the contents of `sample_data/orthopair`, which you can use as a reference for expected outputs.
+
+# Output files produced by `orthopair()`
+
+The sample output in `sample_data/orthopair` illustrates the directory structure created by the pipeline:
+
+- **`input/<name>/`**
+  - `cds.fa`, `prot.fa`: representative CDS/protein FASTA files.
+  - `input.h5`: per‑genome HDF5 storing GFF, CDS (and optionally protein) information.
+  - BLAST and DIAMOND index files (`cds.fa.n*`, `prot.fa.dmnd`).
+- **`hdf5_out/*.h5`**
+  - Pairwise orthology results for each genome pair (e.g. `Osat_Hvul.h5`).
+  - These files contain the syntenic ortholog pairs and associated metadata for each pair.
+- **`reorg_out/`** (when `reorg = TRUE`)
+  - `<name>_orthopair.gff`: per‑genome GFF files where gene IDs are **reorganised** to reflect ortholog groups.
+  - `reorg_orthopair.h5`: multi‑genome HDF5 combining orthopairs across all species.
+- **`orthopair.graphml`** (when `makegraph = TRUE`)
+  - Graph representation of ortholog relationships.
+  - Nodes are genes, edges connect orthologous genes inferred from pairwise comparisons.
+- **`orthopair_list.csv` and `orphan_list.csv`** (when `output_table = TRUE`)
+  - Generated from the graph (`graph2df()` and `getOrphan()` in `R/07_functions_pipeline.R`).
+  - `orthopair_list.csv`: table of ortholog groups; each row corresponds to a graph‑defined group, with columns for each genome.
+  - `orphan_list.csv`: table of genes without orthologs (orphans), again with columns for each genome.
+- **`runtime.csv`**
+  - Summarises runtime statistics for the main steps of the pipeline.
+
+For two‑genome analyses, you can work primarily with the single pairwise HDF5 file in `hdf5_out`.
+For multi‑genome analyses, the reorganised HDF5 (`reorg_out/reorg_orthopair.h5`), graph (`orthopair.graphml`), and CSV tables (`orthopair_list.csv`, `orphan_list.csv`) provide a convenient basis for downstream comparative genomics.
+

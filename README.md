@@ -1,112 +1,134 @@
-# OrthoPaiR
+## OrthoPaiR
 
-[![R](https://img.shields.io/badge/R-4.1.0-blue)](https://www.r-project.org/)
+[![R](https://img.shields.io/badge/R-%3E%3D4.1-blue)](https://www.r-project.org/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**OrthoPaiR** is an R package for conducting syntenic orthologous gene pairing between given genomes. It provides tools to identify, filter, and analyze orthologous gene pairs, facilitating comparative genomic studies.
+**OrthoPaiR** is an R package for **synteny‑aware ortholog detection** across two or more genomes.
+It organises genome annotations, runs reciprocal sequence searches, and summarises orthologous relationships as tables and graphs.
 
-## Table of Contents
+### Features
 
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
+- **Multi‑genome support**: run ortholog detection for all pairwise combinations of genomes.
+- **Synteny‑aware pairing**: combine reciprocal best hits with genomic context.
+- **Network‑based ortholog groups**: summarise orthologs as an orthology graph and CSV tables.
+- **Genome‑wise outputs**: reorganised GFF files, ortholog lists, and orphan genes.
 
-## Features
+### Prerequisites
 
-- Identify syntenic orthologous gene pairs between genomes.
-- Filter orthologous pairs using LCB and RBH methods.
-- Generate gene-wise and transcript-wise ortholog summaries.
-- Map proteins using Miniprot and integrate with ortholog analysis.
-- Support for handling orphan genes and split genes.
-
-## Installation
-
-To install the OrthoPaiR package, use the following commands in R:
+- **R packages** (installed via CRAN and Bioconductor):
 
 ```r
-# Install the devtools package if not already installed
 install.packages("devtools")
+install.packages("BiocManager")
 
-# Install OrthoPaiR from GitHub
+BiocManager::install(c(
+  "GenomicRanges", "GenomeInfoDb", "GenomicFeatures",
+  "rhdf5", "BiocGenerics", "Biobase", "IRanges",
+  "rtracklayer", "Biostrings", "S4Vectors", "BSgenome"
+))
+
+install.packages(c("parallel", "ggplot2", "dplyr"))
+```
+
+- **External tools**
+  - [BLAST+](https://blast.ncbi.nlm.nih.gov/Blast.cgi?PAGE_TYPE=BlastDocs) (`makeblastdb` in `blast_path`) – for DNA sequence similarity
+  - [DIAMOND](https://github.com/bbuchfink/diamond) (`diamond` in `diamond_path`) – required when `use_prot = TRUE` for protein-based RBH
+  - [Miniprot](https://github.com/lh3/miniprot) (optional; only if `run_miniprot = TRUE` to predict missing ORFs) – requires genome FASTA files in `orgInputFiles()`
+
+### Installation
+
+Install the development version from GitHub:
+
+```r
+install.packages("devtools")
 devtools::install_github("tomoyukif/OrthoPaiR", dependencies = TRUE)
 ```
 
-## Prerequisites
+### Usage (simplified)
 
-OrthoPaiR relies on several R packages and external tools. Install the prerequisite R packages using:
+The main workflow is:
 
-```r
-install.packages("BiocManager")
-BiocManager::install(c("GenomicRanges", "GenomeInfoDb", "GenomicFeatures", 
-"rhdf5", txdbmaker, "BiocGenerics", "Biobase", "IRanges",
-"rtracklayer", "Biostrings", "S4Vectors", "BSgenome"))
-install.packages(c("ggplot2", "rBLAST", "parallel", "dplyr"))
-```
-
-Ensure the following external tools are installed:
-
-- **Miniprot**: [Miniprot Installation Guide](https://github.com/lh3/miniprot)
-
-## Usage
-
-Here is a basic example of how to use OrthoPaiR for syntenic orthologous gene pairing.
-You can go through the OrthoPaiR pipeline using the `runOrthoPaiR()` function, which is a wrapper that executes a series of functions to complete the OrthoPaiR pipeline.
+1. Prepare a list of input files for each genome with `orgInputFiles()`.
+2. Run the full pipeline with `orthopair()`.
+3. Use the generated HDF5, GFF, graph, and CSV files for downstream analyses.
 
 ```r
 library(OrthoPaiR)
 
-# Define file paths
-query_genome <- "input/nb_genome.fa"
-subject_genome <- "input/wk21_genome.fa"
-query_gff <- "input/nb.gff"
-subject_gff <- "input/wk21.gff"
-query_cds <- "input/nb_cds.fa"
-subject_cds <- "input/wk21_cds.fa"
-query_prot <- "input/nb_prot.fa"
-subject_prot <- "input/wk21_prot.fa"
-hdf5_path <- "output/OrthoPaiR.h5"
-
-# Run OrthoPaiR pipeline
-object <- runOrthoPaiR(
-  query_genome = query_genome,
-  subject_genome = subject_genome,
-  query_gff = query_gff,
-  subject_gff = subject_gff,
-  query_cds = query_cds,
-  subject_cds = subject_cds,
-  query_prot = query_prot,
-  subject_prot = subject_prot,
-  hdf5_path = hdf5_path,
-  maf2synteny_bin = "maf2synteny",
-  conda = "/home/ftom/miniforge/miniforge3/bin/conda",
-  sibeliaz_condaenv = "sibeliaz",
-  miniprot_bin = "miniprot",
-  miniprot_condaenv = "miniprot",
-  n_threads = 30
+## 1. Prepare input definitions per genome
+in_list <- orgInputFiles(
+  name   = "Osat",
+  genome = NA,                                # optional; required if run_miniprot = TRUE
+  gff    = "path/to/osat.gff",
+  cds    = "path/to/osat_cds.fa",
+  prot   = "path/to/osat_prot.fa"            # optional; NA if unused
 )
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name   = "Hvul",
+  genome = NA,
+  gff    = "path/to/hvul.gff",
+  cds    = "path/to/hvul_cds.fa",
+  prot   = "path/to/hvul_prot.fa"
+)
+
+## 2. Run the OrthoPaiR pipeline
+wd <- "path/to/output/orthopair"
+
+out_files <- orthopair(
+  in_list      = in_list,
+  working_dir  = wd,
+  miniprot_path = "/path/to/miniprot/bin",
+  blast_path    = "/path/to/blast/bin",
+  diamond_path  = "/path/to/diamond/bin",
+  n_threads     = 8,
+  overwrite     = TRUE,
+  verbose       = TRUE,
+  use_prot      = FALSE,                      # TRUE: use DIAMOND for protein-based RBH
+  target_pair   = NULL,
+  orthopair     = TRUE,
+  run_miniprot  = FALSE,                      # TRUE: predict missing ORFs (requires genome FASTA)
+  reorg         = TRUE,
+  makegraph     = TRUE,
+  output_table  = TRUE
+)
+
+out_files
 ```
 
-The `runOrthoPaiR()` function outputs a `OrthoPaiRDB` object containing a link to the HDF5 file that stores syntenic ortholog pairing results. You can access these results using the following functions:
+- For **two genomes**, you typically do **not** need multi‑genome summarisation, so you can leave:
+
+  - `reorg = FALSE`, `makegraph = FALSE`, `output_table = FALSE`
+
+  and work directly from the pairwise HDF5 output in `hdf5_out/`.
+
+- For **more than two genomes**, setting:
+
+  - `reorg = TRUE`, `makegraph = TRUE`, `output_table = TRUE`
+
+  tells OrthoPaiR to:
+
+  - reorganise gene IDs and write `<name>_orthopair.gff` files,
+  - build an orthology graph (`orthopair.graphml`),
+  - and export ortholog and orphan tables (`orthopair_list.csv`, `orphan_list.csv`).
+
+**Note on parameters:**
+- If `run_miniprot = TRUE` (to reciprocally predict missing ORFs), you must specify the `genome` parameter (path to genome FASTA) for each genome in `orgInputFiles()`.
+- If `use_prot = TRUE`, `orthopair()` will use DIAMOND to compute reciprocal best hits based on protein sequence similarity instead of (or in addition to) DNA sequence similarity.
+
+A complete four‑genome example is provided in `sample_data/sample_script.R`, and the corresponding output directory structure is shown in `sample_data/orthopair/`.
+
+### Documentation
+
+For a detailed description of input requirements, pipeline steps, and all output files, see the vignette:
 
 ```r
-# Access results
-genewise_summary <- summaryOrthoPaiR(object = object, gene = TRUE)
-genewise_ortholog <- getOrthoPaiR(object = object, gene = TRUE)
-orphan_genewise <- getOrphan(object = object, gene = TRUE)
+vignette("orthopair", package = "OrthoPaiR")
 ```
 
-## Documentation
+### License
 
-For a detailed guide and more advanced usage, refer to the [package vignette](vignettes/orthopair.html).
+OrthoPaiR is licensed under the **GPL‑3.0** License.  
+See `LICENSE.md` for details.
 
-## Contributing
-
-Contributions are welcome! If you have any ideas, suggestions, or bug reports, please open an issue or submit a pull request.
-
-## License
-
-OrthoPaiR is licensed under the GPL-3.0 License. See the [LICENSE](LICENSE.md) file for details.
