@@ -1,6 +1,6 @@
 ---
 title: "OrthoPaiR Package Vignette"
-author: "Your Name"
+author: "Tomoyuki Furuta"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -39,14 +39,14 @@ BiocManager::install(c(
   "rtracklayer", "Biostrings", "S4Vectors", "BSgenome"
 ))
 
-install.packages(c("parallel", "ggplot2", "dplyr", "rBLAST"))
+install.packages(c("parallel", "ggplot2", "dplyr"))
 ```
 
 External command‑line tools:
 
-- **BLAST+** (`makeblastdb` must be on `blast_path`) – used for DNA sequence similarity searches.
-- **DIAMOND** (`diamond` must be on `diamond_path`) – required when `use_prot = TRUE` for protein sequence similarity searches.
-- **Miniprot** (optional; used when `run_miniprot = TRUE` to predict missing ORFs) – requires genome FASTA files to be specified in `orgInputFiles()`.
+- **BLAST+** (`makeblastdb`, `blastn` in `blast_path`) – required for DNA sequence similarity; `blastp` is required only when `use_prot = TRUE` for protein sequence similarity.
+- **DIAMOND** (`diamond` in `diamond_path`) – required when `use_prot = TRUE` for protein sequence similarity.
+- **Miniprot** (optional; only if `run_miniprot = TRUE` to predict missing ORFs) – requires genome FASTA files in `orgInputFiles()`.
 
 # Preparing input files with `orgInputFiles()`
 
@@ -76,8 +76,6 @@ in_list <- orgInputFiles(
 
 ## Required GFF and FASTA formats
 
-The requirements enforced internally by `.validateInput()` (see `R/07_functions_pipeline.R`) can be summarised as:
-
 - **GFF3 file**
   - Must contain at least `gene` and transcript features (`mRNA` or `transcript`) and `CDS` features.
   - Must have a non‑empty `gene_id` column with no `NA`.
@@ -91,11 +89,60 @@ The requirements enforced internally by `.validateInput()` (see `R/07_functions_
   - If supplied, all `seqlevels(gff)` must be present in the genome FASTA sequence names.
   - **Important**: If you set `run_miniprot = TRUE` in `orthopair()` to reciprocally predict missing ORFs, you **must** provide the `genome` parameter (path to the genome FASTA file) for each genome in `orgInputFiles()`.
 
-During `.orgInput()` (inside `orthopair()`), OrthoPaiR also:
+## Reformatting input files with `fixInputFiles()`
 
-- Selects a **representative transcript** per gene based on exon structure (`.getRepTx()`).
-- Writes representative CDS sequences to `input/<name>/cds.fa` and (optionally) proteins to `input/<name>/prot.fa`.
-- Builds local BLAST databases for CDS (`makeblastdb`) and DIAMOND databases for proteins (`diamond makedb`).
+If your input files do not meet the requirements above, you can use `fixInputFiles()` to reformat them. This function helps prepare GFF, CDS, protein, and genome FASTA files to be compatible with OrthoPaiR.
+
+```{r, eval=FALSE}
+fixed_files <- fixInputFiles(
+  genome = "path/to/genome.fa",    # optional
+  gff    = "path/to/annotation.gff",
+  cds    = "path/to/cds.fa",       # optional
+  prot   = "path/to/prot.fa",      # optional
+  autofix = FALSE                  # TRUE for automatic fixes
+)
+```
+
+The function performs the following operations:
+
+- **Genome FASTA reformatting** (if provided):
+  - Renames sequence names to match GFF seqlevels (with interactive prompts or automatic renaming if `autofix = TRUE`).
+  - Allows padding chromosome numbers and adding prefixes (e.g., "chr01", "chr02").
+  - Enables removal of unwanted sequences.
+
+- **GFF file reformatting**:
+  - Drops unnecessary feature types, keeping only `gene`, `mRNA`/`transcript`, `exon`, and `CDS` features.
+  - Ensures proper `ID` and `Parent` relationships between features.
+  - Sets the `gene_id` column for all features.
+  - Fixes `Parent` column entries to contain single values (required by OrthoPaiR).
+  - Updates sequence names (seqlevels) to match the reformatted genome FASTA.
+
+- **CDS and protein FASTA reformatting** (if provided):
+  - Attempts to match FASTA record names with GFF `ID` values using multiple strategies:
+    - Direct matching with `ID`, `transcript_id`, or `protein_id` columns.
+    - Pattern-based matching (removing suffixes, extracting IDs from complex names).
+  - If `autofix = TRUE`, automatically tries multiple matching strategies.
+  - If matching fails and a genome FASTA is provided, creates new CDS and protein FASTA files from the GFF and genome sequences.
+
+The function returns a list with paths to the reformatted files (with `.op_fixed` suffix):
+- `fixed_files$gff`: reformatted GFF file
+- `fixed_files$cds`: reformatted CDS FASTA (if provided)
+- `fixed_files$prot`: reformatted protein FASTA (if provided)
+- `fixed_files$genome`: reformatted genome FASTA (if provided)
+
+You can then use these fixed files with `orgInputFiles()`:
+
+```{r, eval=FALSE}
+in_list <- orgInputFiles(
+  name   = "Osat",
+  genome = fixed_files$genome,
+  gff    = fixed_files$gff,
+  cds    = fixed_files$cds,
+  prot   = fixed_files$prot
+)
+```
+
+**Note**: When `autofix = FALSE` (default), the function will prompt you interactively for decisions about renaming sequences and fixing IDs. Set `autofix = TRUE` for automatic fixes, but be aware that automatic fixes may not always succeed if the input format is too different from expected formats.
 
 # Running the pipeline with `orthopair()`
 
@@ -126,7 +173,7 @@ For each pair of genomes in `in_list`, `orthopair()`:
 
 1. Organises input data and creates per‑genome HDF5 files (`input/<name>/input.h5`).
 2. Prepares pairwise input definitions and HDF5 output paths (`hdf5_out/*.h5`).
-3. Runs reciprocal BLAST/DIAMOND searches and synteny‑aware ortholog pairing (`.runOrthoPair()`).
+3. Runs reciprocal BLAST/DIAMOND searches and synteny‑aware ortholog pairing.
    - If `use_prot = FALSE` (default): uses BLAST+ for DNA sequence similarity searches.
    - If `use_prot = TRUE`: uses DIAMOND for protein sequence similarity searches instead of (or in addition to) DNA-based searches.
 4. Optionally **reorganises orthopairs across all genomes** (`reorg = TRUE`).
@@ -160,14 +207,12 @@ enables OrthoPaiR to:
 
 # Example: four‑genome analysis (sample script)
 
-The file `sample_data/sample_script.R` provides a full example with four plant genomes:
-
 ```{r, eval=FALSE}
-root_dir   <- "/home/ftom/workspace/orthology"
-input_dir  <- file.path(root_dir, "input/benchmark_plant")
-output_dir <- file.path(root_dir, "output/benchmark_plant")
+root_dir   <- "/path/to/workspace/orthology"
+input_dir  <- file.path(root_dir, "input")
+output_dir <- file.path(root_dir, "output")
 
-devtools::load_all("/home/ftom/01_wd/softDevel/OrthoPaiR")
+library(OrthoPaiR)
 
 in_list <- orgInputFiles(
   name = "Osat",
@@ -209,9 +254,9 @@ wd <- file.path(output_dir, "orthopair")
 out_files <- orthopair(
   in_list      = in_list,
   working_dir  = wd,
-  miniprot_path = "/home/ftom/miniforge/miniforge3/envs/miniprot/bin",
-  blast_path    = "/home/ftom/tools/bin",
-  diamond_path  = "/home/ftom/miniforge/miniforge3/envs/diamond/bin",
+  miniprot_path = "/path/to/miniprot/bin",
+  blast_path    = "/path/to/blast/bin",
+  diamond_path  = "/path/to/diamond/bin",
   n_threads     = 30,
   overwrite     = TRUE,
   verbose       = TRUE,
@@ -230,6 +275,35 @@ This script corresponds to the contents of `sample_data/orthopair`, which you ca
 # Output files produced by `orthopair()`
 
 The sample output in `sample_data/orthopair` illustrates the directory structure created by the pipeline:
+
+When you run the pipeline, the output directory will have the following structure (example for four genomes and default parameters):
+
+```
+/your_working_dir/
+├── hdf5_out/
+│   ├── Osat_Hvul.h5
+│   ├── Osat_Atha.h5
+│   ├── Osat_Mpol.h5
+│   ├── Hvul_Atha.h5
+│   ├── Hvul_Mpol.h5
+│   └── Atha_Mpol.h5
+├── reorg_out/
+│   ├── Osat_orthopair.gff
+│   ├── Hvul_orthopair.gff
+│   ├── Atha_orthopair.gff
+│   ├── Mpol_orthopair.gff
+│   └── reorg_orthopair.h5
+├── input/
+│   └── ... (per-genome input files and BLAST/DIAMOND databases)
+├── orthopair_list.csv
+├── orphan_list.csv
+├── orthopair.graphml
+└── ... (other possible intermediate or log files)
+```
+
+Each `*.h5` file is a pairwise result for two genomes. The summary tables and network files (e.g., `orthopair_list.csv`, `orthopair.graphml`) are generated when `reorg`, `makegraph`, or `output_table` are TRUE.
+
+Detailed descriptions of the output files:
 
 - **`input/<name>/`**
   - `cds.fa`, `prot.fa`: representative CDS/protein FASTA files.

@@ -203,7 +203,6 @@ rbh <- function(object,
     return(out)
 }
 
-#' @importFrom rdiamond diamond_protein_to_protein
 .diamond_search <- function(fa, db, n_threads, diamond_path){
     
     # Construct the DIAMOND arguments string

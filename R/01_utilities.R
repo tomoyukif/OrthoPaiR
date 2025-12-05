@@ -88,7 +88,7 @@
 #' @import BSgenome
 #' 
 #' @export
-fixInfiles <- function(genome = NULL, gff, cds = NULL, prot = NULL, autofix = FALSE){
+fixInputFiles <- function(genome = NULL, gff, cds = NULL, prot = NULL, autofix = FALSE){
     out <- .prep_out(genome = genome, gff = gff, cds = cds, prot = prot)
     
     if(!is.null(genome)){
