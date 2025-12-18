@@ -24,136 +24,89 @@ y_levels <- c()
 row_labels <- c()
 
 for (i in seq_along(op)) {
-    op_i <- op[[i]]
-    gene_order <- order(op_i$query_chr, 
-                        op_i$query_start,
-                        op_i$subject_chr, 
-                        op_i$subject_start)
-    op_i <- op_i[gene_order, ]
+    op_i <- as.data.table(op[[i]])
     needed_cols <- c("query_gene", "subject_gene",
                      "query_chr", "query_synteny_block",
-                     "subject_chr", "subject_synteny_block")
-    missing_cols <- setdiff(needed_cols, colnames(op_i))
+                     "subject_chr", "subject_synteny_block",
+                     "query_start","query_end","subject_start","subject_end")
+    
+    missing_cols <- setdiff(needed_cols, names(op_i))
     if (length(missing_cols) > 0L) {
         warning("Element ", i, " is missing required columns: ",
                 paste(missing_cols, collapse = ", "), "; skipping.")
         next
     }
     
-    # Count genes per block on each side
-    q_block_sizes <- tapply(op_i$query_gene,
-                            op_i$query_synteny_block,
-                            function(x) length(unique(x)))
-    s_block_sizes <- tapply(op_i$subject_gene,
-                            op_i$subject_synteny_block,
-                            function(x) length(unique(x)))
+    # 1) sort（in-placeに近い）
+    setorder(op_i, query_chr, query_start, subject_chr, subject_start)
     
-    # For each row, require both blocks >= threshold
-    q_ok <- q_block_sizes[as.character(op_i$query_synteny_block)] >= min_block_genes
-    s_ok <- s_block_sizes[as.character(op_i$subject_synteny_block)] >= min_block_genes
-    keep <- q_ok & s_ok
-    keep[is.na(keep)] <- FALSE
-    op_i <- op_i[keep, , drop = FALSE]
+    # 2) blockごとの遺伝子数（uniqueN が速い）
+    q_sizes <- op_i[, .(q_n = uniqueN(query_gene)), by = query_synteny_block]
+    s_sizes <- op_i[, .(s_n = uniqueN(subject_gene)), by = subject_synteny_block]
     
-    # Define vertical positions for this pair (top row higher y)
-    # Pairs are stacked from top (first) to bottom (last)
-    y_query   <- (n_pairs - i) * (y_gap + 1)
-    y_subject <- y_query - y_gap
+    # 3) joinしてフィルタ（tapply→join）
+    op_i <- q_sizes[op_i, on = .(query_synteny_block)]
+    op_i <- s_sizes[op_i, on = .(subject_synteny_block)]
+    op_i <- op_i[q_n >= min_block_genes & s_n >= min_block_genes]
     
-    # Summarize unique blocks for positioning on x-axis
-    q_blocks <- data.frame(block = tapply(op_i$query_synteny_block,
-                                          op_i$query_synteny_block, "[", 1),
-                           chr = tapply(op_i$query_chr,
-                                        op_i$query_synteny_block, "[", 1),
-                           start = tapply(op_i$query_start,
-                                          op_i$query_synteny_block, min),
-                           end = tapply(op_i$query_end,
-                                        op_i$query_synteny_block, max))
-    q_blocks$width <- q_blocks$end - q_blocks$start
-    q_blocks <- q_blocks[order(q_blocks$chr, q_blocks$start), ]
-    q_blocks$x_idx <- seq_len(nrow(q_blocks))
+    # 4) q_blocks / s_blocks（tapply複数回→1回の集計）
+    q_blocks <- op_i[, .(
+        chr   = first(query_chr),
+        start = min(query_start),
+        end   = max(query_end)
+    ), by = .(block = query_synteny_block)]
+    q_blocks[, width := end - start]
+    setorder(q_blocks, chr, start)
+    q_blocks[, x_idx := .I]
     
-    s_blocks <- data.frame(block = tapply(op_i$subject_synteny_block,
-                                          op_i$subject_synteny_block, "[", 1),
-                           chr = tapply(op_i$subject_chr,
-                                        op_i$subject_synteny_block, "[", 1),
-                           start = tapply(op_i$subject_start,
-                                          op_i$subject_synteny_block, min),
-                           end = tapply(op_i$subject_end,
-                                        op_i$subject_synteny_block, max))
-    s_blocks$width <- s_blocks$end - s_blocks$start
-    s_blocks <- s_blocks[order(s_blocks$chr, s_blocks$start), ]
-    s_blocks$x_idx <- seq_len(nrow(s_blocks))
+    s_blocks <- op_i[, .(
+        chr   = first(subject_chr),
+        start = min(subject_start),
+        end   = max(subject_end)
+    ), by = .(block = subject_synteny_block)]
+    s_blocks[, width := end - start]
+    setorder(s_blocks, chr, start)
+    s_blocks[, x_idx := .I]
     
-    # Map block ID to x index
-    q_key <- paste(q_blocks$chr, q_blocks$block, sep = "::")
-    s_key <- paste(s_blocks$chr, s_blocks$block, sep = "::")
-    op_i$q_key <- paste(op_i$query_chr, op_i$query_synteny_block, sep = "::")
-    op_i$s_key <- paste(op_i$subject_chr, op_i$subject_synteny_block, sep = "::")
-    q_map <- q_blocks$x_idx
-    names(q_map) <- q_key
-    s_map <- s_blocks$x_idx
-    names(s_map) <- s_key
-    op_i$q <- as.numeric(q_map[op_i$q_key])
-    op_i$s <- as.numeric(s_map[op_i$s_key])
-    lcb <- unique(subset(op_i, select = c(q, s)))
-    dt <- as.data.table(lcb)
-    setorder(dt, q, s)
-    n <- nrow(dt)
+    # 5) q,s の付与（paste+named vector→2回のjoin）
+    #    blockとchrの両方でマップ（元コードの "::" と同等）
+    op_i <- q_blocks[op_i,
+                     on = .(block = query_synteny_block, chr = query_chr),
+                     nomatch = 0L]
+    setnames(op_i, "x_idx", "q")
+    setnames(op_i, "block", "query_block")
+    setnames(op_i, "chr", "query_block_chr")
+    setnames(op_i, "start", "query_block_start")
+    setnames(op_i, "end", "query_block_end")
+    setnames(op_i, "width", "query_block_width")
     
-    # --- Union-Find ---
-    parent <- seq_len(n)
-    findp <- function(x) { while (parent[x] != x) { parent[x] <<- parent[parent[x]]; x <- parent[x] }; x }
-    unionp <- function(a,b) { ra <- findp(a); rb <- findp(b); if (ra != rb) parent[rb] <<- ra }
+    op_i <- s_blocks[op_i,
+                     on = .(block = subject_synteny_block, chr = subject_chr),
+                     nomatch = 0L]
+    setnames(op_i, "x_idx", "s")
+    setnames(op_i, "block", "subject_block")
+    setnames(op_i, "chr", "subject_block_chr")
+    setnames(op_i, "start", "subject_block_start")
+    setnames(op_i, "end", "subject_block_end")
+    setnames(op_i, "width", "subject_block_width")
     
-    # (q,s) -> 行番号 のハッシュ
-    key <- paste(dt$q, dt$s, sep=":")
-    idx_map <- new.env(hash = TRUE, parent = emptyenv())
+    dt <- as.data.table(op_i)[, .(q, s)]
+    # op_i の行順を保ったまま run 分割
+    dt[, `:=`(dq = q - shift(q), ds = s - shift(s))]
+    dt[, adjacent := !is.na(dq) & (abs(dq) <= 1L) & (abs(ds) <= 1L)]
+    dt[, block_id := cumsum(!adjacent)]
     
-    # 8近傍（Δq,Δs）
-    dqs <- expand.grid(dq = -1:1, ds = -1:1)
-    dqs <- dqs[!(dqs$dq == 0 & dqs$ds == 0), , drop=FALSE]
+    # block_id を op_i に戻す
+    op_i$block_id <- dt$block_id
     
-    for (i in seq_len(n)) {
-        q <- dt$q[i]; s <- dt$s[i]
-        
-        # 近傍が既に登録されていれば union
-        for (k in seq_len(nrow(dqs))) {
-            nq <- q + dqs$dq[k]
-            ns <- s + dqs$ds[k]
-            nk <- paste(nq, ns, sep=":")
-            j <- idx_map[[nk]]
-            if (!is.null(j)) unionp(i, j)
-        }
-        
-        # 自分を登録
-        idx_map[[ key[i] ]] <- i
-    }
-    
-    # 連結成分ID
-    comp <- vapply(seq_len(n), findp, integer(1))
-    dt[, comp := comp]
-    
-    # comp（Union-Findの代表値）を 1,2,3,... に変換
-    dt[, new_block_id := as.integer(factor(comp))]
-    dt[, pair_id := paste(q, s, sep = "_")]
-    block_summary <- dt[, .(
-        q_range = sprintf("%d-%d", min(q), max(q)),
-        s_range = sprintf("%d-%d", min(s), max(s)),
-        n_pairs = .N
-    ), by = new_block_id][order(new_block_id)]
-    
-    op_i$pair_id <- paste(op_i$q, op_i$s, sep = "_")
-    hit <- match(op_i$pair_id, dt$pair_id)
-    op_i$block_id <- dt$new_block_id[hit]
-    
-    block_df <- data.frame(block_id = tapply(op_i$block_id, op_i$block_id, "[", 1))
-    
-    # Summarize one record per block pair
-    pair_summary <- unique(op_i[, c("query_chr", "subject_chr",
-                                    "query_synteny_block", "subject_synteny_block",
-                                    "q_x", "s_x")])
-    pair_summary$pair_id <- seq_len(nrow(pair_summary))
+    # 9) block_df（tapply→unique）
+    block_df <- op_i[, .(query_block_chr = unique(query_block_chr), 
+                         query_block_start = min(query_start), 
+                         query_block_end = max(query_end), 
+                         subject_block_chr = unique(subject_block_chr), 
+                         subject_block_start = min(subject_start), 
+                         subject_block_end = max(subject_end)),
+                         by = block_id]
     
     # Build chromosome segments for this pair
     # query side
