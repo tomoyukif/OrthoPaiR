@@ -140,8 +140,6 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL){
 #'
 #' @param object A OrthoPairDB object.
 #' @param hdf5_fn A path to a hdf5 file storing OrthoPaiR results.
-#' @param gene Logical, whether to get genewise orthology information (default is FALSE).
-#' @param split Logical, whether to get split genewise orthology information (default is FALSE).
 #'
 #' @return A dataframe containing ortholog pairs.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
@@ -205,10 +203,6 @@ getOrthoPair <- function(object = NULL,
 #' This function retrieves orphan genes or transcripts information from the OrthoPairDB object.
 #'
 #' @param object A OrthoPairDB object.
-#' @param gene Logical, whether to get orphan gene information.
-#' Orphan transcript information will be returned if FALSE. (default is FALSE).
-#' @param split Logical, whether to obtain split orphan gene information (default is FALSE).
-#'
 #' @return A dataframe containing orphan genes or transcripts.
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @export
@@ -233,5 +227,57 @@ getOrphan <- function(object = NULL, hdf5_fn = NULL, loc = FALSE){
         out <- list(query = unique(h5$orphan[[1]]),
                     subject = unique(h5$orphan[[2]]))
     }
+    return(out)
+}
+
+
+#' Get Meta data of pairing
+#'
+#' This function retrieves meta data from the OrthoPairDB object.
+#'
+#' @param object A OrthoPairDB object.
+#' @param hdf5_fn A path to a hdf5 file storing OrthoPaiR results.
+#'
+#' @return A dataframe containing ortholog pairs.
+#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
+#' @export
+getMeta <- function(object = NULL, hdf5_fn = NULL){
+    if(is.null(object)){
+        h5 <- H5Fopen(hdf5_fn)
+        
+    } else {
+        h5 <- H5Fopen(object$h5)
+    }
+    on.exit(H5Fclose(h5))
+    
+    if(!H5Lexists(h5, "orthopair")){
+        stop("Run syntenicOrtho() to obtain genewise ortholog info.")
+    }
+    if(H5Lexists(h5loc = h5, name = "orphan_gene")){
+        genomes <- names(h5$orphan_gene)
+    }
+    if(H5Lexists(h5loc = h5, name = "orphan")){
+        genomes <- names(h5$orphan)
+    }
+    if(H5Lexists(h5loc = h5, name = "orthopair")){
+        pair_id <- names(h5$orthopair)
+    }
+    if(H5Lexists(h5loc = h5, name = "orthopair_gene")){
+        pair_id <- names(h5$orthopair_gene)
+    }
+    if(H5Lexists(h5loc = h5, name = "files")){
+        files <- names(h5$files)
+    } else {
+        files <- NULL
+    }
+    if(H5Lexists(h5loc = h5, name = "timestamp")){
+        timestamp <- h5$timestamp
+    } else {
+        timestamp <- NULL
+    }
+    out <- c(list(genomes = genomes),
+             list(pair_id = pair_id),
+             list(files = files),
+             list(timestamp = timestamp))
     return(out)
 }
