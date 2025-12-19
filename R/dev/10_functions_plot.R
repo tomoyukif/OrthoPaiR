@@ -68,7 +68,7 @@
 ##' 
 ##' 
 ##' @export
-plot_riparian <- function(hdf5_fn = NULL,
+plotRiparian <- function(hdf5_fn = NULL,
                           object = NULL,
                           min_block_genes = 5L,
                           genomes = NULL) {
