@@ -65,13 +65,29 @@
 ##' @import scales
 ##' @import ggforce
 ##' @import rhdf5
+##' @importFrom colorspace darken
 ##' 
 ##' 
 ##' @export
 plotRiparian <- function(hdf5_fn = NULL,
-                          object = NULL,
-                          min_block_genes = 5L,
-                          genomes = NULL) {
+                         object = NULL,
+                         genomes = NULL,
+                         select_chr = NULL,
+                         chr_sizes = NULL,
+                         chr_gap = 0.8,
+                         track_gap = 1.3,
+                         max_links = 50000,
+                         seed = 1,
+                         alpha_base = NULL,
+                         linewidth = 0.45,
+                         inv_darken = 0.35,
+                         inv_alpha_mult = 1.6,
+                         palette = c("#d73027","#fc8d59","#fee08b","#91bfdb","#4575b4"),
+                         min_block_width = 0,
+                         chr_bar_lw = 8,
+                         chr_label_size = 5,
+                         normalize_genome = TRUE,
+                         genome_scale = 100) {
     
     if (is.null(hdf5_fn) && is.null(object)) {
         stop("Provide either `hdf5_fn` (HDF5 path) or `object`, but not both.")
@@ -94,19 +110,56 @@ plotRiparian <- function(hdf5_fn = NULL,
     pair_blocks <- .get_block_list(op = op, 
                                    genomes = genomes,
                                    meta = meta,
-                                   min_block_genes = min_block_genes)
+                                   select_chr = select_chr)
     n_list <- length(pair_blocks)
     p <- .riparian_plot_engine(pair_blocks = pair_blocks[-n_list],
-                               genomes = pair_blocks[[n_list]])
+                               genomes = pair_blocks[[n_list]],
+                               select_chr = select_chr,
+                               chr_sizes = chr_sizes,
+                               chr_gap = chr_gap,
+                               track_gap = track_gap,
+                               max_links = max_links,
+                               seed = seed,
+                               alpha_base = alpha_base,
+                               linewidth = linewidth,
+                               inv_darken = inv_darken,
+                               inv_alpha_mult = inv_alpha_mult,
+                               palette = palette,
+                               min_block_width = min_block_width,
+                               chr_bar_lw = chr_bar_lw,
+                               chr_sep_lw = chr_sep_lw,
+                               chr_label_size = chr_label_size,
+                               genome_scale = genome_scale)
     return(p)
 }
 
-.get_block_list <- function(op, genomes, meta, min_block_genes){
+.get_block_list <- function(op, genomes, meta, select_chr = NULL){
     if(is.null(genomes)){
         genomes <- sort(meta$genomes)
         message("Since no genome order was specified, ",
                 "plot genomes in the alphabetical order from the top.\n",
                 paste(genomes, collapse = " "))
+    }
+    
+    # Helper function to check if a chromosome should be included
+    .chr_in_selection <- function(chr, genome, select_chr) {
+        if (is.null(select_chr) || is.null(select_chr[[genome]])) {
+            return(TRUE)  # Include all if not specified
+        }
+        sel <- select_chr[[genome]]
+        chr_norm <- norm_chr(chr)
+        # Extract chromosome number
+        chr_num <- suppressWarnings(as.integer(str_extract(chr_norm, "(?<=^chr)\\d+")))
+        # Check if matches integer selection
+        if (any(is.integer(sel) | is.numeric(sel))) {
+            if (chr_num %in% as.integer(sel)) return(TRUE)
+        }
+        # Check if matches character selection (normalized)
+        if (any(is.character(sel))) {
+            sel_norm <- norm_chr(sel[is.character(sel)])
+            if (chr_norm %in% sel_norm) return(TRUE)
+        }
+        return(FALSE)
     }
     meta_pair_id <- strsplit(meta$pair_id, "_")
     target_pair_id <- NULL
@@ -156,17 +209,25 @@ plotRiparian <- function(hdf5_fn = NULL,
             names(op_i)[subject] <- sub("subject_", "query_", op_i_names[subject])
         }
         
+        # Filter by selected chromosomes if specified
+        parts <- str_split(pair_id, "_", simplify = TRUE)
+        g1 <- parts[1]; g2 <- parts[2]
+        if (!is.null(select_chr)) {
+            # Filter query chromosomes
+            if (!is.null(select_chr[[g1]])) {
+                keep_query <- vapply(op_i$query_chr, function(chr) .chr_in_selection(chr, g1, select_chr), logical(1))
+                op_i <- op_i[keep_query]
+            }
+            # Filter subject chromosomes
+            if (!is.null(select_chr[[g2]])) {
+                keep_subject <- vapply(op_i$subject_chr, function(chr) .chr_in_selection(chr, g2, select_chr), logical(1))
+                op_i <- op_i[keep_subject]
+            }
+        }
+        
         # 1) sort（in-placeに近い）
         setorder(op_i, query_chr, query_start, subject_chr, subject_start)
-        
-        # 2) blockごとの遺伝子数（uniqueN が速い）
-        q_sizes <- op_i[, .(q_n = uniqueN(query_gene)), by = query_synteny_block]
-        s_sizes <- op_i[, .(s_n = uniqueN(subject_gene)), by = subject_synteny_block]
-        
-        # 3) joinしてフィルタ（tapply→join）
-        op_i <- q_sizes[op_i, on = .(query_synteny_block)]
-        op_i <- s_sizes[op_i, on = .(subject_synteny_block)]
-        op_i <- op_i[q_n >= min_block_genes & s_n >= min_block_genes]
+        op_i <- op_i[!is.na(query_synteny_block) & !is.na(subject_synteny_block)]
         
         # 4) q_blocks / s_blocks（tapply複数回→1回の集計）
         q_blocks <- op_i[, .(
@@ -209,10 +270,22 @@ plotRiparian <- function(hdf5_fn = NULL,
         setnames(op_i, "end", "subject_block_end")
         setnames(op_i, "width", "subject_block_width")
         
-        dt <- as.data.table(op_i)[, .(q, s)]
+        dt <- as.data.table(op_i)[, .(q, s, query_block, subject_block, query_block_chr, subject_block_chr)]
         # op_i の行順を保ったまま run 分割
-        dt[, `:=`(dq = q - shift(q), ds = s - shift(s))]
-        dt[, adjacent := !is.na(dq) & (abs(dq) <= 1L) & (abs(ds) <= 1L)]
+        # Check both position adjacency AND same synteny blocks
+        dt[, `:=`(
+            dq = q - shift(q),
+            ds = s - shift(s),
+            same_query_block = query_block == shift(query_block),
+            same_subject_block = subject_block == shift(subject_block),
+            same_query_chr = query_block_chr == shift(query_block_chr),
+            same_subject_chr = subject_block_chr == shift(subject_block_chr)
+        )]
+        # Adjacent only if: positions are close AND same synteny blocks AND same chromosomes
+        dt[, adjacent := !is.na(dq) & 
+               (abs(dq) <= 1L) & (abs(ds) <= 1L) &
+               same_query_block & same_subject_block &
+               same_query_chr & same_subject_chr]
         dt[, block_id := cumsum(!adjacent)]
         
         # block_id を op_i に戻す
@@ -242,8 +315,9 @@ plotRiparian <- function(hdf5_fn = NULL,
 
 .riparian_plot_engine <- function(pair_blocks,
                                   genomes,
+                                  select_chr = NULL,
                                   chr_sizes = NULL,
-                                  chr_gap = 2e6,
+                                  chr_gap = 0.8,          # <- ここは「正規化座標単位」で扱う
                                   track_gap = 1.3,
                                   max_links = 50000,
                                   seed = 1,
@@ -255,14 +329,37 @@ plotRiparian <- function(hdf5_fn = NULL,
                                   min_block_width = 0,
                                   chr_bar_lw = 2.8,
                                   chr_sep_lw = 0.35,
-                                  chr_label_size = 3.2) {
-    
+                                  chr_label_size = 3.2,
+                                  normalize_genome = TRUE,   # <- 追加
+                                  genome_scale = 100         # <- 追加（全長を100に）
+) {
     stopifnot(length(genomes) >= 2)
     stopifnot(is.list(pair_blocks))
     
     expected_pairs <- paste0(genomes[-length(genomes)], "_", genomes[-1])
     missing <- setdiff(expected_pairs, names(pair_blocks))
     if (length(missing) > 0) stop("pair_blocks missing: ", paste(missing, collapse=", "))
+    
+    # Helper function to check if chromosome should be included
+    .chr_in_selection <- function(chr, genome, select_chr) {
+        if (is.null(select_chr) || is.null(select_chr[[genome]])) {
+            return(TRUE)  # Include all if not specified
+        }
+        sel <- select_chr[[genome]]
+        chr_norm <- norm_chr(chr)
+        # Extract chromosome number
+        chr_num <- suppressWarnings(as.integer(str_extract(chr_norm, "(?<=^chr)\\d+")))
+        # Check if matches integer selection
+        if (any(is.integer(sel) | is.numeric(sel))) {
+            if (chr_num %in% as.integer(sel)) return(TRUE)
+        }
+        # Check if matches character selection (normalized)
+        if (any(is.character(sel))) {
+            sel_norm <- norm_chr(sel[is.character(sel)])
+            if (chr_norm %in% sel_norm) return(TRUE)
+        }
+        return(FALSE)
+    }
     
     # --- chr_sizes 推定 or 整形 ---
     if (is.null(chr_sizes)) {
@@ -299,6 +396,19 @@ plotRiparian <- function(hdf5_fn = NULL,
             cs <- cs[order(num, chr2)][, .(chr, len)]
             cs
         })
+        
+        # Filter by select_chr if specified
+        if (!is.null(select_chr)) {
+            chr_sizes <- lapply(genomes, function(g) {
+                cs <- chr_sizes[[g]]
+                if (!is.null(select_chr[[g]])) {
+                    keep <- vapply(cs$chr, function(chr) .chr_in_selection(chr, g, select_chr), logical(1))
+                    cs <- cs[keep]
+                }
+                cs
+            })
+            names(chr_sizes) <- genomes
+        }
     } else {
         chr_sizes <- lapply(chr_sizes, function(cs) {
             cs <- as.data.table(cs)
@@ -312,35 +422,111 @@ plotRiparian <- function(hdf5_fn = NULL,
             cs <- cs[order(num, chr2)][, .(chr, len)]
             cs
         })
+        
+        # Filter by select_chr if specified
+        if (!is.null(select_chr)) {
+            chr_sizes <- lapply(genomes, function(g) {
+                cs <- chr_sizes[[g]]
+                if (!is.null(select_chr[[g]])) {
+                    keep <- vapply(cs$chr, function(chr) .chr_in_selection(chr, g, select_chr), logical(1))
+                    cs <- cs[keep]
+                }
+                cs
+            })
+            names(chr_sizes) <- genomes
+        }
     }
     
-    # offsets per genome
+    # --- ここから追加：各ゲノムを genome_scale (=100) に正規化（ギャップ込み） ---
+    genome_totals <- lapply(chr_sizes[genomes], function(cs) sum(cs$len, na.rm = TRUE))
+    genome_totals <- setNames(as.numeric(genome_totals), genomes)
+    
+    if (normalize_genome) {
+        chr_sizes <- lapply(genomes, function(g) {
+            cs <- as.data.table(copy(chr_sizes[[g]]))
+            tot <- genome_totals[[g]]
+            # tot が0/NAのときは壊れるので保険
+            if (!is.finite(tot) || tot <= 0) {
+                stop("Genome total length is not finite/positive for: ", g)
+            }
+            n_chr <- nrow(cs)
+            # Total width including gaps should equal genome_scale
+            # sum(len_n) + (n_chr - 1) * chr_gap = genome_scale
+            # Therefore: sum(len_n) = genome_scale - (n_chr - 1) * chr_gap
+            available_width <- genome_scale - (n_chr - 1) * chr_gap
+            if (available_width <= 0) {
+                stop("genome_scale (", genome_scale, ") is too small for ", n_chr, 
+                     " chromosomes with chr_gap (", chr_gap, ")")
+            }
+            # Normalize chromosome lengths to fill available_width
+            cs[, len_n := (len / tot) * available_width]
+            cs
+        })
+        names(chr_sizes) <- genomes
+    } else {
+        # When not normalizing, len_n should equal len for consistency
+        chr_sizes <- lapply(genomes, function(g) {
+            cs <- as.data.table(copy(chr_sizes[[g]]))
+            cs[, len_n := len]
+            cs
+        })
+        names(chr_sizes) <- genomes
+    }
+    
+    # offsets per genome（len_nを使う）
     build_offsets <- function(cs) {
         cs <- as.data.table(copy(cs))
-        cs[, offset := c(0, cumsum(head(len, -1) + chr_gap))]
+        if (!"len_n" %in% names(cs)) cs[, len_n := len]  # normalize_genome=FALSE の保険
+        
+        cs[, offset := c(0, cumsum(head(len_n, -1) + chr_gap))]
         cs
     }
     chr_offsets <- lapply(chr_sizes[genomes], build_offsets)
     
     map_x <- function(genome, chr, pos) {
         off <- chr_offsets[[genome]]
+        
         chr <- norm_chr(chr)
         idx <- match(chr, off$chr)
-        off$offset[idx] + as.numeric(pos)
+        
+        # 出力ベクトルを先に作る
+        out <- rep(NA_real_, length(idx))
+        
+        ok <- !is.na(idx) & is.finite(pos)
+        if (!any(ok)) return(out)
+        
+        # pos を数値化
+        pos <- as.numeric(pos)
+        
+        # 位置もゲノム全長で正規化（ギャップ込みの正規化幅に合わせる）
+        if (normalize_genome) {
+            tot <- genome_totals[[genome]]
+            n_chr <- nrow(off)
+            # Available width for chromosomes (excluding gaps)
+            available_width <- genome_scale - (n_chr - 1) * chr_gap
+            # Normalize position to available_width, not genome_scale
+            pos <- (pos / tot) * available_width
+        }
+        
+        out[ok] <- off$offset[idx[ok]] + pos[ok]
+        out
     }
     
     # y positions
     y_map <- setNames(rev(seq_along(genomes)) * track_gap, genomes)
     
-    # chromosome track segments (chr単位)
+    # chromosome track segments (chr単位) - filter by select_chr if specified
     tracks <- rbindlist(lapply(genomes, function(g) {
         off <- chr_offsets[[g]]
+        if (!is.null(select_chr) && !is.null(select_chr[[g]])) {
+            keep <- vapply(off$chr, function(chr) .chr_in_selection(chr, g, select_chr), logical(1))
+            off <- off[keep]
+        }
         off[, .(genome=g, chr=chr,
-                x0=offset, x1=offset+len,
-                xmid=offset+len/2,
+                x0=offset, x1=offset+len_n,
+                xmid=offset+len_n/2,
                 y=y_map[g])]
     }))
-    chr_seps <- tracks[, .(x = x0, y = y, genome=genome, chr=chr)]
     
     # chr label: "chr01" -> "1"
     chr_num <- function(chr) {
@@ -376,8 +562,9 @@ plotRiparian <- function(hdf5_fn = NULL,
             inv  = (query_block_direction != subject_block_direction)
         )]
         
-        dt[, bw := (abs(query_block_end - query_block_start) + abs(subject_block_end - subject_block_start))/2]
-        if (min_block_width > 0) dt <- dt[bw >= min_block_width]
+        dt[, q_bw := abs(query_block_end - query_block_start)]
+        dt[, s_bw := abs(subject_block_end - subject_block_start)]
+        if (min_block_width > 0) dt <- dt[q_bw >= min_block_width & s_bw >= min_block_width]
         
         dt[, x1 := map_x(g1, query_block_chr, qmid)]
         dt[, x2 := map_x(g2, subject_block_chr, smid)]
@@ -392,7 +579,7 @@ plotRiparian <- function(hdf5_fn = NULL,
             colval = x1
         )]
         
-        link_dt_list[[pnm]] <- dt[, .(pair, block_id, group, inv, colval, y1, y2, ymid, x1, x2, bw)]
+        link_dt_list[[pnm]] <- dt[, .(pair, block_id, group, inv, colval, y1, y2, ymid, x1, x2, q_bw, s_bw)]
     }
     
     links <- rbindlist(link_dt_list, use.names=TRUE, fill=TRUE)
@@ -427,37 +614,36 @@ plotRiparian <- function(hdf5_fn = NULL,
     bez[, col_hex := pal_fun(pmin(1, pmax(0, col_t)))]
     bez[inv == TRUE, col_hex := colorspace::darken(col_hex, amount = inv_darken)]
     
+    # Calculate alpha values directly - convert logical to numeric
+    bez[, alpha_val := ifelse(inv, alpha_inv, alpha_base)]
+    
+    # Convert to data.frame for ggplot2 (ggforce works better with data.frame)
+    bez_df <- as.data.frame(bez)
+    
     p <- ggplot() +
         ggforce::geom_bezier(
-            data = bez,
-            aes(x=x, y=y, group=group, color=col_hex, alpha=inv),
+            data = bez_df,
+            aes(x=x, y=y, group=group, color=col_hex),
             linewidth = linewidth,
             lineend = "round",
             show.legend = FALSE
         ) +
         scale_color_identity() +
-        scale_alpha_manual(values = c(`FALSE` = alpha_base, `TRUE` = alpha_inv), guide = "none") +
+        scale_alpha_identity(guide = "none") +
         # chr bars
         geom_segment(
             data = tracks,
             aes(x=x0, xend=x1, y=y, yend=y),
             linewidth = chr_bar_lw,
             lineend = "round",
-            color = "grey15"
-        ) +
-        # chr separators
-        geom_segment(
-            data = chr_seps,
-            aes(x=x, xend=x, y=y-0.18, yend=y+0.18),
-            linewidth = chr_sep_lw,
-            color = "grey5"
+            color = "grey30"
         ) +
         # chr circle label
         geom_point(
             data = chr_labels,
             aes(x=x, y=y),
-            shape = 21, fill = "white", color = "grey10", stroke = 0.3,
-            size = 3.4
+            shape = 21, fill = "white", color = "grey10", stroke = 0,
+            size = chr_label_size * 1.4 / 3.2
         ) +
         geom_text(
             data = chr_labels,
@@ -468,7 +654,7 @@ plotRiparian <- function(hdf5_fn = NULL,
         # genome labels
         geom_text(
             data = data.table(genome=genomes, y=y_map[genomes]),
-            aes(x = min(tracks$x0, na.rm=TRUE) - chr_gap*0.6, y=y, label=genome),
+            aes(x = min(tracks$x0, na.rm=TRUE) - chr_gap, y = y, label = genome),
             hjust = 1, size = 4
         ) +
         theme_void() +
