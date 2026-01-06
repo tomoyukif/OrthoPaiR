@@ -141,26 +141,6 @@ plotRiparian <- function(hdf5_fn = NULL,
                 paste(genomes, collapse = " "))
     }
     
-    # Helper function to check if a chromosome should be included
-    .chr_in_selection <- function(chr, genome, select_chr) {
-        if (is.null(select_chr) || is.null(select_chr[[genome]])) {
-            return(TRUE)  # Include all if not specified
-        }
-        sel <- select_chr[[genome]]
-        chr_norm <- norm_chr(chr)
-        # Extract chromosome number
-        chr_num <- suppressWarnings(as.integer(str_extract(chr_norm, "(?<=^chr)\\d+")))
-        # Check if matches integer selection
-        if (any(is.integer(sel) | is.numeric(sel))) {
-            if (chr_num %in% as.integer(sel)) return(TRUE)
-        }
-        # Check if matches character selection (normalized)
-        if (any(is.character(sel))) {
-            sel_norm <- norm_chr(sel[is.character(sel)])
-            if (chr_norm %in% sel_norm) return(TRUE)
-        }
-        return(FALSE)
-    }
     meta_pair_id <- strsplit(meta$pair_id, "_")
     target_pair_id <- NULL
     target_pair_order <- NULL
@@ -311,6 +291,27 @@ plotRiparian <- function(hdf5_fn = NULL,
     }
     pair_blocks <- c(pair_blocks, list(genomes = genomes))
     return(pair_blocks)
+}
+
+# Helper function to check if a chromosome should be included
+.chr_in_selection <- function(chr, genome, select_chr) {
+    if (is.null(select_chr) || is.null(select_chr[[genome]])) {
+        return(TRUE)  # Include all if not specified
+    }
+    sel <- select_chr[[genome]]
+    chr_norm <- norm_chr(chr)
+    # Extract chromosome number
+    chr_num <- suppressWarnings(as.integer(str_extract(chr_norm, "(?<=^chr)\\d+")))
+    # Check if matches integer selection
+    if (any(is.integer(sel) | is.numeric(sel))) {
+        if (chr_num %in% as.integer(sel)) return(TRUE)
+    }
+    # Check if matches character selection (normalized)
+    if (any(is.character(sel))) {
+        sel_norm <- norm_chr(sel[is.character(sel)])
+        if (chr_norm %in% sel_norm) return(TRUE)
+    }
+    return(FALSE)
 }
 
 .riparian_plot_engine <- function(pair_blocks,

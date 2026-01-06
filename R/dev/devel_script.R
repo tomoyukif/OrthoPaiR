@@ -8,11 +8,13 @@ library(stringr)
 library(scales)
 library(ggforce)
 
+devtools::load_all("./")
 source("R/dev/10_functions_plot.R")
 
 # Prepare data for plotting
 p <- plotRiparian(hdf5_fn = "~/workspace/orthology/output/benchmark/orthopair/hdf5_out/Osat_Ogla.h5",
                   genomes = c("Osat", "Ogla"), 
+                  select_chr = list(Osat = 1:12, Ogla = 1:12),
                   chr_sizes = NULL,
                   chr_gap = 3,
                   track_gap = 0.5,
@@ -37,7 +39,7 @@ ggsave("~/workspace/orthology/output/benchmark/synteny_stacked.pdf",
 # Prepare data for plotting
 p <- plotRiparian(hdf5_fn = "~/workspace/orthology/output/benchmark_plant/orthopair/reorg_out/reorg_orthopair.h5",
                   genomes = c("Osat", "Hvul", "Atha", "Mpol"),
-                  select_chr = list(Osat = c(3, 11, 12), Hvul = c(4)),
+                  select_chr = list(Osat = 1:12, Hvul = 1:7, Atha = 1:5, Mpol = 1:8),
                   chr_sizes = NULL,
                   chr_gap = 3,
                   track_gap = 0.5,
