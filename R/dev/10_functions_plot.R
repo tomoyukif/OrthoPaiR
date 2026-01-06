@@ -210,79 +210,24 @@ plotRiparian <- function(hdf5_fn = NULL,
         op_i <- op_i[!is.na(query_synteny_block) & !is.na(subject_synteny_block)]
         
         # 4) q_blocks / s_blocks（tapply複数回→1回の集計）
-        q_blocks <- op_i[, .(
-            chr   = first(query_chr),
-            start = min(query_start),
-            end   = max(query_end)
-        ), by = .(block = query_synteny_block)]
-        q_blocks[, width := end - start]
-        setorder(q_blocks, chr, start)
-        q_blocks[, x_idx := .I]
+        block_df <- op_i[, .(
+            query_block_chr   = first(query_chr),
+            query_block_start = min(query_start),
+            query_block_end   = max(query_end),
+            query_block_direction = tail(query_start, 1) - head(query_start, 1),
+            subject_block_chr   = first(subject_chr),
+            subject_block_start = min(subject_start),
+            subject_block_end   = max(subject_end),
+            subject_block_direction = tail(subject_start, 1) - head(subject_start, 1)
+        ), by = .(query_block = query_synteny_block, subject_block = subject_synteny_block)]
+        block_df[, query_block_width := query_block_end - query_block_start]
+        block_df[, subject_block_width := subject_block_end - subject_block_start]
+        setorder(block_df, query_block_chr, query_block_start, subject_block_chr, subject_block_start)
         
-        s_blocks <- op_i[, .(
-            chr   = first(subject_chr),
-            start = min(subject_start),
-            end   = max(subject_end)
-        ), by = .(block = subject_synteny_block)]
-        s_blocks[, width := end - start]
-        setorder(s_blocks, chr, start)
-        s_blocks[, x_idx := .I]
-        
-        # 5) q,s の付与（paste+named vector→2回のjoin）
-        #    blockとchrの両方でマップ（元コードの "::" と同等）
-        op_i <- q_blocks[op_i,
-                         on = .(block = query_synteny_block, chr = query_chr),
-                         nomatch = 0L]
-        setnames(op_i, "x_idx", "q")
-        setnames(op_i, "block", "query_block")
-        setnames(op_i, "chr", "query_block_chr")
-        setnames(op_i, "start", "query_block_start")
-        setnames(op_i, "end", "query_block_end")
-        setnames(op_i, "width", "query_block_width")
-        
-        op_i <- s_blocks[op_i,
-                         on = .(block = subject_synteny_block, chr = subject_chr),
-                         nomatch = 0L]
-        setnames(op_i, "x_idx", "s")
-        setnames(op_i, "block", "subject_block")
-        setnames(op_i, "chr", "subject_block_chr")
-        setnames(op_i, "start", "subject_block_start")
-        setnames(op_i, "end", "subject_block_end")
-        setnames(op_i, "width", "subject_block_width")
-        
-        dt <- as.data.table(op_i)[, .(q, s, query_block, subject_block, query_block_chr, subject_block_chr)]
-        # op_i の行順を保ったまま run 分割
-        # Check both position adjacency AND same synteny blocks
-        dt[, `:=`(
-            dq = q - shift(q),
-            ds = s - shift(s),
-            same_query_block = query_block == shift(query_block),
-            same_subject_block = subject_block == shift(subject_block),
-            same_query_chr = query_block_chr == shift(query_block_chr),
-            same_subject_chr = subject_block_chr == shift(subject_block_chr)
-        )]
-        # Adjacent only if: positions are close AND same synteny blocks AND same chromosomes
-        dt[, adjacent := !is.na(dq) & 
-               (abs(dq) <= 1L) & (abs(ds) <= 1L) &
-               same_query_block & same_subject_block &
-               same_query_chr & same_subject_chr]
-        dt[, block_id := cumsum(!adjacent)]
-        
-        # block_id を op_i に戻す
-        op_i$block_id <- dt$block_id
-        
-        # 9) block_df（tapply→unique）
-        block_df <- op_i[, .(query_block_start = min(query_start), 
-                             query_block_end = max(query_end), 
-                             query_block_direction = tail(query_start, 1) - head(query_start, 1),
-                             subject_block_start = min(subject_start), 
-                             subject_block_end = max(subject_end),
-                             subject_block_direction = tail(subject_start, 1) - head(subject_start, 1)),
-                         by = .(block_id, query_block_chr, subject_block_chr)]
-        query_reverse <- block_df$query_block_direction <= 0
+        query_reverse <- block_df$query_block_direction < 0
         block_df$query_block_direction <- rep("+", length(block_df$query_block_direction))
         block_df$query_block_direction[query_reverse] <- "-"
-        subject_reverse <- block_df$subject_block_direction <= 0
+        subject_reverse <- block_df$subject_block_direction < 0
         block_df$subject_block_direction <- rep("+", length(block_df$subject_block_direction))
         block_df$subject_block_direction[subject_reverse] <- "-"
         new_blocks <- list(block_df)
@@ -545,8 +490,7 @@ plotRiparian <- function(hdf5_fn = NULL,
         g1 <- parts[1]; g2 <- parts[2]
         dt <- as.data.table(copy(pair_blocks[[pnm]]))
         
-        needed <- c("block_id",
-                    "query_block_chr","query_block_start","query_block_end","query_block_direction",
+        needed <- c("query_block_chr","query_block_start","query_block_end","query_block_direction",
                     "subject_block_chr","subject_block_start","subject_block_end","subject_block_direction")
         miss <- setdiff(needed, names(dt))
         if (length(miss) > 0) stop(pnm, " missing columns: ", paste(miss, collapse=", "))
@@ -573,14 +517,14 @@ plotRiparian <- function(hdf5_fn = NULL,
         
         dt[, `:=`(
             pair = pnm,
-            group = paste0(pnm, "::", block_id),
+            group = paste0(pnm, "::", query_block, "::", subject_block),
             y1 = y_map[g1],
             y2 = y_map[g2],
             ymid = (y_map[g1] + y_map[g2]) / 2,
             colval = x1
         )]
         
-        link_dt_list[[pnm]] <- dt[, .(pair, block_id, group, inv, colval, y1, y2, ymid, x1, x2, q_bw, s_bw)]
+        link_dt_list[[pnm]] <- dt[, .(pair, group, inv, colval, y1, y2, ymid, x1, x2, q_bw, s_bw)]
     }
     
     links <- rbindlist(link_dt_list, use.names=TRUE, fill=TRUE)
