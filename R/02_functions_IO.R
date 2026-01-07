@@ -169,7 +169,9 @@ getOrthoPair <- function(object = NULL,
     if(score){
         target_col <- c(target_col, 
                         "pident", "qcovs_q2s", "qcovs_s2q", 
-                        "ci_q2s", "ci_s2q", "mutual_ci")
+                        "ci_q2s", "ci_s2q", "mutual_ci",
+                        "query_is_anchor", "subject_is_anchor", 
+                        "is_anchor_pair")
     }
     
     if(loc){

@@ -31,51 +31,9 @@ syntenicOrtho <- function(object){
                                         anchor = anchor,
                                         g2g_graph = g2g_graph, 
                                         t2a_graph = t2a_graph)
-        
-        # orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
-        # .h5overwrite(obj = orthopair, file = object$h5, "orthopair_tx")
         orthopair <- .findSyntenyBlocks(orthopair = orthopair)
-        # anchor2 <- .evalSynteny(orthopair = orthopair, anchor = anchor)
-        # t2a_graph <- .link2Anchor(anchor = anchor, g2g_graph = g2g_graph)
-        # orthopair <- .findSyntenicOrtho(rbh = rbh,
-        #                                 anchor = anchor2,
-        #                                 g2g_graph = g2g_graph,
-        #                                 t2a_graph = t2a_graph)
-        # orthopair <- .findSyntenyBlocks(orthopair = orthopair)
-        
         orthopair <- .pickBestPair(orthopair = orthopair)
-        # Check gene order
-        # orthopair <- .filterOrthopair(orthopair = orthopair)
-        # te <- .labelTE(orthopair = orthopair, 
-        #                h5 = h5, 
-        #                t2a_graph = t2a_graph)
-        # orthopair$te <- orthopair$query_gene %in% te$query_te | 
-        #     orthopair$query_gene %in% te$subject_te
         orthopair <- .classifyOrthoPair(orthopair = orthopair)
-        # orthopair <- .filterOrthopair(orthopair = orthopair)
-        # orthopair <- .examineOrthoPair(orthopair = orthopair, g2g_graph = g2g_graph)
-        
-        # split_orthopair <- .splitGene(orthopair = orthopair, g2g_graph = g2g_graph)
-        # rest_orthopair <- split_orthopair$rest
-        # orthopair <- split_orthopair$splited
-        # 
-        # if(!is.null(rest_orthopair)){
-        #     while(TRUE){
-        #         rest_orthopair <- .classifyOrthoPair(orthopair = rest_orthopair)
-        #         rest_orthopair <- .splitGene(orthopair = rest_orthopair, g2g_graph = g2g_graph)
-        #         if(is.null(rest_orthopair$rest)){
-        #             orthopair <- rbind(orthopair,
-        #                                rest_orthopair$splited)
-        #             break
-        #             
-        #         } else {
-        #             orthopair <- rbind(orthopair,
-        #                                rest_orthopair$splited)
-        #             rest_orthopair <- rest_orthopair$rest
-        #         }
-        #     }
-        # }
-        # orthopair <- .sortSyntenicOrtho(orthopair = orthopair, g2g_graph = g2g_graph)
         orthopair <- .filterOrthopair(orthopair = orthopair, 
                                       g2g_graph = g2g_graph)
         orthopair <- .classifyOrthoPair(orthopair = orthopair)
@@ -105,21 +63,6 @@ syntenicOrtho <- function(object){
                  name = "data_type")
     .h5overwrite(obj = as.character(Sys.time()), file = object$h5, "timestamp/pairing")
 }
-
-# .prepateTElist <- function(h5, g2g_graph){
-#     anchor <- .findAnchors(h5 = h5,
-#                            g2g_graph = g2g_graph)
-#     t2a_graph <- .link2Anchor(anchor = anchor, g2g_graph = g2g_graph)
-#     orthopair <- .findSyntenicOrtho(h5 = h5,
-#                                     g2g_graph = g2g_graph,
-#                                     t2a_graph = t2a_graph)
-#     orthopair <- .pickBestPair(orthopair = orthopair)
-#     orthopair <- .filterOrthopair(orthopair = orthopair)
-#     out <- .labelTE(orthopair = orthopair,
-#                     h5 = h5,
-#                     g2g_graph = g2g_graph)
-#     return(out)
-# }
 
 .collapseOverlappingGene <- function(orthopair, g2g_graph){
     id_map_Mto1 <- .collapseMto1(orthopair = orthopair, g2g_graph = g2g_graph)
@@ -212,34 +155,6 @@ syntenicOrtho <- function(object){
                                       g2g_graph = g2g_graph)
     id_map <- rbind(id_map, MtoM_id_map_Mto1, MtoM_id_map_1toM)
     return(id_map)
-}
-
-.labelTE <- function(orthopair, h5, g2g_graph){
-    rbh <- h5$blast$rbh
-    hit <- match(rbh$qseqid, g2g_graph$query_gff$ID)
-    rbh$qgeneid <- g2g_graph$query_gff$gene_id[hit]
-    hit <- match(rbh$sseqid, g2g_graph$subject_gff$ID)
-    rbh$sgeneid <- g2g_graph$subject_gff$gene_id[hit]
-    rbh$pair_id <- paste(rbh$qgeneid, rbh$sgeneid, sep = "_")
-    
-    non_syntenic_hits <- {rbh$qgeneid %in% orthopair$query_gene |
-            rbh$sgeneid %in% orthopair$subject_gene} &
-        !rbh$pair_id %in% orthopair$pair_id
-    rbh <- unique(subset(rbh[non_syntenic_hits, ],
-                         select = c(qgeneid, sgeneid)))
-    q_rbh <- table(rbh$qgeneid)
-    s_rbh <- table(rbh$sgeneid)
-    
-    q_q <- quantile(q_rbh, c(0.25, 0.75))
-    q_whisker <- 1.5 * diff(q_q)
-    q_th <- q_q[2] + q_whisker
-    s_q <- quantile(s_rbh, c(0.25, 0.75))
-    s_whisker <- 1.5 * diff(s_q)
-    s_th <- s_q[2] + s_whisker
-    q_te <- names(q_rbh[q_rbh >= q_th])
-    s_te <- names(s_rbh[s_rbh >= s_th])
-    out <- list(query_te = q_te, subject_te = s_te)
-    return(out)
 }
 
 .getOrphan <- function(orthopair, g2g_graph){
@@ -903,13 +818,6 @@ syntenicOrtho <- function(object){
     q <- quantile(sog_best_pidt, c(0.25, 0.75))
     random_mut_threshold <- q[1] - 1.5 * diff(q)
     orthopair <- orthopair[!non_anchor | orthopair$pident >= random_mut_threshold, ]
-    
-    # invalid <- .examineMtoM(orthopair = orthopair)
-    # orthopair <- subset(orthopair, subset = !pair_id %in% invalid)
-    # orthopair <- .classifyOrthoPair(orthopair = orthopair)
-    # invalid <- .examine1toM(orthopair = orthopair)
-    # invalid <- .examineMto1(orthopair = orthopair)
-    # invalid <- .examine1to1(orthopair = orthopair)
     return(orthopair)
 }
 
@@ -954,34 +862,40 @@ syntenicOrtho <- function(object){
 }
 
 .reformatOrthoPair <- function(orthopair, g2g_graph){
-    q_tx_hit <- match(orthopair$query_tx, g2g_graph$query_gff$tx_index)
-    orthopair$query_tx <- g2g_graph$query_gff$Parent[q_tx_hit]
-    orthopair$query_start <- g2g_graph$query_gff$start[q_tx_hit]
-    orthopair$query_end <- g2g_graph$query_gff$end[q_tx_hit]
-    orthopair$query_strand <- g2g_graph$query_gff$strand[q_tx_hit]
+    q_tx_hit <- match(orthopair$query_tx, g2g_graph$query_df$tx_index)
+    orthopair$query_tx <- g2g_graph$query_df$Parent[q_tx_hit]
+    orthopair$query_start <- g2g_graph$query_df$start[q_tx_hit]
+    orthopair$query_end <- g2g_graph$query_df$end[q_tx_hit]
+    orthopair$query_strand <- g2g_graph$query_df$strand[q_tx_hit]
     orthopair$query_strand[orthopair$query_strand == "1"] <- "+"
     orthopair$query_strand[orthopair$query_strand == "2"] <- "-"
     q_split <- which(orthopair$query_gene < 0)
-    orthopair$query_gene <- g2g_graph$query_gff$gene_id[q_tx_hit]
+    orthopair$query_gene <- g2g_graph$query_df$gene_id[q_tx_hit]
     orthopair$original_query_gene <- orthopair$query_gene
     orthopair$query_gene[q_split] <- paste0(orthopair$query_tx[q_split], ":split")
     
-    s_tx_hit <- match(orthopair$subject_tx, g2g_graph$subject_gff$tx_index)
-    orthopair$subject_tx <- g2g_graph$subject_gff$Parent[s_tx_hit]
-    orthopair$subject_start <- g2g_graph$subject_gff$start[s_tx_hit]
-    orthopair$subject_end <- g2g_graph$subject_gff$end[s_tx_hit]
-    orthopair$subject_strand <- g2g_graph$subject_gff$strand[s_tx_hit]
+    s_tx_hit <- match(orthopair$subject_tx, g2g_graph$subject_df$tx_index)
+    orthopair$subject_tx <- g2g_graph$subject_df$Parent[s_tx_hit]
+    orthopair$subject_start <- g2g_graph$subject_df$start[s_tx_hit]
+    orthopair$subject_end <- g2g_graph$subject_df$end[s_tx_hit]
+    orthopair$subject_strand <- g2g_graph$subject_df$strand[s_tx_hit]
     orthopair$subject_strand[orthopair$subject_strand == "1"] <- "+"
     orthopair$subject_strand[orthopair$subject_strand == "2"] <- "-"
     s_split <- which(orthopair$subject_gene < 0)
-    orthopair$subject_gene <- g2g_graph$subject_gff$gene_id[s_tx_hit]
+    orthopair$subject_gene <- g2g_graph$subject_df$gene_id[s_tx_hit]
     orthopair$original_subject_gene <- orthopair$subject_gene
     orthopair$subject_gene[s_split] <- paste0(orthopair$subject_tx[s_split], ":split")
     
     orthopair <- subset(orthopair,
                         select = c(query_gene:subject_chr,
                                    pident:mutual_ci,
+                                   query_is_anchor,
+                                   subject_is_anchor, 
+                                   is_anchor_pair,
                                    query_synteny_block:original_subject_gene))
+    orthopair$query_is_anchor <- as.numeric(orthopair$query_is_anchor)
+    orthopair$subject_is_anchor <- as.numeric(orthopair$subject_is_anchor)
+    orthopair$is_anchor_pair <- as.numeric(orthopair$is_anchor_pair)
     orthopair$query_synteny_block <- factor(orthopair$query_synteny_block)
     orthopair$subject_synteny_block <- factor(orthopair$subject_synteny_block)
     orthopair$SOG <- factor(orthopair$SOG)

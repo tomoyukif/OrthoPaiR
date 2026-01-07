@@ -1,3 +1,7 @@
+Changes in version 0.5.12 (2025-01-07)
++ Add a function to draw a riparian plot representing syntenic blocks.
++ Add columns indicating whether pairs are anchors or not in the output data
+
 Changes in version 0.5.9 (2025-12-01)
 + Bug fix in .getRBH()
 
