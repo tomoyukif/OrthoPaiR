@@ -4,7 +4,7 @@
 \alias{summaryOrthoPair}
 \title{Summarize OrthoPairDB object}
 \usage{
-summaryOrthoPair(object = NULL, hdf5_fn = NULL, gene = FALSE)
+summaryOrthoPair(object = NULL, hdf5_fn = NULL)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}

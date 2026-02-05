@@ -33,23 +33,6 @@
     }
 }
 
-#' #' @importFrom rtracklayer import.gff
-#' # Function to import multiple GFF files
-#' .importAllGFF <- function(fn){
-#'     for(i in seq_along(fn)){
-#'         if(i == 1){
-#'             # Import the first GFF file
-#'             out <- import.gff(fn[i])
-#'             
-#'         } else {
-#'             # Concatenate subsequent GFF files
-#'             out <- c(out, import.gff(fn[i]))
-#'         }
-#'     }
-#'     # Return the concatenated GFF data
-#'     return(out)
-#' }
-
 #' @importFrom rhdf5 h5createFile
 # Function to create an HDF5 file
 .makeHDF5 <- function(hdf5_path, overwrite, verbose = TRUE){

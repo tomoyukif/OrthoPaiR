@@ -1,525 +1,398 @@
-#' @importFrom rtracklayer export.gff3
-#' @importFrom Biostrings writeXStringSet
+#' Reorganise orthopair results and create graph/table outputs
+#'
+#' This is a high-level wrapper that:
+#' \itemize{
+#'   \item reorganises per-pair OrthoPaiR HDF5 results,
+#'   \item rewrites GFF information when \code{rename = TRUE} to merge split genes,
+#'   \item creates a genome-level orthology graph (GraphML),
+#'   \item and summarises the graph into tabular outputs in the same directory.
+#' }
+#'
+#' It is intended for use after pairwise OrthoPaiR runs have completed and
+#' their HDF5 paths are available.
+#'
+#' @param hdf5_fn Character vector of paths to pairwise OrthoPaiR HDF5 result
+#'   files.
+#' @param rename Logical; whether to apply split-gene renaming when
+#'   reorganising GFF and orthopair information.
+#' @param n_core Integer; number of cores to use for the internal parallel
+#'   steps (Linux/macOS only; on Windows this falls back to serial execution).
+#' @param overwrite Logical; if \code{TRUE}, recompute the reorganised outputs
+#'   and overwrite existing files in the output directory. If \code{FALSE},
+#'   an existing \code{orthopair.graphml} will be reused if present.
+#' @param verbose Logical; whether to print progress messages.
+#'
+#' @return The path to the output directory (typically
+#'   \code{file.path(<base>, \"reorg_out\")}).
+#'
 #' @export
-reorgOrthopiars <- function(hdf5_fn,
-                            out_dir = "./",
-                            out_fn = "reorg_orthopair.h5",
-                            rename = FALSE,
-                            overwrite = TRUE,
-                            verbose = TRUE){
-    dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
-    hdf5_out_fn <- .makeHDF5(hdf5_path = file.path(out_dir, out_fn), 
-                             overwrite = overwrite)
+reorgOrthopairs <- function(hdf5_fn,
+                            rename = TRUE,
+                            n_core = 1L,
+                            overwrite = FALSE,
+                            verbose = TRUE) {
+    out_dir <- file.path(sub("hdf5_out.*", "", hdf5_fn[1]), "reorg_out")
+    dir.create(path = file.path(out_dir, "gff"),
+               showWarnings = FALSE,
+               recursive = TRUE)
+    
     if(overwrite){
-        .h5creategroup(hdf5_out_fn, "orthopair")
-        .h5creategroup(hdf5_out_fn, "gff")
+        ## Faster rename-list construction
+        rename_list <- .getRenameList(hdf5_fn = hdf5_fn,
+                                           rename = rename,
+                                           n_core = n_core)
+        
+        reorg_list <- .reorgGFF(out_dir = out_dir,
+                                     rename_list = rename_list,
+                                     n_core = n_core)
+        
+        orthopair_list <- .reorgOrthoPair(hdf5_fn = hdf5_fn,
+                                               reorg_list = reorg_list,
+                                               n_core = n_core)
+        
+        graph <- .createGraph(orthopair_list = orthopair_list, 
+                              reorg_list = reorg_list)
+        graph_fn <- file.path(out_dir, "orthopair.graphml")
+        write_graph(graph = graph, file = graph_fn, format = "graphml")
+        
+    } else {
+        graph_fn <- file.path(out_dir, "orthopair.graphml")
+        graph <- read_graph(file = graph_fn, format = "graphml")
     }
     
-    rename_list <- .getRenameList(hdf5_fn, rename)
+    .graph2df(graph = graph, out_dir = out_dir)
     
-    if(rename){
-        .reorgGFF(out_dir = out_dir, rename_list = rename_list)
-    }
-    
-    .reorgOrthoPair(hdf5_out_fn = hdf5_out_fn,
-                    hdf5_fn = hdf5_fn, 
-                    out_dir = out_dir,
-                    rename_list = rename_list,
-                    rename = rename)
-    
-    .h5overwrite(obj = "reorg_orthopair",
-                 file = hdf5_out_fn,
-                 name = "data_type")
-    
-    return(hdf5_out_fn)
+    return(out_dir)
 }
 
-.getRenameList <- function(hdf5_fn, rename){
-    gff_list <- NULL
-    for(i in seq_along(hdf5_fn)){
-        meta <- getMeta(hdf5_fn = hdf5_fn[i])
-        gff_list <- rbind(gff_list,
-                          data.frame(genomes = meta$genomes, 
-                                     gff = c(meta$files$query_gff, 
-                                             meta$files$subject_gff)))
+## Internal helper: faster version of .getRenameList()
+##
+## - Uses lapply / mclapply to gather metadata and (optionally) split genes
+##   in a single pass over hdf5_fn.
+## - Fixes the dependency on a loop-local 'meta' variable in the original
+##   implementation by keeping per-file meta information explicitly.
+.getRenameList <- function(hdf5_fn, rename = FALSE, n_core = 1L) {
+    idx <- seq_along(hdf5_fn)
+    
+    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
+    worker_fun <- function(i) {
+        meta_i <- getMeta(hdf5_fn = hdf5_fn[i])
+        
+        ## Access components defensively to avoid '$' on atomic vectors
+        genomes_i <- meta_i[["genomes"]]
+        files_i <- meta_i[["files"]]
+        
+        if (!is.null(files_i)) {
+            query_gff_i <- files_i[["query_gff"]]
+            subject_gff_i <- files_i[["subject_gff"]]
+        } else {
+            query_gff_i <- NA_character_
+            subject_gff_i <- NA_character_
+        }
+        
+        gff_df <- data.frame(
+            genomes = genomes_i,
+            gff = c(query_gff_i, subject_gff_i),
+            stringsAsFactors = FALSE
+        )
+        
+        split_df <- NULL
+        if (rename) {
+            opr <- getOrthoPair(hdf5_fn = hdf5_fn[i])[[1]]
+            
+            query_split <- subset(
+                opr,
+                subset = grepl("split", query_gene),
+                select = c(query_gene, query_tx)
+            )
+            subject_split <- subset(
+                opr,
+                subset = grepl("split", subject_gene),
+                select = c(subject_gene, subject_tx)
+            )
+            
+            if (nrow(query_split) > 0L) {
+                split_df <- rbind(
+                    split_df,
+                    data.frame(
+                        genome = genomes_i[1],
+                        gene = query_split$query_gene,
+                        tx = query_split$query_tx,
+                        stringsAsFactors = FALSE
+                    )
+                )
+            }
+            if (nrow(subject_split) > 0L) {
+                split_df <- rbind(
+                    split_df,
+                    data.frame(
+                        genome = genomes_i[2],
+                        gene = subject_split$subject_gene,
+                        tx = subject_split$subject_tx,
+                        stringsAsFactors = FALSE
+                    )
+                )
+            }
+        }
+        
+        list(gff = gff_df, split = split_df)
     }
+    
+    if (use_parallel) {
+        res <- mclapply(
+            X = idx,
+            FUN = worker_fun,
+            mc.cores = n_core
+        )
+    } else {
+        res <- lapply(idx, worker_fun)
+    }
+    
+    ## Combine gff_list
+    gff_list <- do.call(
+        rbind,
+        lapply(res, function(x) x$gff)
+    )
     gff_list <- unique(gff_list)
     
+    ## Combine split_list if rename = TRUE
     split_list <- NULL
-    if(rename){
-        for(i in seq_along(hdf5_fn)){
-            opr <- getOrthoPair(hdf5_fn = hdf5_fn[i])
-            query_split <- subset(opr[[1]], 
-                                  subset = grepl("split", query_gene),
-                                  select = c(query_gene, query_tx))
-            subject_split <- subset(opr[[1]], 
-                                    subset = grepl("split", subject_gene),
-                                    select = c(subject_gene, subject_tx))
-            if(nrow(query_split) > 0){
-                split_list <- rbind(split_list, 
-                                    data.frame(genome = meta$genomes[1], 
-                                               gene = query_split$query_gene, 
-                                               tx = query_split$query_tx))
-            }
-            if(nrow(subject_split) > 0){
-                split_list <- rbind(split_list, 
-                                    data.frame(genome = meta$genomes[2], 
-                                               gene = subject_split$subject_gene, 
-                                               tx = subject_split$subject_tx))
-            }
-            split_list <- unique(split_list)
+    if (rename) {
+        split_pieces <- lapply(res, function(x) x$split)
+        split_pieces <- Filter(Negate(is.null), split_pieces)
+        if (length(split_pieces)) {
+            split_list <- unique(do.call(rbind, split_pieces))
         }
     }
     
-    return(list(gff_list = gff_list, split_list = split_list))
+    list(gff_list = gff_list, split_list = split_list)
 }
 
-.reorgGFF <- function(out_dir, rename_list){
-    for(i in seq_along(rename_list$gff_list$gff)){
-        gff <- readRDS(rename_list$gff_list$gff[i])
-        gff$Target <- gff$tx_index <- gff$gene_index <- NULL
-        i_genome <- rename_list$gff_list$genomes[i]
-        hit_genome <- rename_list$split_list$genome == i_genome
-        tx_hit <- match(gff$ID, rename_list$split_list$tx[hit_genome])
-        gff_split_gene <- unique(gff$Parent[!is.na(tx_hit)])
-        if(length(gff_split_gene) > 0){
-            gff$Parent[!is.na(tx_hit)] <- rename_list$split_list$gene[hit_genome][na.omit(tx_hit)]
-            split_gene_gff <- gff[!is.na(tx_hit)]
-            split_gene_gff$type <- "gene"
-            split_gene_gff$ID <- split_gene_gff$Parent
-            split_gene_gff$Parent <- ""
-            out <- split_gene_gff
-            split_gene_tx <- gff[gff$Parent %in% gff_split_gene]
-            gff <- gff[!gff$ID %in% gff_split_gene]
-            gff <- gff[!gff$Parent %in% gff_split_gene]
-            out <- c(out, gff)
-            ol <- findOverlaps(split_gene_tx,
-                               gff[gff$type %in% c("mRNA", "transcript")])
-            non_ol_tx <- split_gene_tx[-queryHits(ol)]
-            if(length(non_ol_tx) > 0){
-                non_ol_gene_gff <- non_ol_tx
-                non_ol_gene_gff$type <- "gene"
-                non_ol_gene_gff$ID <- non_ol_gene_gff$Parent
-                non_ol_gene_gff$Parent <- ""
-                out <- c(out, non_ol_gene_gff, non_ol_tx)
-            }
-            retain_entry <- out$Parent %in% c(out$ID, "")
-            out <- out[retain_entry]
-            out <- .fixGFF(gff = out)
-            
-        } else {
-            out <- gff
-        }
+## Faster version of .reorgGFF()
+##
+## Parallelises per-genome GFF reorganisation when possible; each genome’s GFF
+## is handled independently and written to its own output file, so there are
+## no write-contention issues.
+.reorgGFF <- function(out_dir, rename_list, n_core = 1L) {
+    gff_paths <- rename_list$gff_list$gff
+    genomes <- rename_list$gff_list$genomes
+    split_list <- rename_list$split_list
+    
+    idx <- seq_along(gff_paths)
+    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
+    
+    worker_fun <- function(i) {
+        gff_fn <- gff_paths[i]
+        i_genome <- genomes[i]
+        out_gff <- .setSplitGFF(gff_fn = gff_fn, 
+                                i_genome = i_genome, 
+                                split_list = split_list,
+                                out_dir = out_dir)
         
-        out_gff_fn <- file.path(out_dir, paste0(i_genome, ".gff"))
-        rename_list$gff_list$gff[i] <- out_gff_fn
-        export.gff3(object = out, out_gff_fn)
+        return(data.table(gene = unique(out_gff$gene_id),
+                          genome = i_genome))
     }
-    return(rename_list)
+    
+    reorg_list <- list(split_list = split_list)
+    reorg_list$genes_list <- if (FALSE) {
+        mclapply(
+            X = idx,
+            FUN = worker_fun,
+            mc.cores = n_core
+        )
+    } else {
+        lapply(idx, worker_fun)
+    }
+    return(reorg_list)
 }
 
-.reorgOrthoPair <- function(hdf5_out_fn, hdf5_fn, out_dir, rename_list, rename){
-    gene_list <- NULL
-    for(i in seq_along(rename_list$gff_list$genomes)){
-        i_genome <- rename_list$gff_list$genomes[i]
-        i_gff_fn <- rename_list$gff_list$gff[i]
-        if(grepl("\\.rds$", i_gff_fn)){
-            gff <- readRDS(i_gff_fn)
-            
-        } else {
-            gff <- import.gff3(con = i_gff_fn)
-        }
-        gene_list <- rbind(gene_list, 
-                           data.frame(genome = i_genome,
-                                      gene = unique(gff$gene_id)))
-        .h5overwrite(obj = i_gff_fn,
-                     file = hdf5_out_fn,
-                     name = paste0("gff/", i_genome))
+.setSplitGFF <- function(gff_fn, i_genome, split_list, out_dir){
+    gff <- readRDS(gff_fn)
+    gff$Target <- gff$tx_index <- gff$gene_index <- NULL
+    out_gff_fn <- file.path(out_dir, "gff", paste0(i_genome, ".gff.rds"))
+    hit_genome <- split_list$genome == i_genome
+    if (sum(hit_genome) == 0) {
+        file.copy(from = gff_fn, to = out_gff_fn, overwrite = TRUE)
+        out_gff <- gff
+        
+    } else {
+        tx_hit <- match(gff$ID, split_list$tx[hit_genome])
+        split_gene_gff <- split_gene_tx <- gff[!is.na(tx_hit)]
+        split_gene_gff$type <- "gene"
+        split_gene_gff$ID <- paste0(split_gene_gff$ID, ":split")
+        split_gene_gff$Parent <- ""
+        
+        element_hit <- match(gff$Parent, split_gene_tx$ID)
+        split_gene_tx$Parent <- paste0(split_gene_tx$ID, ":split")
+        split_gene_tx$ID <- paste0(split_gene_gff$ID, ":split:tx")
+        
+        split_gene_element <- gff[!is.na(element_hit)]
+        split_gene_element$ID <- paste0(split_gene_element$Parent,
+                                        ":split:",
+                                        split_gene_element$type)
+        split_gene_element$Parent <- paste0(split_gene_element$Parent, 
+                                            ":split:tx")
+        out_gff <- c(gff, split_gene_gff, split_gene_tx, split_gene_element)
+        out_gff <- .fixGFF(gff = out_gff)
+        ## Save reorganised GFF as RDS instead of exporting to GFF3 text
+        saveRDS(object = out_gff, file = out_gff_fn)
     }
-    .h5overwrite(obj = gene_list,
-                 file = hdf5_out_fn,
-                 name = "gene_list")
+    return(out_gff)
+}
+
+## Faster version of .reorgOrthoPair()
+##
+## This variant parallelises the expensive per-pair work (reading orthopairs,
+## meta data, and applying rename mappings) while keeping all HDF5 writes and
+## orphan calculations in a single process to avoid concurrency issues with
+## the HDF5 backend.
+.reorgOrthoPair <- function(hdf5_fn,
+                                 reorg_list,
+                                 n_core = 1L) {
+    idx <- seq_along(hdf5_fn)
+    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
     
-    orphan_list <- gene_list
-    for(i in seq_along(hdf5_fn)){
-        opr <- getOrthoPair(hdf5_fn = hdf5_fn[i], score = TRUE, loc = TRUE)[[1]]
+    worker_fun <- function(i) {
+        opr <- getOrthoPair(hdf5_fn = hdf5_fn[i], score = TRUE, loc = FALSE)[[1]]
         meta <- getMeta(hdf5_fn = hdf5_fn[i])
-        
-        if(rename){
-            genome_1 <- rename_list$split_list$genome == meta$genomes[1]
-            if(sum(genome_1) > 0){
-                hit <- match(opr$query_tx, rename_list$split_list$tx[genome_1])
-                opr$query_gene[!is.na(hit)] <- rename_list$split_list$gene[genome_1][na.omit(hit)]
-            }
-            genome_2 <- rename_list$split_list$genome == meta$genomes[2]
-            if(sum(genome_2) > 0){
-                hit <- match(opr$subject_tx, rename_list$split_list$tx[genome_2])
-                opr$subject_gene[!is.na(hit)] <- rename_list$split_list$gene[genome_2][na.omit(hit)]
-            }
+        if(is.null(reorg_list$split_list)){
+            target_col <- c("original_query_gene", "original_subject_gene",
+                            "query_tx", "subject_tx",
+                            "mutual_ci", "class")
+            opr <- opr[, target_col]
+            names(opr) <- c("query_gene", "subject_gene",
+                            "query_tx", "subject_tx",
+                            "mutual_ci", "class")
             
         } else {
-            opr$query_gene <- opr$original_query_gene
-            opr$subject_gene <- opr$original_subject_gene
+            target_col <- c("query_gene", "subject_gene",
+                            "query_tx", "subject_tx",
+                            "mutual_ci", "class")
+            opr <- opr[, target_col]
+            opr <- .renameOrthoPair(opr = opr,
+                                    meta = meta,
+                                    reorg_list = reorg_list)
         }
-        .h5overwrite(obj = opr,
-                     file = hdf5_out_fn,
-                     name = paste0("orthopair/", meta$pair_id))
-        
-        genome_1 <- orphan_list$genome == meta$genomes[1]
-        if(sum(genome_1) > 0){
-            hit <- orphan_list$gene[genome_1] %in% opr$query_gene
-            orphan_list$gene[genome_1][hit] <- NA
-        }
-        genome_2 <- orphan_list$genome == meta$genomes[2]
-        if(sum(genome_2) > 0){
-            hit <- orphan_list$gene[genome_2] %in% opr$subject_gene
-            orphan_list$gene[genome_2][hit] <- NA        
-        }
+        opr$query_id <- paste(meta$genomes[1], opr$query_gene, sep = ":")
+        opr$subject_id <- paste(meta$genomes[2], opr$subject_gene, sep = ":")
+        return(opr)
     }
-    orphan_list <- subset(orphan_list, subset = !is.na(gene))
-    .h5overwrite(obj = orphan_list,
-                 file = hdf5_out_fn,
-                 name = "orphan_list")
-}
-
-################################################################################
-#' @importFrom igraph make_empty_graph add_edges add_vertices V<-
-#' @export
-#' 
-makeOrthoGraph <- function(hdf5_fn){
-    h5 <- H5Fopen(hdf5_fn)
-    on.exit(H5Fclose(h5))
     
-    check <- h5$data_type != "reorg_orthopair"
-    if(check){
-        stop("This function onyl accepts an output hdf5 file created",
-             " by the reorgOrthopiars() function.")
-    }
-    n_files <- length(h5$orthopair)
-    orphan_gene <- h5$orphan_list
-    gene_list <- h5$gene_list
-    graph <- make_empty_graph(n = 0, directed = FALSE)
-    orthopair_gene <- h5$orthopair
-    check_orthopair <- sapply(orthopair_gene, function(x){x[1, 1] == "NA"})
-    orthopair_gene <- orthopair_gene[!check_orthopair]
-    orthopair_gene <- lapply(orthopair_gene, subset,
-                             select = c(query_gene, subject_gene, 
-                                        mutual_ci, class))
-    orthopair_gene <- do.call("rbind", orthopair_gene)
-    edges <- subset(orthopair_gene, select = c(query_gene, subject_gene))
-    genome1<- gene_list$genome[match(edges$query_gene, gene_list$gene)]
-    genome2<- gene_list$genome[match(edges$subject_gene, gene_list$gene)]
-    edges <- as.vector(t(edges))
-    vertices <- unique(edges)
-    genome <- gene_list$genome[match(vertices, gene_list$gene)]
-    graph <- add_vertices(graph = graph, 
-                          nv = length(vertices),
-                          name = vertices,
-                          genome = genome)
-    
-    graph <- add_edges(graph = graph,
-                       edges = edges, 
-                       attr = list(mutual_ci = orthopair_gene$mutual_ci,
-                                   class = orthopair_gene$class,
-                                   genome1 = genome1,
-                                   genome2 = genome2))
-    graph <- add_vertices(graph = graph, 
-                          nv = length(orphan_gene$gene),
-                          name = orphan_gene$gene,
-                          genome = orphan_gene$genome)
-    return(graph)
-}
-
-#' @importFrom igraph components ego V subgraph vcount induced_subgraph vertex_attr vertex_attr<-
-#' @importFrom tidyr pivot_wider
-#' @export
-graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){
-    h5 <- H5Fopen(hdf5_fn)
-    on.exit(H5Fclose(h5))
-    gene_list <- h5$gene_list
-    gene_list$assign <- FALSE
-    genomes <- sort(unique(gene_list$genome))
-    n_genomes <- length(genomes)
-    v <- vertex_attr(graph)
-    v$name <- paste(v$genome, v$name, sep = "&")
-    vertex_attr(graph) <- v
-    ego_list <- ego(graph = graph, order = n_genomes)
-    ego_list <- lapply(ego_list, names)
-    ego_list_genomes <- lapply(ego_list, sub, pattern = "&.+", replace = "")
-    ego_list_genomes_len <- sapply(ego_list_genomes, length)
-    ego_list_genomes_unique <- lapply(ego_list_genomes, unique)
-    ego_list_genomes_unique_len <- sapply(ego_list_genomes_unique, length)
-    all_genomes <- ego_list_genomes_unique_len == n_genomes
-    solo_entries <- ego_list_genomes_len == n_genomes
-    is_full_pair <- all_genomes & solo_entries
-    valid_group1 <- ego_list[is_full_pair]
-    valid_group1 <- lapply(valid_group1, sort)
-    valid_group1 <- do.call(rbind, valid_group1)
-    valid_group1_dup <- duplicated(valid_group1)
-    valid_group1 <- valid_group1[!valid_group1_dup, ]
-    
-    rest_list <- ego_list[!is_full_pair]
-    rest_list_genomes <- lapply(rest_list, sub, pattern = "&.+", replace = "")
-    rest_list_genomes <- lapply(rest_list_genomes, factor, levels = genomes)
-    rest_list <- mapply(split, x = rest_list, f = rest_list_genomes, SIMPLIFY = FALSE)
-    rest_list <- lapply(rest_list, function(x){
-        x[sapply(x, length) == 0] <- NA
-        return(x)
-    })
-    valid_group2 <- lapply(rest_list, expand.grid)
-    n_valid_group2 <- lapply(valid_group2, nrow)
-    valid_group2_sog <- mapply(rep, seq_along(valid_group2), n_valid_group2)
-    valid_group2 <- lapply(valid_group2, t)
-    valid_group2 <- unlist(valid_group2)
-    valid_group2 <- matrix(valid_group2, nrow = n_genomes)
-    valid_group2 <- t(valid_group2)
-    valid_group2_dup <- duplicated(valid_group2)
-    valid_group2 <- valid_group2[!valid_group2_dup, ]
-    valid_group2_sog <- unlist(valid_group2_sog)[!valid_group2_dup] + nrow(valid_group1)
-    out <- rbind(data.frame(valid_group1, SOG = seq_len(nrow(valid_group1))),
-                 data.frame(valid_group2, SOG = valid_group2_sog))
-    out_label <- apply(out[, -ncol(out)], 2, sub, pattern = "&.+", replace = "")
-    out_label <- apply(out_label, 2, unique)
-    out_label <- apply(out_label, 2, na.omit)
-    out_values <- apply(out[, -ncol(out)], 2, sub, pattern = ".+&", replace = "")
-    out[, -ncol(out)] <- out_values
-    colnames(out)[-ncol(out)] <- out_label
-    write.csv(out, file = orthopair_fn, row.names = FALSE)
-    invisible(orthopair_fn)
-}
-
-.writeEntries <- function(x, file, gene_list){
-    x <- .setTxID(x = x, gene_list = gene_list)
-    if(file.exists(file)){
-        write.table(x = x, 
-                    file = file,
-                    append = TRUE, 
-                    quote = FALSE,
-                    sep = ",", 
-                    col.names = FALSE,
-                    row.names = FALSE)
-        
+    res_list <- if (use_parallel) {
+        mclapply(
+            X = idx,
+            FUN = worker_fun,
+            mc.cores = n_core
+        )
     } else {
-        write.table(x = x, 
-                    file = file,
-                    append = FALSE, 
-                    quote = FALSE,
-                    sep = ",", 
-                    col.names = TRUE,
-                    row.names = FALSE)
+        lapply(idx, worker_fun)
     }
+    
+    return(res_list)
 }
 
-.is_mult_mp_in_grp <- function(x){
-    mp <- grep("_MP[0-9]+", x, value = TRUE)
-    out <- FALSE
-    if(length(mp) > 1){
-        check <- length(unique(sub("_.+", "", mp))) > 1
-        if(check){
-            out <- TRUE
+.renameOrthoPair <- function(opr, meta, reorg_list){
+    genome_1 <- reorg_list$split_list$genome == meta$genomes[1]
+    if (any(genome_1)) {
+        hit <- match(opr$query_tx, reorg_list$split_list$tx[genome_1])
+        not_na <- !is.na(hit)
+        if (any(not_na)) {
+            opr$query_gene[not_na] <- reorg_list$split_list$gene[genome_1][hit[not_na]]
         }
     }
-    return(out)
+    genome_2 <- reorg_list$split_list$genome == meta$genomes[2]
+    if (any(genome_2)) {
+        hit <- match(opr$subject_tx, reorg_list$split_list$tx[genome_2])
+        not_na <- !is.na(hit)
+        if (any(not_na)) {
+            opr$subject_gene[not_na] <- reorg_list$split_list$gene[genome_2][hit[not_na]]
+        }
+    }
+    return(opr)
 }
 
-.groupGraph <- function(graph){
-    grp <- split(V(graph)$name, components(graph)$membership)
-    mult_mp_in_grp <- sapply(grp, .is_mult_mp_in_grp)
+
+#' @import data.table
+.createGraph <- function(orthopair_list, reorg_list){
+    edges_list <- rbindlist(orthopair_list)
+    vertex_list <- rbindlist(reorg_list$genes_list)
+    vertex_list$id <- paste(vertex_list$genome, vertex_list$gene, sep = ":")
     
-    n_gene_in_grp <- lapply(grp, length)
-    out <- sapply(seq_along(n_gene_in_grp), function(i){
-        return(rep(i, n_gene_in_grp[[i]]))
-    })
-    out <- data.frame(gene_id = unlist(grp), SOG = unlist(out))
-    hit <- match(out$SOG, as.numeric(names(mult_mp_in_grp)))
-    out$mult_mp_in_grp <- mult_mp_in_grp[hit]
-    return(out)
+    ## Build edge data.frame
+    edges_df <- data.frame(from = edges_list$query_id,
+                           to = edges_list$subject_id,
+                           mutual_ci = edges_list$mutual_ci,
+                           class = edges_list$class,
+                           stringsAsFactors = FALSE)
+    
+    ## Single genome lookup vector
+    gene_to_genome <- setNames(vertex_list$genome, vertex_list$id)
+    edges_df$genome1 <- gene_to_genome[edges_df$from]
+    edges_df$genome2 <- gene_to_genome[edges_df$to]
+    
+    ## Vertex table
+    vertex_df <- data.frame(name = vertex_list$id,
+                            genome = vertex_list$genome,
+                            stringsAsFactors = FALSE)
+    
+    ## Build graph in a single call
+    graph_out <- graph_from_data_frame(d = edges_df,
+                                       vertices = vertex_df,
+                                       directed = FALSE
+    )
+    return(graph_out)
 }
 
-#' @importFrom igraph max_cliques
-.getGraphCliques <- function(graph){
-    graph_cliques <- max_cliques(graph = graph)
-    graph_cliques <- lapply(graph_cliques, attributes)
-    graph_cliques <- lapply(graph_cliques, "[[", "names")
-    n_cliques <- sapply(graph_cliques, length)
-    out <- list(cliques = graph_cliques, n = n_cliques)
-    return(out)
-}
-
-.orgFullConnected <- function(graph, genomes, gene_list, n_len, full){
-    graph_cliques <- .getGraphCliques(graph = graph)
-    is_full_con <- graph_cliques$n == n_len
-    if(sum(is_full_con) == 0){
-        out <- list(rest_genes = unlist(graph_cliques$cliques[!is_full_con]),
-                    full_con = NULL)
-        return(out)
-    }
-    full_con <- graph_cliques$cliques[is_full_con]
-    full_con <- data.frame(gene_id = unlist(full_con),
-                           grp_id = rep(seq_along(full_con),
-                                        each = n_len))
-    hit <- match(full_con$gene_id, gene_list$gene)
-    full_con$genome <- gene_list$genome[hit]
-    full_df <- data.frame(id = paste(rep(unique(full_con$grp_id),
-                                         each = length(genomes)),
-                                     genomes,
-                                     sep = "_"))
-    full_con$id <- paste(full_con$grp_id, full_con$genome, sep = "_")
-    full_con <- left_join(x = full_df, y = full_con, by = "id")
+#' @importFrom igraph edge_attr ends E
+#' @importFrom dplyr full_join
+#'
+.graph2df <- function(graph, out_dir) {
+    comp <- components(graph)
+    va <- vertex_attr(graph)
+    ea <- edge_attr(graph)
+    em <- ends(graph, E(graph), names = FALSE)
+    rm(graph); gc(); gc()
+    dtv <- data.table(membership = comp$membership,
+                      genome = va$genome,
+                      gene = va$name)
+    fwrite(dtv,
+           file.path(out_dir, "orthopair_list_long.tsv"),
+           sep = "\t",
+           quote = FALSE,
+           na = "")
     
-    full_con <- matrix(data = full_con$gene_id, 
-                       ncol = length(genomes),
-                       byrow = TRUE)
-    full_con <- as.data.frame(full_con)
-    names(full_con) <- genomes
+    genome_levels <- unique(dtv$genome)
+    fwrite(setcolorder(dcast(dtv[, 
+                                 .(gene = paste(gene, collapse=",")), 
+                                 by = .(membership, genome)],
+                             membership ~ genome,
+                             value.var = "gene",
+                             fill = NA_character_),
+                       c("membership", genome_levels)),
+           file.path(out_dir, "orthopair_list.tsv"),
+           sep = "\t",
+           quote = FALSE,
+           na = "")
+    eid <- dtv$membership[em[,1]]
+    rm(comp, va, em); gc(); gc()
     
-    if(full){
-        full_con$class <- "full_connected"
-        
-    } else {
-        full_con$class <- "partial_connected"
-    }
+    v_sum <- dtv[, .(nV = .N, nGenome = uniqueN(genome)), by = membership]
+    rm(dtv); gc(); gc()
     
-    rest_genes <- unlist(graph_cliques$cliques[!is_full_con])
-    if(length(rest_genes) == 0){
-        rest_genes <- NULL
-    }
-    out <- list(rest_genes = rest_genes,
-                full_con = full_con)
-    return(out)
-}
-
-.orgFullMembered <- function(graph, rest_genes, genomes, gene_list, n_len, full){
-    rest_ego <- ego(graph = graph, order = 1, nodes = rest_genes)
-    rest_ego <- lapply(rest_ego, names)
-    n_rest_ego <- sapply(rest_ego, length)
-    ego_id <- lapply(seq_along(n_rest_ego), function(i){
-        return(rep(i, n_rest_ego[[i]]))
-    })
-    rest_ego <- data.frame(gene_id = unlist(rest_ego), ego_id = unlist(ego_id))
-    hit <- match(rest_ego$gene_id, gene_list$gene)
-    rest_ego$genome <- gene_list$genome[hit]
-    order_rest_ego <- order(rest_ego$ego_id, rest_ego$genome)
-    rest_ego <- rest_ego[order_rest_ego, ]
-    n_rest_ego_nodes <- table(rest_ego$ego_id)
-    full_mem_candidate <- as.numeric(n_rest_ego_nodes) == n_len
-    if(sum(full_mem_candidate) == 0){ return(list(rest_genes = rest_genes)) }
-    full_mem_candidate <- rest_ego[rest_ego$ego_id %in% as.numeric(names(n_rest_ego_nodes[full_mem_candidate])), ]
+    dte <- data.table(membership = eid, mutual_ci = ea$mutual_ci)
     
-    full_ego_id <- rep(unique(full_mem_candidate$ego_id), each = length(genomes))
-    full_df <- data.frame(id = paste(full_ego_id, genomes, sep = "_"),
-                          full_ego_id = full_ego_id)
-    full_mem_candidate$id <- paste(full_mem_candidate$ego_id, 
-                                   full_mem_candidate$genome, sep = "_")
-    full_mem_candidate <- left_join(x = full_df, y = full_mem_candidate, by = "id")
+    e_sum <- dte[, .(nE = .N,
+                     max_mci = max(mutual_ci, na.rm = TRUE),
+                     median_mci = median(mutual_ci, na.rm = TRUE),
+                     min_mci = min(mutual_ci, na.rm = TRUE),
+                     mean_mci = mean(mutual_ci, na.rm = TRUE),
+                     sd_mci = sd(mutual_ci, na.rm = TRUE)),
+                 by = membership]
     
-    n_entry_full_mem_candidate <- table(full_mem_candidate$full_ego_id)
-    non_multientries <- n_entry_full_mem_candidate == length(genomes)
-    if(sum(non_multientries) == 0){ return(list(rest_genes = rest_genes)) }
-    valid_ego_id <- names(n_entry_full_mem_candidate)[non_multientries]
-    full_mem_candidate <- subset(full_mem_candidate, 
-                                 subset = full_ego_id %in% valid_ego_id)
-    
-    is_na_full_mem_candidate <- tapply(full_mem_candidate$ego_id, 
-                                       full_mem_candidate$full_ego_id,
-                                       is.na)
-    n_entry_full_mem_candidate <- sapply(is_na_full_mem_candidate, sum)
-    n_entry_full_mem_candidate <- length(genomes) - n_entry_full_mem_candidate
-    full_mem <- n_entry_full_mem_candidate == n_len
-    if(sum(full_mem) == 0){ return(list(rest_genes = rest_genes)) }
-    valid_ego_id <- names(n_entry_full_mem_candidate[full_mem])
-    full_mem <- full_mem_candidate[full_mem_candidate$full_ego_id %in% as.numeric(valid_ego_id), ]
-    full_mem <- matrix(data = full_mem$gene_id, 
-                       ncol = length(genomes),
-                       byrow = TRUE)
-    full_mem <- unique(full_mem)
-    full_mem <- as.data.frame(full_mem)
-    names(full_mem) <- genomes
-    
-    if(full){
-        full_mem$class <- "full_membered"
-        
-    } else {
-        full_mem$class <- "partial_membered"
-    }
-    
-    rest_genes <- rest_genes[!rest_genes %in% unlist(full_mem)]
-    if(length(rest_genes) == 0){
-        rest_genes <- NULL
-    }
-    out <- list(rest_genes = rest_genes, full_mem = full_mem)
-    return(out)
-}
-
-.orgFullChained <- function(graph, rest_genes, genomes, gene_list, n_len, full){
-    rest_ego <- ego(graph = graph, order = length(genomes), nodes = rest_genes)
-    rest_ego <- lapply(rest_ego, names)
-    n_rest_ego <- sapply(rest_ego, length)
-    ego_id <- lapply(seq_along(n_rest_ego), function(i){
-        return(rep(i, n_rest_ego[[i]]))
-    })
-    rest_ego <- data.frame(gene_id = unlist(rest_ego), ego_id = unlist(ego_id))
-    hit <- match(rest_ego$gene_id, gene_list$gene)
-    rest_ego$genome <- gene_list$genome[hit]
-    order_rest_ego <- order(rest_ego$ego_id, rest_ego$genome)
-    rest_ego <- rest_ego[order_rest_ego, ]
-    n_rest_ego_nodes <- table(rest_ego$ego_id)
-    full_chain_candidate <- as.numeric(n_rest_ego_nodes) == n_len
-    if(sum(full_chain_candidate) == 0){ return(list(rest_genes = rest_genes)) }
-    full_chain_candidate <- rest_ego[rest_ego$ego_id %in% as.numeric(names(n_rest_ego_nodes[full_chain_candidate])), ]
-    
-    full_ego_id <- rep(unique(full_chain_candidate$ego_id), each = length(genomes))
-    full_df <- data.frame(id = paste(full_ego_id, genomes, sep = "_"),
-                          full_ego_id = full_ego_id)
-    full_chain_candidate$id <- paste(full_chain_candidate$ego_id, 
-                                     full_chain_candidate$genome, sep = "_")
-    full_chain_candidate <- left_join(x = full_df, y = full_chain_candidate, by = "id")
-    
-    n_entry_full_chain_candidate <- table(full_chain_candidate$full_ego_id)
-    non_multientries <- n_entry_full_chain_candidate == length(genomes)
-    if(sum(non_multientries) == 0){ return(list(rest_genes = rest_genes)) }
-    valid_ego_id <- names(n_entry_full_chain_candidate)[non_multientries]
-    full_chain_candidate <- subset(full_chain_candidate, 
-                                   subset = full_ego_id %in% valid_ego_id)
-    
-    is_na_full_chain_candidate <- tapply(full_chain_candidate$ego_id, 
-                                         full_chain_candidate$full_ego_id,
-                                         is.na)
-    n_entry_full_chain_candidate <- sapply(is_na_full_chain_candidate, sum)
-    n_entry_full_chain_candidate <- length(genomes) - n_entry_full_chain_candidate
-    full_chain <- n_entry_full_chain_candidate == n_len
-    if(sum(full_chain) == 0){ return(list(rest_genes = rest_genes)) }
-    valid_ego_id <- names(n_entry_full_chain_candidate[full_chain])
-    
-    full_chain <- full_chain_candidate[full_chain_candidate$full_ego_id %in% as.numeric(valid_ego_id), ]
-    full_chain <- matrix(data = full_chain$gene_id, 
-                         ncol = length(genomes),
-                         byrow = TRUE)
-    full_chain <- unique(full_chain)
-    full_chain <- as.data.frame(full_chain)
-    names(full_chain) <- genomes
-    
-    if(full){
-        full_chain$class <- "full_chained"
-        
-    } else {
-        full_chain$class <- "partial_chained"
-    }
-    
-    rest_genes <- rest_genes[!rest_genes %in% unlist(full_chain)]
-    if(length(rest_genes) == 0){
-        rest_genes <- NULL
-    }
-    out <- list(rest_genes = rest_genes, full_chain = full_chain)
-    return(out)
-}
-
-.setTxID <- function(x = x, gene_list = gene_list){
-    tx_out <- subset(x, select = -class)
-    names(tx_out) <- paste(names(tx_out), "TX", sep = "_")
-    for(i in seq_len(ncol(tx_out))){
-        hit <- match(tx_out[, i], gene_list$gene)
-        tx_out[, i] <- gene_list$tx_id[hit]
-    }
-    x <- cbind(x, tx_out)
+    out <- full_join(v_sum, e_sum, "membership")
+    fwrite(out,
+           file.path(out_dir, "orthogroup_stats.tsv"),
+           sep = "\t",
+           quote = FALSE,
+           na = "")
 }

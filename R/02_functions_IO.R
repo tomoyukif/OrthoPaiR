@@ -1,21 +1,3 @@
-#' Create a OrthoPairDB object
-#'
-#' This function creates a OrthoPairDB object containing genome, GFF, CDS, and protein information
-#' for query and subject genomes. It also initializes an HDF5 file to store related data.
-#'
-#' @param query_genome Path to the query genome file.
-#' @param subject_genome Path to the subject genome file.
-#' @param query_gff Path to the query GFF file.
-#' @param subject_gff Path to the subject GFF file.
-#' @param query_cds Path to the query CDS file.
-#' @param subject_cds Path to the subject CDS file.
-#' @param query_prot Path to the query protein file.
-#' @param subject_prot Path to the subject protein file.
-#' @param hdf5_path Path to the HDF5 file (default is "./orthopair.h5").
-#'
-#' @return A OrthoPairDB object.
-#' @export
-#'
 makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
     out <- NULL
     out$h5 <- .makeHDF5(hdf5_path = input_files$hdf5_path, 

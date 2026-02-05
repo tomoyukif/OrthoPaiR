@@ -15,6 +15,7 @@ orthopair(
   run_miniprot = FALSE,
   orthopair = TRUE,
   reorg = TRUE,
+  rename = TRUE,
   makegraph = TRUE,
   output_table = FALSE,
   n_threads = NULL,

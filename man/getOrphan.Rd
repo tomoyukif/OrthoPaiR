@@ -4,15 +4,10 @@
 \alias{getOrphan}
 \title{Get orphan information}
 \usage{
-getOrphan(object = NULL, hdf5_fn = NULL)
+getOrphan(object = NULL, hdf5_fn = NULL, loc = FALSE)
 }
 \arguments{
 \item{object}{A OrthoPairDB object.}
-
-\item{gene}{Logical, whether to get orphan gene information.
-Orphan transcript information will be returned if FALSE. (default is FALSE).}
-
-\item{split}{Logical, whether to obtain split orphan gene information (default is FALSE).}
 }
 \value{
 A dataframe containing orphan genes or transcripts.

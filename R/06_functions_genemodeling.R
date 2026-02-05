@@ -1,17 +1,3 @@
-
-#' Map Proteins Between Genomes
-#'
-#' This function maps proteins between the query and subject genomes using the specified miniprot binary and number of cores.
-#'
-#' @param object A OrthoPairDB object.
-#' @param out_prefix A character string specifying the prefix for the output files.
-#' @param miniprot_bin A character string specifying the path to the miniprot binary.
-#' @param n_threads An integer specifying the number of cores to use for the mapping.
-#' @param len_diff A numeric value specifying the maximum allowable length difference for proteins. Default is 0.2.
-#'
-#' @return None. The function performs the mapping and writes the results to the output files specified by `out_prefix`.
-#'
-#' @export
 mapProt <- function(in_list,
                     input_dir, 
                     overwrite,

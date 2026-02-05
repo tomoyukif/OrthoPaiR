@@ -1,12 +1,3 @@
-#' Execute Reciprocal BLAST Hits (RBH) search
-#'
-#' This function performs a Reciprocal BLAST Hits (RBH) search between query and subject genomes.
-#'
-#' @param object A OrthoPairDB object.
-#' @param db1 Path to the BLAST database for query genome (default is NULL).
-#' @param db2 Path to the BLAST database for subject genome (default is NULL).
-#' @param n_threads Number of threads to use for BLAST (default is 1).
-#' @export
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom rhdf5 h5read
 rbh <- function(object,

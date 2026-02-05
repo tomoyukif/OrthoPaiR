@@ -1,9 +1,3 @@
-#' Filter ortholog pairs based on Locally Collinear Blocks (LCBs)
-#'
-#' This function filters ortholog pairs based on their presence in Locally Collinear Blocks (LCBs).
-#'
-#' @param object A OrthoPairDB object.
-#' @export
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom parallel mclapply
 syntenicOrtho <- function(object){
