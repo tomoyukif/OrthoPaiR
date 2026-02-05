@@ -4,764 +4,182 @@
 reorgOrthopiars <- function(hdf5_fn,
                             out_dir = "./",
                             out_fn = "reorg_orthopair.h5",
-                            makeFASTA = TRUE,
+                            rename = FALSE,
                             overwrite = TRUE,
-                            reorg = TRUE){
+                            verbose = TRUE){
     dir.create(path = out_dir, showWarnings = FALSE, recursive = TRUE)
-    
-    genomewise_list <- .getGenomewiseList(hdf5_fn = hdf5_fn)
-    
-    id2id_list <- NULL
-    gene_list <- NULL
-    genome_fn <- NULL
-    for(i in seq_along(genomewise_list)){
-        target_data <- genomewise_list[[i]]
-        target_genome <- names(genomewise_list)[i]
-        if(reorg){
-            message("reorganizing gene models in ", target_genome, " ...")
-            data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1)
-            
-            ref_gff <- data$gff
-            ref_prefix <- paste(target_genome, 
-                                target_data$pair_genome[1], 
-                                sep = "_")
-            ref_gff <- .renameMP(gff = ref_gff, prefix = ref_prefix)
-            ref_gff$oldGeneID <- ref_gff$gene_id
-            ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
-                                        df = data$orthopair, 
-                                        target_data = target_data[1, ],
-                                        prefix = ref_prefix)
-            
-            if(nrow(target_data) == 1){
-                .outputGFFdata(gff = ref_gff,
-                               prefix = target_genome,
-                               genome_fn = data$genome_fn,
-                               out_dir = out_dir,
-                               makeFASTA = makeFASTA)
-            } else {
-                id2id_df <- NULL
-                for(j in seq_along(target_data$pair_genome)[-1]){
-                    pair_genome <- target_data$pair_genome[j]
-                    ref_prefix <- paste(target_genome, pair_genome, sep = "_")
-                    data_j <- .importData(hdf5_fn = hdf5_fn, target_data = target_data,
-                                          index = j, pair_genome = pair_genome)
-                    ref_gff <- .setSplitGeneGFF(gff = ref_gff, 
-                                                df = data_j$orthopair, 
-                                                target_data = target_data[j, ],
-                                                prefix = ref_prefix)
-                    mp_gff <- data_j$gff
-                    mp_gff <- .renameMP(gff = mp_gff, prefix = ref_prefix)
-                    mp_gff <- mp_gff[mp_gff$source %in% "miniprot"]
-                    mp_gff$oldGeneID <- mp_gff$gene_id
-                    
-                    mp_gff <- .setSplitGeneGFF(gff = mp_gff, 
-                                               df = data_j$orthopair, 
-                                               target_data = target_data[j, ],
-                                               prefix = ref_prefix)
-                    
-                    id2id <- .findMiniprotTxOverlaps(ref_gff = ref_gff,
-                                                     mp_gff = mp_gff)
-                    
-                    ref_gff <- .rerogRefGFF(ref_gff = ref_gff,
-                                            mp_gff = mp_gff,
-                                            id2id = id2id)
-                    
-                    id2id_df <- rbind(id2id_df, id2id$identical, id2id$id2id)
-                    if(!is.null(id2id_df)){
-                        hit <- match(id2id_df$ref_tx_id, ref_gff$ID)
-                        id2id_df$ref_gene_id <- ref_gff$gene_id[hit]
-                    }
-                }
-                id2id_list <- c(id2id_list, list(id2id_df))
-                .outputGFFdata(gff = ref_gff,
-                               id2id_df = id2id_df,
-                               prefix = target_genome,
-                               genome_fn = data$genome_fn,
-                               out_dir = out_dir,
-                               makeFASTA = makeFASTA)
-            }
-            
-        } else {
-            message("skip gene model reorganization for ",  target_genome, ".")
-            data <- .importData(hdf5_fn = hdf5_fn, target_data = target_data, index = 1, reorg = reorg)
-            ref_gff <- data$gff
-        }
-        
-        if(is.null(ref_gff$oldGeneID)){
-            ref_gff$oldGeneID <- NA
-        }
-        genome_fn <- c(genome_fn, data$genome_fn)
-        gene_list <- rbind(gene_list, 
-                           data.frame(genome = target_genome, 
-                                      gene = ref_gff$gene_id[ref_gff$type %in% c("transcript", "mRNA")], 
-                                      old_gene_id = ref_gff$oldGeneID[ref_gff$type %in% c("transcript", "mRNA")],
-                                      tx_id = ref_gff$ID[ref_gff$type %in% c("transcript", "mRNA")]))
+    hdf5_out_fn <- .makeHDF5(hdf5_path = file.path(out_dir, out_fn), 
+                             overwrite = overwrite)
+    if(overwrite){
+        .h5creategroup(hdf5_out_fn, "orthopair")
+        .h5creategroup(hdf5_out_fn, "gff")
     }
     
-    names(genome_fn) <- names(genomewise_list)
-    if(!is.null(id2id_list)){
-        names(id2id_list) <- names(genomewise_list)
-    }
-    orthopair_list <- .renameOrthoPair(id2id_list = id2id_list,
-                                       gene_list = gene_list,
-                                       hdf5_fn = hdf5_fn,
-                                       genomewise_list = genomewise_list)
+    rename_list <- .getRenameList(hdf5_fn, rename)
     
-    out <- .outputOrthoPairData(orthopair_list = orthopair_list,
-                                gene_list = gene_list,
-                                genome_fn = genome_fn,
-                                out_dir = out_dir,
-                                out_fn = out_fn,
-                                overwrite = overwrite)
-    
-    return(out)
-}
-
-.getGenomewiseList <- function(hdf5_fn){
-    comb_id <- names(hdf5_fn)
-    comb_id <- strsplit(x = comb_id, split = "_")
-    comb_id <- do.call("rbind", comb_id)
-    if(any(comb_id %in% c("", NA))){
-        stop("The input hdf5_fn vector was not properly named.\n",
-             "Each name assgined to each element of the vector should indicate",
-             "a pair of genomes separated by an underscore.",
-             call. = FALSE)
-    }
-    is_file_exist <- file.exists(hdf5_fn)
-    if(any(!is_file_exist)){
-        stop("Follwoing file(s) not exist: \n", 
-             paste(hdf5_fn[!is_file_exist], collapse = "\n"), 
-             call. = FALSE)
-    }
-    genome_id <- unique(as.vector(comb_id))
-    out <- NULL
-    for(i in seq_along(genome_id)){
-        hit <- which(x = comb_id == genome_id[i], arr.ind = TRUE)
-        i_target <- c("query", "subject")[hit[, 2]]
-        hit[, 2] <- abs(hit[, 2] - 3)
-        i_pair_genome <- comb_id[hit]
-        out <- c(out, list(data.frame(comb_id = hit[, 1],
-                                      target = i_target,
-                                      pair_genome = i_pair_genome)))
-    }
-    names(out) <- genome_id
-    return(out)
-}
-
-#' @importFrom rtracklayer import.gff3
-#' @importFrom rhdf5 H5Fopen H5Fclose
-#' @importFrom Biostrings readDNAStringSet readAAStringSet
-.importData <- function(hdf5_fn, target_data, index, reorg = TRUE, pair_genome = NULL){
-    i_comb_id <- target_data$comb_id[index]
-    i_target_data <- target_data$target[index]
-    h5 <- H5Fopen(hdf5_fn[i_comb_id])
-    on.exit(H5Fclose(h5))
-    orthopair <- NULL
-    
-    if(index == 1){
-        if(i_target_data == "query"){
-            genome_fn <- h5$files$query_genome[1]
-            
-        } else {
-            genome_fn <- h5$files$subject_genome[1]
-        }
-        
-    } else {
-        genome_fn <- NULL
+    if(rename){
+        .reorgGFF(out_dir = out_dir, rename_list = rename_list)
     }
     
-    if(i_target_data == "query"){
-        gff_fn <- h5$files$query_gff[1]
-        if(!file.exists(gff_fn)){
-            message("Use the original input GFF file for ", pair_genome, ".")
-            gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
-            gff_fn <- sub("miniprot_merge_query.gff", "query_gff.gff", gff_fn)
-        }
-        gff <- import.gff3(gff_fn)
-        
-    } else {
-        gff_fn <- h5$files$subject_gff[1]
-        if(!file.exists(gff_fn)){
-            message("Use the original input GFF file for ", pair_genome, ".")
-            gff_fn <- sub("miniprot_out", "input", h5$files$query_gff[1])
-            gff_fn <- sub("miniprot_merge_subject.gff", "subject_gff.gff", gff_fn)
-        }
-        gff <- import.gff3(gff_fn)
-    }
-    
-    if(reorg){
-        orthopair <- h5$orthopair[[1]]
-        if(i_target_data == "query"){
-            gff <- .getMiniprotGFF(gff = gff,
-                                   gene = orthopair$query_gene,
-                                   tx = orthopair$query_tx)
-            
-        } else {
-            gff <- .getMiniprotGFF(gff = gff,
-                                   gene = orthopair$subject_gene,
-                                   tx = orthopair$subject_tx)
-        }
-    }
-    
-    out <- list(gff = gff, orthopair = orthopair, genome_fn = genome_fn)
-    
-    return(out)
-}
-
-.getMiniprotGFF <- function(gff, gene, tx){
-    non_mp_gff <- gff[!gff$source %in% "miniprot"]
-    gff <- gff[gff$source %in% "miniprot"]
-    gff_id <- sub("\\:.+", "", gff$ID)
-    hit <- gff_id %in% c(sub("\\:.+", "", gene), tx)
-    gff <- c(non_mp_gff, gff[hit])
-    return(gff)
-}
-
-#' @importFrom Biostrings translate
-.outputGFFdata <- function(gff, id2id_df = NULL, prefix, genome_fn, out_dir, makeFASTA){
-    message("preparing the GFF file for ", prefix, " ...")
-    
-    out_fn <- paste0(prefix, "_orthopair.gff")
-    out_gff_fn <- file.path(out_dir, out_fn)
-    if(!is.null(id2id_df)){
-        gff <- .renameMPgff(gff = gff, id2id_df = id2id_df)
-    }
-    gff <- .setGeneID(gff = gff)
-    gff <- .fixGFFrange(gff = gff)
-    gff <- .fixGFFexon(gff = gff)
-    gff <- .fixGFFphase(gff = gff)
-    message("exporting the GFF file for ", prefix, " ...")
-    export.gff3(object = gff, con = out_gff_fn)
-    
-    if(makeFASTA){
-        if(is.na(genome_fn)){
-            message("Skip CDS and protein FASTA generation for reorganized GFF becuase of no genome FASTA input.")
-            
-        } else {
-            out_cds <- .makeCDS(gff = out_gff_fn, genome = genome_fn)
-            out_cds_fn <- sub("\\.gff", ".cds", out_gff_fn)
-            writeXStringSet(out_cds, out_cds_fn)
-            
-            out_prot <- translate(x = out_cds, no.init.codon = TRUE, if.fuzzy.codon = "X")
-            out_prot_fn <- sub("\\.gff", ".prot", out_gff_fn)
-            writeXStringSet(out_prot, out_prot_fn)
-        }
-    }
-}
-
-.renameMP <- function(gff, prefix){
-    mp_entries <- grepl("^MP[0-9]+", gff$ID)
-    if(is.null(gff$oldID)){
-        gff$oldID <- NA
-    }
-    gff$oldID[mp_entries] <- gff$ID[mp_entries]
-    gff$ID[mp_entries] <- paste(prefix, gff$ID[mp_entries], sep = "_")
-    not_gene <- gff$type != "gene"
-    not_gene_parent <- unlist(gff$Parent[not_gene])
-    mp_entries <- grepl("^MP[0-9]+", not_gene_parent)
-    not_gene_parent[mp_entries] <- paste(prefix, not_gene_parent[mp_entries], sep = "_")
-    gff$Parent[not_gene] <- lapply(not_gene_parent, c)
-    mp_entries <- grepl("^MP[0-9]+", gff$gene_id)
-    gff$gene_id[mp_entries] <- paste(prefix, gff$gene_id[mp_entries], sep = "_")
-    gff$Name <- gff$ID
-    return(gff)
-}
-
-.setSplitGeneGFF <- function(gff, df, target_data, prefix){
-    if(target_data$target == "query"){
-        target_gene <- "query_gene"
-        target_tx <- "query_tx"
-        
-    } else {
-        target_gene <- "subject_gene"
-        target_tx <- "subject_tx"
-    }
-    
-    splited_gene <- subset(df, subset = grepl("split_gene", df[[target_gene]]))
-    if(nrow(splited_gene) == 0){
-        return(gff)
-    }
-    mp <- grep("^MP[0-9]+", splited_gene[[target_tx]])
-    splited_gene[[target_tx]][mp] <- paste(prefix, splited_gene[[target_tx]][mp], sep = "_")
-    mp <- grep("^MP[0-9]+", splited_gene[[target_gene]])
-    splited_gene[[target_gene]][mp] <- paste(prefix, splited_gene[[target_gene]][mp], sep = "_")
-    
-    splited_gene <- splited_gene[!splited_gene[[target_gene]] %in% gff$ID, ]
-    splited_gene_gene <- splited_gene_tx <- gff[gff$ID %in% splited_gene[[target_tx]]]
-    if(length(splited_gene_tx) == 0){
-        return(gff)
-    }
-    splited_gene_tx$Parent <- lapply(paste0(splited_gene_tx$ID, ":split_gene"), c)
-    splited_gene_tx$gene_id <- paste0(splited_gene_tx$ID, ":split_gene")
-    splited_gene_gene$type <- "gene"
-    splited_gene_gene$ID <- paste0(splited_gene_gene$ID, ":split_gene")
-    splited_gene_gene$gene_id <- splited_gene_gene$Name <- splited_gene_gene$ID
-    splited_gene_gene$Parent <- lapply(rep("", length(splited_gene_gene$Parent)), c)
-    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-    splited_gene_element <- gff[element_i][unlist(gff$Parent[element_i]) %in% splited_gene[[target_tx]]]
-    splited_gene_element$gene_id <- paste0(unlist(splited_gene_element$Parent), ":split_gene")
-    splited_gff <- c(splited_gene_gene, splited_gene_tx, splited_gene_element)
-    
-    gff <- gff[!gff$ID %in% splited_gene[[target_tx]]]
-    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-    gff_element <- gff[element_i]
-    gff_element <- gff_element[!unlist(gff_element$Parent) %in% splited_gene[[target_tx]]]
-    gff <- gff[!element_i]
-    gff <- c(gff, gff_element)
-    
-    tx_i <- gff$type %in% c("transcript", "mRNA")
-    no_tx_retained <- splited_gff$oldGeneID[!splited_gff$oldGeneID %in% gff$gene_id[tx_i]]
-    if(length(no_tx_retained) > 0){
-        gff <- gff[!gff$gene_id %in% no_tx_retained]
-    }
-    gff <- c(gff, splited_gff)
-    
-    return(gff)
-}
-
-.findMiniprotTxOverlaps <- function(ref_gff, mp_gff){
-    idt_tx <- .findIdenticalMiniprotTx(ref_gff = ref_gff, mp_gff = mp_gff)
-    ol_tx <- .findMiniprotTxOnGeneLoci(ref_gff = ref_gff,
-                                       rest_gff = idt_tx$rest_mp)
-    out <- c(ol_tx, identical = list(idt_tx$id2id))
-    return(out)
-}
-
-.findIdenticalMiniprotTx <- function(ref_gff, mp_gff){
-    mp_gff_block <- .getCDSblock(gff = mp_gff)
-    
-    # Get CDS blocks from gff2 and remove overlaps from gff1_block_uniq
-    ref_gff_block <- .getCDSblock(gff = ref_gff)
-    
-    # Get unique transcripts from gff1
-    out <- .mapIdenticalTxID(mp_gff = mp_gff, ref_gff = ref_gff,
-                             mp_gff_block = mp_gff_block,
-                             ref_gff_block = ref_gff_block)
-    return(out)
-}
-
-#' @importFrom BiocGenerics start end
-.getCDSblock <- function(gff){
-    # Identify CDS and transcript indices
-    gff_cds_i <- gff$type == "CDS"
-    gff_tx_i <- gff$type %in% c("transcript", "mRNA")
-    
-    # Extract start and end positions of CDS
-    gff_cds_start <- start(gff[gff_cds_i])
-    gff_cds_end <- end(gff[gff_cds_i])
-    
-    # Create exon strings combining start and end positions
-    gff_cds_exon <- paste(gff_cds_start, gff_cds_end, sep = "-")
-    
-    # Map CDS to their parent transcripts
-    map_to_tx <- match(unlist(gff$Parent[gff_cds_i]), gff$ID[gff_tx_i])
-    
-    # Identify the first occurrence of each transcript
-    first_i <- !duplicated(map_to_tx)
-    
-    # Get the chromosome names for CDS
-    gff_cds_chr <- as.character(seqnames(gff[gff_cds_i]))
-    
-    # Add chromosome information to the first occurrence of each transcript's CDS block
-    gff_cds_exon[first_i] <- paste(gff_cds_chr[first_i], gff_cds_exon[first_i], sep = ":")
-    
-    # Concatenate CDS blocks for each transcript
-    out <- tapply(gff_cds_exon, map_to_tx, paste, collapse = ",")
-    
-    return(out)
-}
-
-#' @importFrom BiocGenerics unlist
-.mapIdenticalTxID <- function(mp_gff, ref_gff, mp_gff_block, ref_gff_block){
-    # Identify transcript indices
-    ref_gff_tx_i <- ref_gff$type %in% c("transcript", "mRNA")
-    mp_gff_tx_i <- mp_gff$type %in% c("transcript", "mRNA")
-    
-    hit <- match(mp_gff_block, ref_gff_block)
-    if(all(is.na(hit))){
-        id2id <- NULL
-        out <- list(rest_mp = mp_gff, id2id = id2id)
-        return(out)
-    }
-    mp_hit_tx_i <- as.numeric(names(mp_gff_block[!is.na(hit)]))
-    ref_hit_tx_i <- as.numeric(names(ref_gff_block[na.omit(hit)]))
-    mp_hit_tx <- mp_gff$ID[mp_gff_tx_i][mp_hit_tx_i]
-    ref_hit_tx <- ref_gff$ID[ref_gff_tx_i][ref_hit_tx_i]
-    hit <- match(ref_hit_tx, ref_gff$ID)
-    id2id <- data.frame(mp_tx_id = mp_hit_tx,
-                        ref_tx_id = ref_hit_tx,
-                        mp_gene_id = NA,
-                        ref_gene_id = ref_gff$gene_id[hit])
-    
-    retained_tx <- mp_gff[mp_gff_tx_i][!mp_gff$ID[mp_gff_tx_i] %in% mp_hit_tx]
-    retained_gene <- mp_gff[mp_gff$ID %in% unlist(retained_tx$Parent)]
-    element_i <- !mp_gff$type %in% c("gene", "mRNA", "transcript")
-    retained_element <- mp_gff[element_i][!unlist(mp_gff$Parent[element_i]) %in% mp_hit_tx]
-    out <- list(rest_mp = c(retained_gene, retained_tx, retained_element),
-                id2id = id2id)
-    return(out)
-}
-
-.findMiniprotTxOnGeneLoci <- function(ref_gff, rest_gff){
-    # Find overlapping Miniprot Tx on original Tx
-    ref_gff_cds_i <- ref_gff$type %in% c("CDS")
-    rest_gff_cds_i <- rest_gff$type %in% c("CDS")
-    rest_gff_tx_i <- rest_gff$type %in% c("transcript", "mRNA")
-    ol <- findOverlaps(rest_gff[rest_gff_cds_i], ref_gff[ref_gff_cds_i])
-    ol <- as.data.frame(ol)
-    if(nrow(ol) == 0){
-        out <- list(non_ol_mp_gff = rest_gff,
-                    id2id = NULL,
-                    id2id_split_mp = NULL,
-                    id2id_split_ref = NULL)
-        return(out)
-    }
-    ol$query_gene <- rest_gff$gene_id[rest_gff_cds_i][ol$queryHits]
-    ol$queryHits <- unlist(rest_gff$Parent[rest_gff_cds_i][ol$queryHits])
-    tx_id <- rest_gff$ID[rest_gff_tx_i]
-    non_ol_mp_tx <- tx_id[!tx_id %in% ol$queryHits]
-    ol$subject_gene <- ref_gff$gene_id[ref_gff_cds_i][ol$subjectHits]
-    ol$subjectHits <- unlist(ref_gff$Parent[ref_gff_cds_i][ol$subjectHits])
-    ol <- unique(ol)
-    
-    # Filter out chimeric Miniprot Tx overlapping more than one gene loci
-    check_chimeric_in_query <- tapply(X = ol$subject_gene, INDEX = ol$query_gene, FUN = unique)
-    check_chimeric_in_query <- sapply(check_chimeric_in_query, length)
-    chimeric_gene_in_query <- names(check_chimeric_in_query[check_chimeric_in_query > 1])
-    chimeric_in_query_ol <- subset(ol, subset = query_gene %in% chimeric_gene_in_query)
-    names(chimeric_in_query_ol) <- c("mp_tx_id", "ref_tx_id", "mp_gene_id", "ref_gene_id")
-    check_chimeric_in_subject <- tapply(X = ol$query_gene, INDEX = ol$subject_gene, FUN = unique)
-    check_chimeric_in_subject <- sapply(check_chimeric_in_subject, length)
-    chimeric_gene_in_subject <- names(check_chimeric_in_subject[check_chimeric_in_subject > 1])
-    chimeric_in_subject_ol <- subset(ol, subset = subject_gene %in% chimeric_gene_in_subject)
-    names(chimeric_in_subject_ol) <- c("mp_tx_id", "ref_tx_id", "mp_gene_id", "ref_gene_id")
-    
-    id2id <- subset(ol,
-                    subset = !query_gene %in% chimeric_gene_in_query &
-                        !subject_gene %in% chimeric_gene_in_subject)
-    names(id2id) <- c("mp_tx_id", "ref_tx_id", "mp_gene_id", "ref_gene_id")
-    
-    retained_tx <- rest_gff[rest_gff_tx_i][rest_gff$ID[rest_gff_tx_i] %in% non_ol_mp_tx]
-    retained_gene <- rest_gff[rest_gff$ID %in% unlist(retained_tx$Parent)]
-    element_i <- !rest_gff$type %in% c("gene", "mRNA", "transcript")
-    retained_element <- rest_gff[element_i][unlist(rest_gff$Parent[element_i]) %in% non_ol_mp_tx]
-    non_ol_mp_gff <- c(retained_gene, retained_tx, retained_element)
-    
-    out <- list(non_ol_mp_gff = non_ol_mp_gff,
-                id2id = id2id,
-                id2id_split_mp = chimeric_in_query_ol,
-                id2id_split_ref = chimeric_in_subject_ol)
-    return(out)
-}
-
-.rerogRefGFF <- function(ref_gff, mp_gff, id2id){
-    ref_gff <- .mergeOverlappedTx(ref_gff = ref_gff,
-                                  mp_gff = mp_gff,
-                                  id2id = id2id)
-    ref_gff <- .mergeChimericTx(ref_gff = ref_gff,
-                                mp_gff = mp_gff,
-                                id2id = id2id)
-    ref_gff <- c(ref_gff, id2id$non_ol_mp_gff)
-    return(ref_gff)
-}
-
-.mergeOverlappedTx <- function(ref_gff, mp_gff, id2id){
-    tx_id <- id2id$id2id$mp_tx_id
-    merging_tx <- mp_gff[mp_gff$ID %in% tx_id]
-    element_i <- !mp_gff$type %in% c("gene", "mRNA", "transcript")
-    merging_element <- mp_gff[element_i][unlist(mp_gff$Parent[element_i]) %in% tx_id]
-    hit <- match(merging_tx$ID, tx_id)
-    merging_tx$Parent <- lapply(id2id$id2id$ref_gene_id[hit], c)
-    merging_tx$gene_id <- id2id$id2id$ref_gene_id[hit]
-    hit <- match(unlist(merging_element$Parent), tx_id)
-    merging_element$gene_id <- id2id$id2id$ref_gene_id[hit]
-    merging_gff <- c(merging_tx, merging_element)
-    ref_gff <- c(ref_gff, merging_gff)
-    return(ref_gff)
-}
-
-.mergeChimericTx <- function(ref_gff, mp_gff, id2id){
-    tx_id <- c(id2id$id2id_split_mp$mp_tx_id, id2id$id2id_split_ref$mp_tx_id)
-    merging_tx <- mp_gff[mp_gff$ID %in% tx_id]
-    element_i <- !mp_gff$type %in% c("gene", "mRNA", "transcript")
-    merging_element <- mp_gff[element_i][unlist(mp_gff$Parent[element_i]) %in% tx_id]
-    gene_i <- mp_gff$type %in% "gene"
-    merging_gene <- mp_gff[gene_i][mp_gff$ID[gene_i] %in% unlist(merging_tx$Parent)]
-    merging_gff <- c(merging_gene, merging_tx, merging_element)
-    ref_gff <- c(ref_gff, merging_gff)
-    return(ref_gff)
-}
-
-.renameOrthoPair <- function(id2id_list, gene_list, hdf5_fn, genomewise_list){
-    genomewise_list <- lapply(seq_along(genomewise_list), function(i){
-        out <- data.frame(genomewise_list[[i]],
-                          target_genome = names(genomewise_list[i]))
-        return(out)
-    })
-    genomewise_list <- do.call("rbind", genomewise_list)
-    genomewise_list <- subset(x = genomewise_list, subset = !duplicated(comb_id))
-    genomewise_list <- genomewise_list[order(genomewise_list$comb_id), ]
-    out_tx <- NULL
-    out_gene <- NULL
-    for(i in genomewise_list$comb_id){
-        h5 <- H5Fopen(name = hdf5_fn[i])
-        on.exit(H5Fclose(h5))
-        orthopair_gene <- h5$orthopair[[1]]
-        orthopair_gene <- .renameMPorthopair(df = orthopair_gene, genome = genomewise_list[i, ])
-        
-        if(!is.null(id2id_list)){
-            orthopair_gene <- .replaceOrthoPairID(df = orthopair_gene,
-                                                  id2id_list = id2id_list,
-                                                  genome = genomewise_list[i, ])
-        }
-        
-        orthopair_gene <- .replaceSplitGeneID(df = orthopair_gene, 
-                                              gene_list = gene_list)
-        out_gene <- c(out_gene, list(orthopair_gene))
-    }
-    out <- list(gene = out_gene, genomewise_list = genomewise_list)
-    return(out)
-}
-
-.renameMPorthopair <- function(df, genome){
-    if(genome$target == "query"){
-        df$query_tx <- .replaceMPid(id = df$query_tx,
-                                    prefix = paste(genome$target_genome,
-                                                   genome$pair_genome, 
-                                                   sep = "_"))
-        df$query_gene <- .replaceMPid(id = df$query_gene,
-                                      prefix = paste(genome$target_genome,
-                                                     genome$pair_genome, 
-                                                     sep = "_"))
-        df$subject_tx <- .replaceMPid(id = df$subject_tx,
-                                      prefix = paste(genome$pair_genome,
-                                                     genome$target_genome, 
-                                                     sep = "_"))
-        df$subject_gene <- .replaceMPid(id = df$subject_gene,
-                                        prefix = paste(genome$pair_genome,
-                                                       genome$target_genome, 
-                                                       sep = "_"))
-        
-    } else {
-        df$query_tx <- .replaceMPid(id = df$query_tx,
-                                    prefix = paste(genome$pair_genome,
-                                                   genome$target_genome, 
-                                                   sep = "_"))
-        df$query_gene <- .replaceMPid(id = df$query_gene,
-                                      prefix = paste(genome$pair_genome,
-                                                     genome$target_genome, 
-                                                     sep = "_"))
-        df$subject_tx <- .replaceMPid(id = df$subject_tx,
-                                      prefix = paste(genome$target_genome,
-                                                     genome$pair_genome, 
-                                                     sep = "_"))
-        df$subject_gene <- .replaceMPid(id = df$subject_gene,
-                                        prefix = paste(genome$target_genome,
-                                                       genome$pair_genome, 
-                                                       sep = "_"))
-    }
-    return(df)
-}
-
-.replaceMPid <- function(id, prefix){
-    mp_id <- grepl("^MP[0-9]+", id)
-    id[mp_id] <- paste(prefix, id[mp_id], sep = "_")
-    return(id)
-}
-
-.replaceOrthoPairID <- function(df, id2id_list, genome){
-    if(genome$target == "query"){
-        if(!is.null(id2id_list[[genome$target_genome]])){
-            id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
-            hit <- match(df$query_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-        
-        if(!is.null(id2id_list[[genome$pair_genome]])){
-            id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
-            hit <- match(df$subject_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-    } else {
-        if(!is.null(id2id_list[[genome$target_genome]])){
-            id2id <- subset(id2id_list[[genome$target_genome]], subset = is.na(mp_gene_id))
-            hit <- match(df$subject_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$subject_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-        
-        if(!is.null(id2id_list[[genome$pair_genome]])){
-            id2id <- subset(id2id_list[[genome$pair_genome]], subset = is.na(mp_gene_id))
-            hit <- match(df$query_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$query_tx[!is.na(hit)] <- id2id$ref_tx_id[na.omit(hit)]
-                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-    }
-    
-    if(genome$target == "query"){
-        if(!is.null(id2id_list[[genome$target_genome]])){
-            id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
-            hit <- match(df$query_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-        
-        if(!is.null(id2id_list[[genome$pair_genome]])){
-            id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
-            hit <- match(df$subject_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-    } else {
-        if(!is.null(id2id_list[[genome$pair_genome]])){
-            id2id <- subset(id2id_list[[genome$pair_genome]], subset = !is.na(mp_gene_id))
-            hit <- match(df$query_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$query_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-        
-        if(!is.null(id2id_list[[genome$target_genome]])){
-            id2id <- subset(id2id_list[[genome$target_genome]], subset = !is.na(mp_gene_id))
-            hit <- match(df$subject_tx, id2id$mp_tx_id)
-            if(any(!is.na(hit))){
-                df$subject_gene[!is.na(hit)] <- id2id$ref_gene_id[na.omit(hit)]
-            }
-        }
-    }
-    
-    return(df)
-}
-
-.replaceSplitGeneID <- function(df, gene_list){
-    hit <- match(df$query_tx, gene_list$tx_id)
-    if(any(!is.na(hit))){
-        df$query_gene[!is.na(hit)] <- gene_list$gene[na.omit(hit)]
-    }
-    
-    hit <- match(df$subject_tx, gene_list$tx_id)
-    if(any(!is.na(hit))){
-        df$subject_gene[!is.na(hit)] <- gene_list$gene[na.omit(hit)]
-    }
-    return(df)
-}
-
-.outputOrthoPairData <- function(orthopair_list, gene_list, genome_fn, 
-                                 out_dir, out_fn, overwrite){
-    hdf5_path <- file.path(out_dir, out_fn)
-    hdf5_fn <- .makeHDF5(hdf5_path = hdf5_path, overwrite = overwrite)
-    
-    .h5creategroup(hdf5_fn, "orthopair")
-    for(i in seq_along(orthopair_list$genomewise_list$comb_id)){
-        if(orthopair_list$genomewise_list$target[i] == "query"){
-            data_name <- paste(orthopair_list$genomewise_list$target_genome[i],
-                               orthopair_list$genomewise_list$pair_genome[i],
-                               sep = "_")
-            
-        } else {
-            data_name <- paste(orthopair_list$genomewise_list$pair_genome[i],
-                               orthopair_list$genomewise_list$target_genome[i],
-                               sep = "_")
-        }
-        .h5overwrite(obj = orthopair_list$gene[[i]],
-                     file = hdf5_fn,
-                     name = paste0("orthopair/", data_name))
-    }
-    
-    orphan_list <- .orgOrphan(hdf5_fn = hdf5_fn, 
-                              orthopair_list = orthopair_list,
-                              gene_list = gene_list)
-    
-    .h5creategroup(hdf5_fn, "genome_fn")
-    for(i in seq_along(genome_fn)){
-        .h5overwrite(obj = genome_fn[i],
-                     file = hdf5_fn,
-                     name = paste0("genome_fn/", names(genome_fn)[i]))
-    }
-    
-    .h5overwrite(obj = gene_list,
-                 file = hdf5_fn,
-                 name = "gene_list")
-    
-    .h5overwrite(obj = orphan_list,
-                 file = hdf5_fn,
-                 name = "orphan_list")
+    .reorgOrthoPair(hdf5_out_fn = hdf5_out_fn,
+                    hdf5_fn = hdf5_fn, 
+                    out_dir = out_dir,
+                    rename_list = rename_list,
+                    rename = rename)
     
     .h5overwrite(obj = "reorg_orthopair",
-                 file = hdf5_fn,
+                 file = hdf5_out_fn,
                  name = "data_type")
-    return(hdf5_fn)
+    
+    return(hdf5_out_fn)
 }
 
-.renameMPgff <- function(gff, id2id_df){
-    query_mp <- grepl("_MP[0-9]+", id2id_df$query_tx)
-    subject_mp <- grepl("_MP[0-9]+", id2id_df$subject_tx)
-    id2id_df <- subset(id2id_df, subset = query_mp & subject_mp)
-    hit <- match(gff$ID, id2id_df$mp_tx_id)
-    gff$ID[!is.na(hit)] <- id2id_df$ref_tx_id[na.omit(hit)]
-    hit <- match(gff$ID, id2id_df$mp_gene_id)
-    gff$ID[!is.na(hit)] <- id2id_df$ref_gene_id[na.omit(hit)]
+.getRenameList <- function(hdf5_fn, rename){
+    gff_list <- NULL
+    for(i in seq_along(hdf5_fn)){
+        meta <- getMeta(hdf5_fn = hdf5_fn[i])
+        gff_list <- rbind(gff_list,
+                          data.frame(genomes = meta$genomes, 
+                                     gff = c(meta$files$query_gff, 
+                                             meta$files$subject_gff)))
+    }
+    gff_list <- unique(gff_list)
     
-    tx_i <- gff$type %in% c("transcript", "mRNA")
-    hit <- match(unlist(gff$Parent[tx_i]), id2id_df$mp_gene_id)
-    gff$Parent[tx_i][!is.na(hit)] <- lapply(id2id_df$ref_gene_id[na.omit(hit)], c)
-    
-    element_i <- !gff$type %in% c("gene", "transcript", "mRNA")
-    hit <- match(unlist(gff$Parent[element_i]), id2id_df$mp_tx_id)
-    gff$Parent[element_i][!is.na(hit)] <- lapply(id2id_df$ref_tx_id[na.omit(hit)], c)
-    gff$ID[element_i] <- paste(unlist(gff$Parent[element_i]),
-                               gff$type[element_i],
-                               sep = ":")
-    return(gff)
-}
-
-.orgOrphan <- function(hdf5_fn, orthopair_list, gene_list){
-    .h5creategroup(hdf5_fn, "orphan_gene")
-    genomes <- unique(gene_list$genome)
-    out <- NULL
-    for(i in seq_along(genomes)){
-        hit <- grepl(genomes[i], orthopair_list$genomewise_list$pair_genome) | 
-            grepl(genomes[i], orthopair_list$genomewise_list$target_genome)
-        hit <- which(hit)
-        hit_tx <- NULL
-        for(j in hit){
-            pairs_in_j <- orthopair_list$gene[[j]]
-            check <- genomes[i] == orthopair_list$genomewise_list$target_genome[j]
-            if(check){
-                hit_tx <- c(hit_tx, pairs_in_j$query_tx)
-            } else {
-                hit_tx <- c(hit_tx, pairs_in_j$subject_tx)
+    split_list <- NULL
+    if(rename){
+        for(i in seq_along(hdf5_fn)){
+            opr <- getOrthoPair(hdf5_fn = hdf5_fn[i])
+            query_split <- subset(opr[[1]], 
+                                  subset = grepl("split", query_gene),
+                                  select = c(query_gene, query_tx))
+            subject_split <- subset(opr[[1]], 
+                                    subset = grepl("split", subject_gene),
+                                    select = c(subject_gene, subject_tx))
+            if(nrow(query_split) > 0){
+                split_list <- rbind(split_list, 
+                                    data.frame(genome = meta$genomes[1], 
+                                               gene = query_split$query_gene, 
+                                               tx = query_split$query_tx))
             }
-            hit_tx <- unique(hit_tx)
+            if(nrow(subject_split) > 0){
+                split_list <- rbind(split_list, 
+                                    data.frame(genome = meta$genomes[2], 
+                                               gene = subject_split$subject_gene, 
+                                               tx = subject_split$subject_tx))
+            }
+            split_list <- unique(split_list)
         }
-        genome_out <- subset(gene_list,
-                             subset = genome == genomes[i])
-        hit_old_gene_id <- genome_out$old_gene_id[genome_out$tx_id %in% hit_tx]
-        orphan_gene <- unique(genome_out$old_gene_id[!genome_out$old_gene_id %in% hit_old_gene_id])
-        if(length(orphan_gene) > 0){
-            out <- rbind(out, data.frame(genome = genomes[i], 
-                                         gene = unique(orphan_gene)))
+    }
+    
+    return(list(gff_list = gff_list, split_list = split_list))
+}
+
+.reorgGFF <- function(out_dir, rename_list){
+    for(i in seq_along(rename_list$gff_list$gff)){
+        gff <- readRDS(rename_list$gff_list$gff[i])
+        gff$Target <- gff$tx_index <- gff$gene_index <- NULL
+        i_genome <- rename_list$gff_list$genomes[i]
+        hit_genome <- rename_list$split_list$genome == i_genome
+        tx_hit <- match(gff$ID, rename_list$split_list$tx[hit_genome])
+        gff_split_gene <- unique(gff$Parent[!is.na(tx_hit)])
+        if(length(gff_split_gene) > 0){
+            gff$Parent[!is.na(tx_hit)] <- rename_list$split_list$gene[hit_genome][na.omit(tx_hit)]
+            split_gene_gff <- gff[!is.na(tx_hit)]
+            split_gene_gff$type <- "gene"
+            split_gene_gff$ID <- split_gene_gff$Parent
+            split_gene_gff$Parent <- ""
+            out <- split_gene_gff
+            split_gene_tx <- gff[gff$Parent %in% gff_split_gene]
+            gff <- gff[!gff$ID %in% gff_split_gene]
+            gff <- gff[!gff$Parent %in% gff_split_gene]
+            out <- c(out, gff)
+            ol <- findOverlaps(split_gene_tx,
+                               gff[gff$type %in% c("mRNA", "transcript")])
+            non_ol_tx <- split_gene_tx[-queryHits(ol)]
+            if(length(non_ol_tx) > 0){
+                non_ol_gene_gff <- non_ol_tx
+                non_ol_gene_gff$type <- "gene"
+                non_ol_gene_gff$ID <- non_ol_gene_gff$Parent
+                non_ol_gene_gff$Parent <- ""
+                out <- c(out, non_ol_gene_gff, non_ol_tx)
+            }
+            retain_entry <- out$Parent %in% c(out$ID, "")
+            out <- out[retain_entry]
+            out <- .fixGFF(gff = out)
+            
+        } else {
+            out <- gff
         }
-        .h5overwrite(obj = orphan_gene,
-                     file = hdf5_fn,
-                     name = paste0("orphan_gene/", genomes[i]))
+        
+        out_gff_fn <- file.path(out_dir, paste0(i_genome, ".gff"))
+        rename_list$gff_list$gff[i] <- out_gff_fn
+        export.gff3(object = out, out_gff_fn)
     }
-    if(is.null(out)){
-        out <- "NA"
+    return(rename_list)
+}
+
+.reorgOrthoPair <- function(hdf5_out_fn, hdf5_fn, out_dir, rename_list, rename){
+    gene_list <- NULL
+    for(i in seq_along(rename_list$gff_list$genomes)){
+        i_genome <- rename_list$gff_list$genomes[i]
+        i_gff_fn <- rename_list$gff_list$gff[i]
+        if(grepl("\\.rds$", i_gff_fn)){
+            gff <- readRDS(i_gff_fn)
+            
+        } else {
+            gff <- import.gff3(con = i_gff_fn)
+        }
+        gene_list <- rbind(gene_list, 
+                           data.frame(genome = i_genome,
+                                      gene = unique(gff$gene_id)))
+        .h5overwrite(obj = i_gff_fn,
+                     file = hdf5_out_fn,
+                     name = paste0("gff/", i_genome))
     }
-    return(out)
+    .h5overwrite(obj = gene_list,
+                 file = hdf5_out_fn,
+                 name = "gene_list")
+    
+    orphan_list <- gene_list
+    for(i in seq_along(hdf5_fn)){
+        opr <- getOrthoPair(hdf5_fn = hdf5_fn[i], score = TRUE, loc = TRUE)[[1]]
+        meta <- getMeta(hdf5_fn = hdf5_fn[i])
+        
+        if(rename){
+            genome_1 <- rename_list$split_list$genome == meta$genomes[1]
+            if(sum(genome_1) > 0){
+                hit <- match(opr$query_tx, rename_list$split_list$tx[genome_1])
+                opr$query_gene[!is.na(hit)] <- rename_list$split_list$gene[genome_1][na.omit(hit)]
+            }
+            genome_2 <- rename_list$split_list$genome == meta$genomes[2]
+            if(sum(genome_2) > 0){
+                hit <- match(opr$subject_tx, rename_list$split_list$tx[genome_2])
+                opr$subject_gene[!is.na(hit)] <- rename_list$split_list$gene[genome_2][na.omit(hit)]
+            }
+            
+        } else {
+            opr$query_gene <- opr$original_query_gene
+            opr$subject_gene <- opr$original_subject_gene
+        }
+        .h5overwrite(obj = opr,
+                     file = hdf5_out_fn,
+                     name = paste0("orthopair/", meta$pair_id))
+        
+        genome_1 <- orphan_list$genome == meta$genomes[1]
+        if(sum(genome_1) > 0){
+            hit <- orphan_list$gene[genome_1] %in% opr$query_gene
+            orphan_list$gene[genome_1][hit] <- NA
+        }
+        genome_2 <- orphan_list$genome == meta$genomes[2]
+        if(sum(genome_2) > 0){
+            hit <- orphan_list$gene[genome_2] %in% opr$subject_gene
+            orphan_list$gene[genome_2][hit] <- NA        
+        }
+    }
+    orphan_list <- subset(orphan_list, subset = !is.na(gene))
+    .h5overwrite(obj = orphan_list,
+                 file = hdf5_out_fn,
+                 name = "orphan_list")
 }
 
 ################################################################################
@@ -778,7 +196,7 @@ makeOrthoGraph <- function(hdf5_fn){
              " by the reorgOrthopiars() function.")
     }
     n_files <- length(h5$orthopair)
-    orphan_gene <- unlist(h5$orphan)
+    orphan_gene <- h5$orphan_list
     gene_list <- h5$gene_list
     graph <- make_empty_graph(n = 0, directed = FALSE)
     orthopair_gene <- h5$orthopair
@@ -805,11 +223,14 @@ makeOrthoGraph <- function(hdf5_fn){
                                    class = orthopair_gene$class,
                                    genome1 = genome1,
                                    genome2 = genome2))
-    graph <- add_vertices(graph = graph, nv = length(orphan_gene), name = orphan_gene)
+    graph <- add_vertices(graph = graph, 
+                          nv = length(orphan_gene$gene),
+                          name = orphan_gene$gene,
+                          genome = orphan_gene$genome)
     return(graph)
 }
 
-#' @importFrom igraph components ego V subgraph vcount induced_subgraph
+#' @importFrom igraph components ego V subgraph vcount induced_subgraph vertex_attr vertex_attr<-
 #' @importFrom tidyr pivot_wider
 #' @export
 graph2df <- function(hdf5_fn, graph, orthopair_fn, n_core = 1, n_batch = 50){

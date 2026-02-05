@@ -13,35 +13,48 @@
 #'
 #' @export
 mapProt <- function(in_list,
-                    out_dir = "", 
-                    miniprot_path = "",
-                    overwrite = FALSE,
-                    conda_env = NULL,
-                    n_threads = 1,
+                    input_dir, 
+                    overwrite,
+                    miniprot_path,
+                    blast_path, 
+                    diamond_path, 
+                    use_prot,
+                    n_threads,
+                    verbose,
                     len_diff = 0.2){
     if(!inherits(x = in_list, what = "OrthoPairInput")){
         stop("The input object must be a OrthoPairInput class object.",
              call. = FALSE)
     }
     
-    miniprot_out_dir <- file.path(out_dir, "miniprot_out")
+    miniprot_out_dir <- file.path(input_dir, "miniprot_out")
     dir.create(path = miniprot_out_dir, showWarnings = FALSE, recursive = TRUE)
     
-    message("Start running Miniprot...")
+    if(verbose){
+        message("Start running Miniprot...")
+    }
+    
     out_files <- .mapEngine(in_list = in_list,
                             miniprot_out_dir = miniprot_out_dir,
                             overwrite = overwrite,
                             miniprot_path = miniprot_path,
-                            n_threads = n_threads)
+                            n_threads = n_threads,
+                            verbose = verbose)
     
-    message("Organize and integrate miniprot predicated gene models...")
+    if(verbose){
+        message("Organize and integrate miniprot predicated gene models...")
+    }
     
     in_list <- .orgMiniprot(in_list = in_list,
                             out_files = out_files,
-                            out_dir = out_dir, 
+                            out_dir = input_dir, 
                             len_diff = len_diff)
     
-    in_list <- .createFASTA(in_list = in_list, out_dir = out_dir)
+    in_list <- .createFASTA(in_list = in_list,
+                            out_dir = input_dir,
+                            blast_path = blast_path, 
+                            diamond_path = diamond_path, 
+                            use_prot = use_prot)
     return(in_list)
 }
 
@@ -52,25 +65,30 @@ mapProt <- function(in_list,
                        miniprot_out_dir,
                        overwrite,
                        miniprot_path,
-                       n_threads){
+                       n_threads,
+                       verbose){
     if(all(is.na(in_list$genome))){
-        stop("No genome information is available.")
+        stop("No genome information is available.", call. = FALSE)
     } else {
         omit_genome <- in_list$name[is.na(in_list$genome)]
         if(length(omit_genome) > 0){
-            message("Genome sequences are not available for:\n",
-                    paste(omit_genome, collapse = "\n"))
+            if(verbose){
+                message("Genome sequences are not available for:\n",
+                        paste(omit_genome, collapse = "\n"))
+            }
         }
     }
     
     if(all(is.na(in_list$prot))){
-        stop("No protein information is available.")
+        stop("No protein information is available.", call. = FALSE)
         
     } else {
         omit_prot <- in_list$name[is.na(in_list$prot)]
         if(length(omit_prot) > 0){
-            message("Protein sequences are not available for:\n",
-                    paste(omit_prot, collapse = "\n"))
+            if(verbose){
+                message("Protein sequences are not available for:\n",
+                        paste(omit_prot, collapse = "\n"))
+            }
         }
     }
     
@@ -162,30 +180,42 @@ mapProt <- function(in_list,
 }
 
 .orgMiniprot <- function(in_list, out_files, out_dir, len_diff){
-    in_list$update <- rep(FALSE, length(in_list$name))
+    out_list <- NULL
     for(i in seq_along(out_files)){
         subject_genome <- names(out_files)[i]
-        out_gff <- .filterGFF(in_list = in_list,
-                              subject_genome = subject_genome,
-                              mp_files = out_files[[i]], 
-                              len_diff = len_diff)
-        added_tx_id <- out_gff$added_tx_id
+        gff <- .filterGFF(in_list = in_list,
+                          subject_genome = subject_genome,
+                          mp_files = out_files[[i]], 
+                          len_diff = len_diff)
         # Fix and filter GFF results, retaining only necessary columns
-        out_gff <- .fixGFF(gff = out_gff$out_gff)
-        
-        m_gff <- mcols(out_gff)
+        gff <- .fixGFF(gff = gff)
+        m_gff <- mcols(gff)
         hit <- names(m_gff) %in% c("source", "type", "score", "phase",
-                                   "ID", "Name", "gene_id", "Parent", "Target")
-        mcols(out_gff) <- m_gff[, hit]
-        out_gff$Name <- out_gff$ID
+                                   "ID", "Name", "gene_id", "Parent", "Target",
+                                   "tx_index", "gene_index")
+        mcols(gff) <- m_gff[, hit]
+        gff$Name <- gff$ID
+        gff <- .orderGFF(gff = gff)
+        gff <- .setIndex(gff = gff)
+        gff_df <- as.data.frame(gff)
+        gff_df <- subset(gff_df, select = c(seqnames, start, end,
+                                            strand, type, ID, 
+                                            Parent, gene_id,
+                                            tx_index, gene_index))
         
         # Export the final GFF results to output files
-        subject_index <- in_list$name %in% subject_genome
-        out_fn <- file.path(out_dir, basename(in_list$gff[subject_index]))
-        export.gff3(out_gff, out_fn)
-        in_list$gff[subject_index] <- out_fn
-        in_list$update[subject_index] <- TRUE
+        out_dir_i <- file.path(out_dir, subject_genome)
+        dir.create(out_dir_i, showWarnings = FALSE, recursive = TRUE)
+        gff_fn <- file.path(out_dir_i, "gff_mp_merge.rds")
+        saveRDS(object = gff, file = gff_fn)
+        gff_df_fn <- file.path(out_dir_i, "gff_df_mp_merge.rds")
+        saveRDS(object = gff_df, file = gff_df_fn)
+        
+        out_list <- rbind(out_list, 
+                          data.frame(gff = gff_fn, gff_df = gff_df_fn))
     }
+    in_list$gff <- out_list$gff
+    in_list$gff_df <- out_list$gff_df
     return(in_list)
 }
 
@@ -229,8 +259,7 @@ mapProt <- function(in_list,
         subject_cds <- c(subject_cds,
                          mp_cds[names(mp_cds) %in% valid_longer_subject_mp_gff$ID])
     }
-    added_tx_id <- names(subject_cds)[names(subject_cds) %in% original_tx_id]
-    return(list(out_gff = subject_gff, added_tx_id = added_tx_id))
+    return(subject_gff)
 }
 
 .setIDforElements <- function(gff, prefix){
@@ -338,14 +367,14 @@ mapProt <- function(in_list,
     # Calculate CDS lengths for the given GFF data
     mp_cds_len <- .getCDSlen(gff = mp_gff)
     index <- as.numeric(names(mp_cds_len))
-    mp_tx_i <- mp_gff$type %in% c("transcript", "mRNA")
+    mp_tx_i <- mp_gff$type == "transcript"
     names(mp_cds_len) <- sub("\\s.+", "", mp_gff$Target[mp_tx_i][index])
     
     # Calculate CDS lengths for the reference GFF data
     original_cds_len <- .getCDSlen(gff = original_gff)
     index <- as.numeric(names(original_cds_len))
     original_tx_i <- original_gff$type %in% c("transcript", "mRNA")
-    names(original_cds_len) <- original_gff$ID[original_tx_i][index]
+    names(original_cds_len) <- original_gff$tx_index[original_tx_i][index]
     
     # Match CDS lengths by transcript IDs
     id_hit <- match(names(mp_cds_len), names(original_cds_len))
@@ -375,9 +404,9 @@ mapProt <- function(in_list,
     # Calculate Tx lengths for the reference GFF data
     original_cds_i <- original_gff$type %in% "CDS"
     original_cds_gff <- original_gff[original_cds_i]
-    original_cds_parents <- unlist(original_cds_gff$Parent)
+    original_cds_parents <- unlist(original_cds_gff$tx_index)
     original_cds_gff <- original_cds_gff[original_cds_parents %in% names(mp_tx_len)]
-    original_cds_parents <- unlist(original_cds_gff$Parent)
+    original_cds_parents <- unlist(original_cds_gff$tx_index)
     cds_min <- tapply(start(original_cds_gff), original_cds_parents, min)
     cds_max <- tapply(end(original_cds_gff), original_cds_parents, max)
     original_tx_len <- cds_max - cds_min
@@ -523,7 +552,8 @@ mapProt <- function(in_list,
     original_gff_cds_i <- original_gff$type %in% c("CDS")
     mp_gff_cds_i <- mp_gff$type %in% c("CDS")
     mp_gff_tx_i <- mp_gff$type %in% c("transcript", "mRNA")
-    ol <- findOverlaps(mp_gff[mp_gff_cds_i], original_gff[original_gff_cds_i])
+    ol <- suppressWarnings({findOverlaps(mp_gff[mp_gff_cds_i],
+                                         original_gff[original_gff_cds_i])})
     ol <- as.data.frame(ol)
     ol$queryHits <- unlist(mp_gff$Parent[mp_gff_cds_i][ol$queryHits])
     tx_id <- mp_gff$ID[mp_gff_tx_i]
@@ -693,12 +723,10 @@ mapProt <- function(in_list,
 ################################################################################
 
 .fixGFF <- function(gff){
-    entry_type <-  c("gene", "transcript", "mRNA", "five_prime_UTR", "exon",
-                     "CDS", "three_prime_UTR")
+    entry_type <-  c("gene", "transcript", "mRNA", "CDS")
     gff <- gff[gff$type %in% entry_type]
     gff <- .setGeneID(gff = gff)
     gff <- .fixGFFrange(gff = gff)
-    gff <- .fixGFFexon(gff = gff)
     gff <- .fixGFFphase(gff = gff)
     return(gff)
 }
@@ -808,10 +836,9 @@ mapProt <- function(in_list,
     out <- c(gff[gff$type != "CDS"], gff_cds_plus, gff_cds_minus)
     
     # Set factor levels for feature types
-    out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA",
-                                            "five_prime_UTR", "exon",
-                                            "CDS", "three_prime_UTR"))
+    out$type <- factor(out$type, levels = c("gene", "transcript", "mRNA", "CDS"))
     out$type <- droplevels(out$type)
+    out$phase <- as.integer(out$phase)
     
     # Order the features by sequence name, start position, and type
     out <- out[order(as.numeric(seqnames(out)), start(out), as.numeric(out$type))]
@@ -891,34 +918,41 @@ mapProt <- function(in_list,
 
 #' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
 #' @importFrom Biostrings writeXStringSet translate
-.createFASTA <- function(in_list, out_dir){
+.createFASTA <- function(in_list, out_dir, blast_path, diamond_path, use_prot){
     for(i in seq_along(in_list$name)){
-        if(!in_list$update[i]){
-            next
-        }
-        new_cds <- .makeCDS(gff = in_list$gff[i], genome = in_list$genome[i])
-        new_cds_fn <- file.path(out_dir, basename(in_list$cds[i]))
-        writeXStringSet(new_cds, new_cds_fn)
-        in_list$cds[i] <- new_cds_fn
+        gff <- readRDS(in_list$gff[i])
+        cds <- .makeCDS(gff = gff, genome = in_list$genome[i])
+        gff_cds <- gff[gff$type %in% "CDS"]
+        rep_tx_id <- .getRepTx(gff_cds = gff_cds)
+        rep_cds <- cds[names(cds) %in% rep_tx_id]
+        hit <- match(names(rep_cds), gff$ID)
+        names(rep_cds) <- gff$tx_index[hit]
+        writeXStringSet(rep_cds, in_list$cds[i])
+        .makeblastdb(blast_path = blast_path, fn = in_list$cds[i])
         
-        new_prot <- translate(new_cds, if.fuzzy.codon = "solve")
+        new_prot <- translate(rep_cds, if.fuzzy.codon = "solve")
         new_prot <- AAStringSet(sub("\\*.+", "", new_prot))
-        new_prot_fn <- file.path(out_dir, basename(in_list$prot[i]))
-        writeXStringSet(new_prot, new_prot_fn)
-        in_list$prot[i] <- new_prot_fn
+        writeXStringSet(new_prot, in_list$prot[i])
+        if(use_prot){
+            .makediamonddb(diamond_path = diamond_path, fn = prot_fn)
+        }
     }
-    in_list$update <- NULL
     return(in_list)
 }
 
 #' @importFrom Biostrings readDNAStringSet
 #' @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
-#' @importFrom txdbmaker makeTxDbFromGFF
+#' @importFrom txdbmaker makeTxDbFromGFF makeTxDbFromGRanges
 #' @import BSgenome
 #'
 .makeCDS <- function(gff, genome){
     # Create a TxDb object from the GFF file
-    txdb <- suppressMessages({makeTxDbFromGFF(file = gff)})
+    if(inherits(gff, "GRanges")){
+        txdb <- suppressMessages({makeTxDbFromGRanges(gr = gff)})
+        
+    } else {
+        txdb <- suppressMessages({makeTxDbFromGFF(file = gff)})
+    }
     
     # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(filepath = genome)

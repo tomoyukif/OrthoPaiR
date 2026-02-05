@@ -24,8 +24,8 @@ rbh <- function(object,
     # on.exit(H5Fclose(h5))
     files <- h5read(object$h5, "files")
     
-    fa1_fn <- h5read(files$query_h5, "cds_fn")
-    fa2_fn <- h5read(files$subject_h5, "cds_fn")
+    fa1_fn <- files$query_cds
+    fa2_fn <- files$subject_cds
     
     # Avoid changing global options; keep defaults for performance
     
@@ -48,34 +48,30 @@ rbh <- function(object,
     
     if(use_prot){
         # Generate FASTA files from the CDS sequences
-        query_prot <- h5read(files$query_h5, "prot_fn")
-        subject_prot <- h5read(files$subject_h5, "prot_fn")
-        check1 <- "no_query_prot" %in% query_prot
-        check2 <- "no_subject_prot" %in% subject_prot
-        if(!check1 & !check2){
-            fa1_fn <- query_prot
-            fa2_fn <- subject_prot
-            
-            # Perform BLAST searches in both directions
-            message("DIAMOND: query to subject.")
-            blast_out1 <- .diamond_search(fa = fa1_fn,
-                                          db = fa2_fn,
-                                          n_threads = n_threads,
-                                          diamond_path = diamond_path)
-            
-            message("DIAMOND: subject to query.")
-            blast_out2 <- .diamond_search(fa = fa2_fn,
-                                          db = fa1_fn,
-                                          n_threads = n_threads,
-                                          diamond_path = diamond_path)
-            
-            # Filter BLAST results for best hits
-            message("Update RBH lists.")
-            prot_rbh_out <- .getRBH(df1 = blast_out1, df2 = blast_out2)
-            rbh_out <- rbind(prot_rbh_out, rbh_out)
-            rbh_out <- rbh_out[order(rbh_out$mutual_ci, decreasing = TRUE), ]
-            rbh_out <- rbh_out[!duplicated(subset(rbh_out, select = qseqid:sseqid)), ]
-        }
+        query_prot <- files$query_prot
+        subject_prot <- files$subject_prot
+        fa1_fn <- query_prot
+        fa2_fn <- subject_prot
+        
+        # Perform BLAST searches in both directions
+        message("DIAMOND: query to subject.")
+        blast_out1 <- .diamond_search(fa = fa1_fn,
+                                      db = fa2_fn,
+                                      n_threads = n_threads,
+                                      diamond_path = diamond_path)
+        
+        message("DIAMOND: subject to query.")
+        blast_out2 <- .diamond_search(fa = fa2_fn,
+                                      db = fa1_fn,
+                                      n_threads = n_threads,
+                                      diamond_path = diamond_path)
+        
+        # Filter BLAST results for best hits
+        message("Update RBH lists.")
+        prot_rbh_out <- .getRBH(df1 = blast_out1, df2 = blast_out2)
+        rbh_out <- rbind(prot_rbh_out, rbh_out)
+        rbh_out <- rbh_out[order(rbh_out$mutual_ci, decreasing = TRUE), ]
+        rbh_out <- rbh_out[!duplicated(subset(rbh_out, select = qseqid:sseqid)), ]
     }
     
     rbh_out <- .reorganizeRBH(object = object, rbh_out = rbh_out)
@@ -248,11 +244,11 @@ rbh <- function(object,
                     "qstart", "qend", "sstart", "send")
     names(df2) <- c("sseqid", "qseqid", "pident", "qcovs_s2q", "slen", 
                     "sstart", "send", "qstart", "qend")
-
+    
     rbh <- inner_join(df1, df2, 
-                    by = c("qseqid", "sseqid", "qstart", "qend", "sstart", "send", "pident"),
-                    relationship = "many-to-many")
-   
+                      by = c("qseqid", "sseqid", "qstart", "qend", "sstart", "send", "pident"),
+                      relationship = "many-to-many")
+    
     rbh <- .orgBLASTout(rbh = rbh)
     if(nrow(rbh) == 0){
         return(NA)

@@ -290,25 +290,27 @@ syntenicOrtho <- function(object){
     return(gr)
 }
 
-
+#' @importFrom rtracklayer import.gff
 .getGFFlist <- function(object = NULL, gff_fn = NULL){
     # Import GFF files for query and subject genomes
     if(is.null(gff_fn)){
         files <- h5read(object$h5, "files")
-        query_gff <- h5read(files$query_h5, "gff")
-        subject_gff <- h5read(files$subject_h5, "gff")
+        query_gff <- readRDS(files$query_gff_df)
+        subject_gff <- readRDS(files$subject_gff_df)
         
         # Order the GFF data
         query_gff <- query_gff[order(query_gff$seqnames, query_gff$start), ]
         subject_gff <- subject_gff[order(subject_gff$seqnames, subject_gff$start), ]
         
         # Return the ordered GFF data as a list
-        # out <- list(query_gff = .checkGFFentiry(query_gff),
-        # subject_gff = .checkGFFentiry(subject_gff))
         out <- list(query_gff = query_gff, subject_gff = subject_gff)
         
     } else {
-        out <- .importAllGFF(gff_fn)
+        if(grepl("\\.rds$", gff_fn)){
+            out <- readRDS(gff_fn)
+        } else {
+            out <- import.gff(gff_fn)
+        }
         out <- .orderGFF(gff = out)
         out <- .mRNA2transcript(gff = out)
     }
@@ -863,7 +865,7 @@ syntenicOrtho <- function(object){
 
 .reformatOrthoPair <- function(orthopair, g2g_graph){
     q_tx_hit <- match(orthopair$query_tx, g2g_graph$query_df$tx_index)
-    orthopair$query_tx <- g2g_graph$query_df$Parent[q_tx_hit]
+    orthopair$query_tx <- g2g_graph$query_df$ID[q_tx_hit]
     orthopair$query_start <- g2g_graph$query_df$start[q_tx_hit]
     orthopair$query_end <- g2g_graph$query_df$end[q_tx_hit]
     orthopair$query_strand <- g2g_graph$query_df$strand[q_tx_hit]
@@ -875,7 +877,7 @@ syntenicOrtho <- function(object){
     orthopair$query_gene[q_split] <- paste0(orthopair$query_tx[q_split], ":split")
     
     s_tx_hit <- match(orthopair$subject_tx, g2g_graph$subject_df$tx_index)
-    orthopair$subject_tx <- g2g_graph$subject_df$Parent[s_tx_hit]
+    orthopair$subject_tx <- g2g_graph$subject_df$ID[s_tx_hit]
     orthopair$subject_start <- g2g_graph$subject_df$start[s_tx_hit]
     orthopair$subject_end <- g2g_graph$subject_df$end[s_tx_hit]
     orthopair$subject_strand <- g2g_graph$subject_df$strand[s_tx_hit]

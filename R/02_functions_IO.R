@@ -30,22 +30,22 @@ makeOrthoPairDB <- function(input_files, overwrite = FALSE, verbose = TRUE){
                  file = out$h5, "files/query_genome")
     .h5overwrite(obj = input_files$subject_genome,
                  file = out$h5, "files/subject_genome")
-    .h5overwrite(obj = input_files$query_prot,
-                 file = out$h5, "files/query_prot")
-    .h5overwrite(obj = input_files$subject_prot,
-                 file = out$h5, "files/subject_prot")
     .h5overwrite(obj = input_files$query_gff,
                  file = out$h5, "files/query_gff")
     .h5overwrite(obj = input_files$subject_gff,
                  file = out$h5, "files/subject_gff")
+    .h5overwrite(obj = input_files$query_gff_df,
+                 file = out$h5, "files/query_gff_df")
+    .h5overwrite(obj = input_files$subject_gff_df,
+                 file = out$h5, "files/subject_gff_df")
+    .h5overwrite(obj = input_files$query_prot,
+                 file = out$h5, "files/query_prot")
+    .h5overwrite(obj = input_files$subject_prot,
+                 file = out$h5, "files/subject_prot")
     .h5overwrite(obj = input_files$query_cds,
                  file = out$h5, "files/query_cds")
     .h5overwrite(obj = input_files$subject_cds,
                  file = out$h5, "files/subject_cds")
-    .h5overwrite(obj = input_files$query_h5,
-                 file = out$h5, "files/query_h5")
-    .h5overwrite(obj = input_files$subject_h5,
-                 file = out$h5, "files/subject_h5")
     
     # Assign class and initialize HDF5 file
     class(out) <- c(class(out), "OrthoPairDB")
@@ -110,15 +110,13 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL){
     subject_orphan <- length(h5$orphan[[2]])
     query_total <- sum(query_summary) + query_orphan
     subject_total <- sum(subject_summary) + subject_orphan
-    files <- h5$files
-    query_name <- basename(sub("/input.h5", "", files$query_h5))
-    subject_name <- basename(sub("/input.h5", "", files$subject_h5))
-    df <- data.frame(Query = c(query_name,
+    name <- names(h5$orphan)
+    df <- data.frame(Query = c(name[1],
                                query_total,
                                query_total - query_orphan,
                                query_summary,
                                query_orphan),
-                     Subject = c(subject_name,
+                     Subject = c(name[2],
                                  subject_total,
                                  subject_total - subject_orphan,
                                  subject_summary,
@@ -255,20 +253,12 @@ getMeta <- function(object = NULL, hdf5_fn = NULL){
     if(!H5Lexists(h5, "orthopair")){
         stop("Run syntenicOrtho() to obtain genewise ortholog info.")
     }
-    if(H5Lexists(h5loc = h5, name = "orphan_gene")){
-        genomes <- names(h5$orphan_gene)
-    }
-    if(H5Lexists(h5loc = h5, name = "orphan")){
-        genomes <- names(h5$orphan)
-    }
     if(H5Lexists(h5loc = h5, name = "orthopair")){
         pair_id <- names(h5$orthopair)
-    }
-    if(H5Lexists(h5loc = h5, name = "orthopair_gene")){
-        pair_id <- names(h5$orthopair_gene)
+        genomes <- unlist(strsplit(pair_id, "_"))
     }
     if(H5Lexists(h5loc = h5, name = "files")){
-        files <- names(h5$files)
+        files <- h5$files
     } else {
         files <- NULL
     }

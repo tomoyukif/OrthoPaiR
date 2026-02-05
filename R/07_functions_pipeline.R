@@ -17,6 +17,7 @@ orthopair <- function(in_list,
                       run_miniprot = FALSE,
                       orthopair = TRUE,
                       reorg = TRUE,
+                      rename = TRUE,
                       makegraph = TRUE,
                       output_table = FALSE,
                       n_threads = NULL,
@@ -36,26 +37,35 @@ orthopair <- function(in_list,
     input_dir <- file.path(working_dir, "input")
     dir.create(path = input_dir, showWarnings = FALSE, recursive = TRUE)
     
+    if(verbose){
+        message("Start organizing input data...")
+    }
+    in_list <- .orgInput(in_list = in_list,
+                         input_dir = input_dir,
+                         use_prot = use_prot,
+                         run_miniprot = run_miniprot,
+                         blast_path = blast_path,
+                         diamond_path = diamond_path,
+                         overwrite = overwrite,
+                         n_threads = n_threads,
+                         verbose = verbose)
+    saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
+    
     if(run_miniprot){
         if(verbose){
             message("Start missing ORF complementation...")
         }
         in_list <- mapProt(in_list = in_list,
-                           out_dir = input_dir, 
+                           input_dir = input_dir, 
                            overwrite = overwrite,
                            miniprot_path = miniprot_path,
-                           n_threads = n_threads)
+                           blast_path = blast_path, 
+                           diamond_path = diamond_path, 
+                           use_prot = use_prot,
+                           n_threads = n_threads,
+                           verbose = verbose)
     }
-    
-    if(verbose){
-        message("Start organizing input data...")
-    }
-    in_list <- .orgInput(in_list = in_list, 
-                         out_dir = input_dir,
-                         use_prot = use_prot,
-                         blast_path = blast_path,
-                         diamond_path = diamond_path,
-                         overwrite = overwrite)
+    saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
     
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
@@ -73,18 +83,6 @@ orthopair <- function(in_list,
             message("Start proccessing the ", names(pairwise_input)[i], " pair")
         }
         
-        # For debug #######################################################
-        # query_genome = pairwise_input[[i]]$query_genome
-        # subject_genome = pairwise_input[[i]]$subject_genome
-        # query_gff = pairwise_input[[i]]$query_gff
-        # subject_gff = pairwise_input[[i]]$subject_gff
-        # query_cds = pairwise_input[[i]]$query_cds
-        # subject_cds = pairwise_input[[i]]$subject_cds
-        # query_prot = pairwise_input[[i]]$query_prot
-        # subject_prot = pairwise_input[[i]]$subject_prot
-        # hdf5_path = pairwise_input[[i]]$hdf5_path
-        # miniprot_out_dir = pairwise_input[[i]]$miniprot_out_dir
-        #############################################################
         object <- try(expr = {.runOrthoPair(input_files = pairwise_input[[i]],
                                             use_prot = use_prot,
                                             blast_path = blast_path,
@@ -117,20 +115,20 @@ orthopair <- function(in_list,
         if(verbose){
             message("Start reorganizing orthopairs ...")
         }
-        hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
+        reorg_hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
                                    out_dir = file.path(working_dir, "reorg_out"),
                                    out_fn = "reorg_orthopair.h5",
-                                   makeFASTA = TRUE,
-                                   overwrite = overwrite)
-        
+                                   rename = rename,
+                                   overwrite = overwrite,
+                                   verbose = verbose)
     }
     
     if(makegraph){
         if(verbose){
             message("Summarizing orthopairs into graphs ...")
         }
-        hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
-        graph <- makeOrthoGraph(hdf5_fn = hdf5_fn)
+        reorg_hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
+        graph <- makeOrthoGraph(hdf5_fn = reorg_hdf5_fn)
         graph_fn <- file.path(working_dir, "orthopair.graphml")
         write_graph(graph = graph, file = graph_fn, format = "graphml")
         
@@ -139,7 +137,7 @@ orthopair <- function(in_list,
         
         if(output_table){
             if(file.exists(graph_fn)){
-                hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
+                reorg_hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
                 graph <- read_graph(file = graph_fn, format = "graphml")
                 
             } else {
@@ -162,9 +160,9 @@ orthopair <- function(in_list,
         }
         orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
         unlink(x = orthopair_fn, force = TRUE)
-        graph2df(hdf5_fn = hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
+        graph2df(hdf5_fn = reorg_hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
         
-        orphan <- getOrphan(hdf5_fn = hdf5_fn)
+        orphan <- getOrphan(hdf5_fn = reorg_hdf5_fn)
         orphan <- lapply(seq_along(orphan), function(i){
             i_orphan <- orphan[[i]]
             i_out <- matrix(data = NA, nrow = length(i_orphan), ncol = length(orphan))
@@ -181,7 +179,7 @@ orthopair <- function(in_list,
     }
     
     on.exit()
-    out <- c(hdf5_fn = hdf5_fn, graph_fn = graph_fn, 
+    out <- c(hdf5_fn = reorg_hdf5_fn, graph_fn = graph_fn, 
              orthopair_fn = orthopair_fn, orphan_fn = orphan_fn)
     
     if(verbose){
@@ -190,66 +188,167 @@ orthopair <- function(in_list,
     return(out)
 }
 
-.orgInput <- function(in_list, out_dir, use_prot, blast_path, diamond_path, overwrite){
-    in_list$h5 <- rep(NA, length(in_list$name))
-    
-    for(i in seq_along(in_list$name)){
-        out_dir_i <- file.path(out_dir, in_list$name[i])
-        dir.create(out_dir_i, showWarnings = FALSE, recursive = TRUE)
-        h5_fn <- .makeHDF5(hdf5_path = file.path(out_dir_i, "input.h5"), 
-                           overwrite = overwrite, verbose = FALSE)
-        in_list$h5[i] <- h5_fn
-        new_cds_fn <- file.path(out_dir_i, "cds.fa")
-        
-        if(overwrite){
-            gff_fn <-  in_list$gff[i]
-            gff <- import.gff3(gff_fn)
-            gff_df <- as.data.frame(gff)
-            gff_df <- subset(gff_df, select = -c(source, score, phase, Name, width))
-            gff_df$type <- as.character(gff_df$type)
-            gff_df$seqnames <- as.character(gff_df$seqnames)
-            gff_df <- gff_df[order(gff_df$seqnames, gff_df$start), ]
-            tx_i <- gff_df$type %in% c("mRNA", "transcript")
-            gene_i <- gff_df$type %in% "gene"
-            gff_df$gene_index <- gff_df$tx_index <- NA
-            gff_df$tx_index[tx_i] <- seq_len(sum(tx_i))
-            gff_df$gene_index[gene_i] <- seq_len(sum(gene_i))
-            hit <- match(gff_df$gene_id[tx_i], gff_df$gene_id[gene_i])
-            gff_df$gene_index[tx_i] <- gff_df$gene_index[gene_i][hit]
-            gff_df$Parent[gene_i] <- ""
-            gff_df$Parent <- unlist(gff_df$Parent)
-            .h5overwrite(obj = gff_df, file = h5_fn, "gff")
-        }
-        
-        new_cds_fn <- file.path(out_dir_i, "cds.fa")
-        if(overwrite){
-            cds <- readDNAStringSet(in_list$cds[i])
-            rep_tx_id <- .getRepTx(gff_cds = gff[gff$type == "CDS"])
-            rep_cds <- cds[names(cds) %in% rep_tx_id]
-            hit <- match(names(rep_cds), gff_df$ID)
-            names(rep_cds) <- gff_df$tx_index[hit]
-            writeXStringSet(rep_cds, new_cds_fn)
-            rep_cds <- data.frame(id = names(rep_cds), seq = as.character(rep_cds))
-            rownames(rep_cds) <- NULL
-            .h5overwrite(obj = rep_cds, file = h5_fn, "cds")
-            .makeblastdb(blast_path = blast_path, fn = new_cds_fn)
-        }
-        .h5overwrite(obj = new_cds_fn, file = h5_fn, "cds_fn")
-        
-        if(!is.na(in_list$prot[i]) & use_prot){
-            new_prot_fn <- file.path(out_dir_i, "prot.fa")
-            if(overwrite){
-                prot <- readDNAStringSet(in_list$prot[i])
-                rep_prot <- prot[names(prot) %in% rep_tx_id]
-                hit <- match(names(rep_prot), gff_df$ID)
-                names(rep_prot) <- gff_df$tx_index[hit]
-                writeXStringSet(rep_prot, new_prot_fn)
-                .makediamonddb(diamond_path = diamond_path, fn = new_prot_fn)
-            }
-            .h5overwrite(obj = new_prot_fn, file = h5_fn, "prot_fn")
+.orgInput <- function(in_list, 
+                      input_dir,
+                      use_prot, 
+                      run_miniprot,
+                      blast_path,
+                      diamond_path, 
+                      overwrite,
+                      n_threads,
+                      verbose){
+    ma <- .mem_available_bytes()
+    ma_par_cpu <- ma / n_threads
+    if(ma_par_cpu < 3e09){
+        n_threads <- floor(ma / 3e09)
+        if(n_threads < 1){
+            n_threads <- 1
         }
     }
+    
+    out_list <- mclapply(X = seq_along(in_list$name),
+                         mc.cores = n_threads, 
+                         FUN = .orgEngine,
+                         in_list = in_list,
+                         out_dir = input_dir,
+                         use_prot = use_prot, 
+                         run_miniprot = run_miniprot,
+                         blast_path = blast_path,
+                         diamond_path = diamond_path, 
+                         overwrite = overwrite)
+    out_list <- do.call(rbind, out_list)
+    in_list$gff <- out_list$gff_fn
+    in_list$gff_df <- out_list$gff_df_fn
+    in_list$cds <- out_list$cds_fn
+    in_list$prot <- out_list$prot_fn
     return(in_list)
+}
+
+.orgEngine <- function(i, 
+                       in_list, 
+                       out_dir,
+                       use_prot, 
+                       run_miniprot,
+                       blast_path,
+                       diamond_path, 
+                       overwrite){
+    out_dir_i <- file.path(out_dir, in_list$name[i])
+    dir.create(out_dir_i, showWarnings = FALSE, recursive = TRUE)
+    
+    if(overwrite){
+        org_gff <- .orgGFF(gff_fn = in_list$gff[i], out_dir_i = out_dir_i)
+    }
+    
+    if(overwrite){
+        org_cds <- .orgCDS(org_gff = org_gff,
+                           genome = in_list$genome[i],
+                           cds = in_list$cds[i],
+                           blast_path = blast_path,
+                           out_dir_i = out_dir_i)
+    }
+    
+    if(overwrite & {use_prot | run_miniprot}){
+        .orgProt(org_cds = org_cds,
+                 prot = in_list$prot[i],
+                 gff_df = org_gff$gff_df,
+                 use_prot = use_prot,
+                 diamond_path = diamond_path,
+                 out_dir_i = out_dir_i)
+        
+    }
+    return(data.frame(gff_fn = file.path(out_dir_i, "gff.rds"),
+                      gff_df_fn = file.path(out_dir_i, "gff_df.rds"),
+                      cds_fn = file.path(out_dir_i, "cds.fa"),
+                      prot_fn = file.path(out_dir_i, "prot.fa")))
+}
+
+.orgGFF <- function(gff_fn, out_dir_i){
+    gff <- import.gff3(gff_fn)
+    entry_type <-  c("gene", "transcript", "mRNA", "CDS")
+    gff <- gff[gff$type %in% entry_type]
+    gff$Name <- gff$ID
+    gff <- .setGeneID(gff = gff)
+    gff <- .orderGFF(gff = gff)
+    gff <- .setIndex(gff = gff)
+    
+    gff_df <- as.data.frame(gff)
+    gff_df <- subset(gff_df, select = c(seqnames, start, end,
+                                        strand, type, ID, 
+                                        Parent, gene_id,
+                                        tx_index, gene_index))
+    gff_fn <- file.path(out_dir_i, "gff.rds")
+    saveRDS(object = gff, file = gff_fn)
+    gff_df_fn <- file.path(out_dir_i, "gff_df.rds")
+    saveRDS(object = gff_df, file = gff_df_fn)
+    out <- list(gff = gff, gff_df = gff_df)
+    return(out)
+}
+
+.setIndex <- function(gff){
+    tx_i <- gff$type %in% c("mRNA", "transcript")
+    gene_i <- gff$type %in% "gene"
+    gff$gene_index <- gff$tx_index <- NA
+    gff$tx_index[tx_i] <- seq_len(sum(tx_i))
+    gff$gene_index[gene_i] <- seq_len(sum(gene_i))
+    hit <- match(gff$gene_id[tx_i], gff$gene_id[gene_i])
+    gff$gene_index[tx_i] <- gff$gene_index[gene_i][hit]
+    gff$Parent[gene_i] <- ""
+    gff$Parent <- unlist(gff$Parent)
+    hit <- match(gff$Parent[!{gene_i | tx_i}], gff$ID[tx_i])
+    gff$tx_index[!{gene_i | tx_i}] <- gff$tx_index[tx_i][hit]
+    gff$gene_index[!{gene_i | tx_i}] <- gff$gene_index[tx_i][hit]
+    return(gff)
+}
+
+.orgCDS <- function(org_gff, genome, cds, blast_path, out_dir_i){
+    if(is.na(cds)){
+        cds <- .makeCDS(gff = org_gff$gff, genome = genome)
+        
+    } else {
+        cds <- readDNAStringSet(cds)
+    }
+    gff_cds <- org_gff$gff[org_gff$gff$type %in% "CDS"]
+    check <- names(cds) %in% unlist(gff_cds$Parent)
+    if(!all(check)){
+        stop("The following transcript names does not appear in the GFF file:",
+             "\n",
+             paste(names(cds)[!check], collapse = ",\n"))
+    }
+    
+    rep_tx_id <- .getRepTx(gff_cds = gff_cds)
+    rep_cds <- cds[names(cds) %in% rep_tx_id]
+    hit <- match(names(rep_cds), org_gff$gff_df$ID)
+    names(rep_cds) <- org_gff$gff_df$tx_index[hit]
+    cds_fn <- file.path(out_dir_i, "cds.fa")
+    writeXStringSet(rep_cds, cds_fn)
+    .makeblastdb(blast_path = blast_path, fn = cds_fn)
+    out <- list(cds = cds, rep_tx_id = rep_tx_id)
+    return(out)
+}
+
+.orgProt <- function(org_cds, prot, gff_df, use_prot, diamond_path, out_dir_i){
+    if(is.na(prot)){
+        prot <- translate(org_cds$cds, if.fuzzy.codon = "solve")
+        
+    } else {
+        prot <- readDNAStringSet(prot)
+    }
+    
+    check <- names(prot) %in% names(org_cds$cds)
+    if(!all(check)){
+        stop("The following protein names does not appear in the GFF file:",
+             "\n",
+             paste(names(prot)[!check], collapse = ",\n"))
+    }
+    
+    rep_prot <- prot[names(prot) %in% org_cds$rep_tx_id]
+    hit <- match(names(rep_prot), gff_df$ID)
+    names(rep_prot) <- gff_df$tx_index[hit]
+    prot_fn <- file.path(out_dir_i, "prot.fa")
+    writeXStringSet(rep_prot, prot_fn)
+    if(use_prot){
+        .makediamonddb(diamond_path = diamond_path, fn = prot_fn)
+    }
 }
 
 .getRepTx <- function(gff_cds){
@@ -314,22 +413,17 @@ orthopair <- function(in_list,
     out <- NULL
     for(i in seq_along(comb_id)){
         prefix <- comb_id[i]
-        # input_dir <- file.path(working_dir, "input", prefix)
-        # dir.create(input_dir, showWarnings = FALSE, recursive = TRUE)
-        
         fn_list <- list(pair_id = prefix,
                         query_genome = in_list$genome[combs[1, i]],
                         subject_genome = in_list$genome[combs[2, i]],
                         query_gff = in_list$gff[combs[1, i]],
                         subject_gff = in_list$gff[combs[2, i]],
+                        query_gff_df = in_list$gff_df[combs[1, i]],
+                        subject_gff_df = in_list$gff_df[combs[2, i]],
                         query_cds = in_list$cds[combs[1, i]],
                         subject_cds = in_list$cds[combs[2, i]],
                         query_prot = in_list$prot[combs[1, i]],
-                        subject_prot = in_list$prot[combs[2, i]],
-                        query_h5 = in_list$h5[combs[1, i]],
-                        subject_h5 = in_list$h5[combs[2, i]])
-        
-        # fn_list <- .prepInputFiles(fn_list = fn_list, input_dir = input_dir)
+                        subject_prot = in_list$prot[combs[2, i]])
         
         fn_list$hdf5_path <- file.path(hdf5_out_dir, paste0(prefix, ".h5"))
         out <- c(out, list(fn_list))
@@ -445,12 +539,55 @@ orthopair <- function(in_list,
 }
 
 #' @export
-orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA){
-    .validateInput(name = name,
-                   genome = genome,
-                   gff = gff,
-                   cds = cds,
-                   prot = prot)
+orgInputFiles <- function(object = NULL,
+                          name,
+                          genome = NULL,
+                          gff,
+                          cds = NULL, 
+                          prot = NULL,
+                          validation = FALSE){
+    if(length(gff) > 1){
+        message("Multiple input files were specified.")
+        if(is.null(genome)){
+            genome <- rep(NA, length(gff))
+        }
+        if(is.null(cds)){
+            cds <- rep(NA, length(gff))
+        }
+        if(is.null(prot)){
+            prot <- rep(NA, length(gff))
+        }
+        for(i in seq_along(gff)){
+            message("Processing input ", i, ": ", name[i], "..." )
+            object <- orgInputFiles(object = object,
+                                    name = name[i],
+                                    genome = genome[i], 
+                                    gff = gff[i], 
+                                    cds = cds[i],
+                                    prot = prot[i],
+                                    validation = validation)
+        }
+        return(object)
+        
+    } else {
+        if(is.null(genome)){
+            genome <- NA
+        }
+        if(is.null(cds)){
+            cds <- NA
+        }
+        if(is.null(prot)){
+            prot <- NA
+        }
+    }
+    
+    if(validation){
+        .validateInput(name = name,
+                       genome = genome,
+                       gff = gff,
+                       cds = cds,
+                       prot = prot)
+    }
     
     if(is.null(object)){
         object <- list(name = name,
@@ -502,41 +639,37 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
         stop("Empty name is not allowed.", call. = FALSE)
     }
     
-    if(all(!is.na(genome))){
+    # Confirm the existence of the genome FASTA file
+    if(!is.na(genome)){
         check <- !file.exists(genome)
         if(check){
             stop('The file "genome" does not exist.', call. = FALSE)
         }
     }
     
+    # Confirm the existence of the annotation GFF file
     check <- !file.exists(gff)
     if(check){
         stop('The file "gff" does not exist.', call. = FALSE)
     }
     
-    check <- !file.exists(cds)
-    if(check){
-        stop('The file "cds" does not exist.', call. = FALSE)
+    # Confirm the existence of the CDS FASTA file
+    if(!is.na(cds)){
+        check <- !file.exists(cds)
+        if(check){
+            stop('The file "cds" does not exist.', call. = FALSE)
+        }
     }
     
-    if(all(!is.na(prot))){
+    # Confirm the existence of the protein FASTA file
+    if(!is.na(prot)){
         check <- !file.exists(prot)
         if(check){
             stop('The file "prot" does not exist.', call. = FALSE)
         }
     }
     
-    if(any(!is.na(genome))){
-        genome <- readDNAStringSet(filepath = genome)
-        genome_seq_name <- names(genome)
-    }
     gff <- import.gff(con = gff)
-    cds <- readDNAStringSet(filepath = cds)
-    if(!is.na(prot)){
-        prot <- readAAStringSet(filepath = prot)
-    }
-    gff_seq_lev <- seqlevels(gff)
-    
     check <- .checkGFFstr(gff = gff)
     if(check$check){
         stop(paste0("In input data validation for ", name), "\n",
@@ -544,21 +677,10 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
              call. = FALSE)
     }
     
-    check <- is.null(gff$gene_id)
-    if(check){
-        stop(paste0("In input data validation for ", name),
-             "\nThe specified GFF does not have the 'gene_id' column.",
-             call. = FALSE)
-    }
-    
-    check <- any(is.na(gff$gene_id))
-    if(check){
-        stop(paste0("In input data validation for ", name),
-             "\nThe specified GFF contains NA in the 'gene_id' column.",
-             call. = FALSE)
-    }
-    
-    if(all(!is.na(genome))){
+    if(!is.na(genome)){
+        gff_seq_lev <- seqlevels(gff)
+        genome <- readDNAStringSet(filepath = genome)
+        genome_seq_name <- names(genome)
         check <-  gff_seq_lev %in% genome_seq_name
         if(!all(check)){
             stop(paste0("In input data validation for ", name),
@@ -566,17 +688,28 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
                  paste(head(gff_seq_lev[!gff_seq_lev %in% genome_seq_name]),
                        collapse = ", "), call. = FALSE)
         }
-    }
-    cds_names <- names(cds)
-    check <- cds_names %in% gff$ID
-    if(!all(check)){
-        stop(paste0("In input data validation for ", name),
-             "\nFollowing sequence names appeared in the CDS but not in the GFF:\n",
-             paste(head(cds_names[!cds_names %in% gff$ID]),
-                   collapse = ", "), call. = FALSE)
+        
+    } else {
+        if(is.na(cds)){
+            stop("the cds argument must be specified when the genome argument is missing.",
+                 call. = FALSE)
+        }
     }
     
-    if(all(!is.na(prot))){
+    if(!is.na(cds)){
+        cds <- readDNAStringSet(filepath = cds)
+        cds_names <- names(cds)
+        check <- cds_names %in% gff$ID
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the CDS but not in the GFF:\n",
+                 paste(head(cds_names[!cds_names %in% gff$ID]),
+                       collapse = ", "), call. = FALSE)
+        }
+    }
+    
+    if(!is.na(prot)){
+        prot <- readAAStringSet(filepath = prot)
         prot_names <- names(prot)
         check <- prot_names %in% gff$ID
         if(!all(check)){
@@ -604,6 +737,7 @@ orgInputFiles <- function(object = NULL, name, genome = NA, gff, cds, prot = NA)
                     msg = "The Parent column of the transcripts contains values that do not match the values in the ID column of the genes.")
         return(out)
     }
+    
     check <- !all(gene$ID %in% tx_p)
     if(check){
         out <- list(check = TRUE, 

@@ -33,22 +33,22 @@
     }
 }
 
-#' @importFrom rtracklayer import.gff
-# Function to import multiple GFF files
-.importAllGFF <- function(fn){
-    for(i in seq_along(fn)){
-        if(i == 1){
-            # Import the first GFF file
-            out <- import.gff(fn[i])
-            
-        } else {
-            # Concatenate subsequent GFF files
-            out <- c(out, import.gff(fn[i]))
-        }
-    }
-    # Return the concatenated GFF data
-    return(out)
-}
+#' #' @importFrom rtracklayer import.gff
+#' # Function to import multiple GFF files
+#' .importAllGFF <- function(fn){
+#'     for(i in seq_along(fn)){
+#'         if(i == 1){
+#'             # Import the first GFF file
+#'             out <- import.gff(fn[i])
+#'             
+#'         } else {
+#'             # Concatenate subsequent GFF files
+#'             out <- c(out, import.gff(fn[i]))
+#'         }
+#'     }
+#'     # Return the concatenated GFF data
+#'     return(out)
+#' }
 
 #' @importFrom rhdf5 h5createFile
 # Function to create an HDF5 file
@@ -839,4 +839,61 @@ formatGFF <- function(gff, suffix = ".reformat.gff"){
     
     message("Saving new GFF file.")
     export.gff3(gff, new_gff_fn)
+}
+
+.mem_available_bytes <- function() {
+    os <- Sys.info()[["sysname"]]
+    
+    ## -------- Linux --------
+    if (os == "Linux") {
+        mi <- tryCatch(readLines("/proc/meminfo", warn = FALSE), error = function(e) NULL)
+        if (!is.null(mi)) {
+            ma <- grep("^MemAvailable:", mi, value = TRUE)
+            if (length(ma)) {
+                kb <- as.numeric(gsub("[^0-9]", "", ma))
+                return(kb * 1024)
+            }
+        }
+    }
+    
+    ## -------- macOS --------
+    if (os == "Darwin") {
+        # ページサイズ
+        ps <- tryCatch(
+            as.numeric(system("sysctl -n hw.pagesize", intern = TRUE)),
+            error = function(e) NA_real_
+        )
+        
+        vm <- tryCatch(system("vm_stat", intern = TRUE), error = function(e) NULL)
+        if (!is.na(ps) && !is.null(vm)) {
+            get <- function(name) {
+                x <- grep(paste0("^", name), vm, value = TRUE)
+                if (length(x)) as.numeric(gsub("[^0-9]", "", x)) else 0
+            }
+            free     <- get("Pages free")
+            inactive <- get("Pages inactive")
+            speculative <- get("Pages speculative")
+            
+            # macOS では inactive + speculative も実質使える
+            pages <- free + inactive + speculative
+            return(pages * ps)
+        }
+    }
+    
+    ## -------- Windows --------
+    if (os == "Windows") {
+        out <- tryCatch(
+            system("wmic OS get FreePhysicalMemory /Value", intern = TRUE),
+            error = function(e) NULL
+        )
+        if (!is.null(out)) {
+            x <- grep("FreePhysicalMemory=", out, value = TRUE)
+            if (length(x)) {
+                kb <- as.numeric(gsub("[^0-9]", "", x))
+                return(kb * 1024)
+            }
+        }
+    }
+    
+    NA_real_
 }
