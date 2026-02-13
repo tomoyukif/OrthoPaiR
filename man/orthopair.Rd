@@ -16,8 +16,6 @@ orthopair(
   orthopair = TRUE,
   reorg = TRUE,
   rename = TRUE,
-  makegraph = TRUE,
-  output_table = FALSE,
   n_threads = NULL,
   overwrite = FALSE,
   verbose = TRUE

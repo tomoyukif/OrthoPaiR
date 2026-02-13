@@ -778,8 +778,8 @@ mapProt <- function(in_list,
     hit <- match(gff$gene_id[gene_i], names(min_start))
     gene_start <- min_start[hit]
     gene_end <- max_end[hit]
-    start(gff[gene_i]) <- gene_start
-    end(gff[gene_i]) <- gene_end
+    start(gff[gene_i][!is.na(hit)]) <- gene_start[!is.na(hit)]
+    end(gff[gene_i][!is.na(hit)]) <- gene_end[!is.na(hit)]
     
     return(gff)
 }
@@ -942,6 +942,7 @@ mapProt <- function(in_list,
     
     # Read the genome file as a DNAStringSet object
     genome <- readDNAStringSet(filepath = genome)
+    names(genome) <- sub("\\s.*", "", names(genome))
     
     # Extract CDS sequences from the TxDb object
     cds_db <- suppressMessages({cdsBy(x = txdb, by = "tx", use.names = TRUE)})

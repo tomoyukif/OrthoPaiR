@@ -1,4 +1,4 @@
-Changes in version 0.6.1 (2025-02-05)
+Changes in version 0.6.2 (2025-02-13)
 + Post syntenic orthologous gene pairing step was largely revised to improve speed and ram usage.
 
 Changes in version 0.5.12 (2025-01-07)

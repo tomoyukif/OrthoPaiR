@@ -157,19 +157,25 @@ rbh <- function(object,
 .blast_search <- function(fa,
                           db,
                           blast_path,
-                          n_threads){
+                          n_threads,
+                          stdout = TRUE){
     # Construct the BLAST arguments string
     blast_args <- paste(paste("-query", fa),
                         paste("-db", db),
-                        "-task blastn -max_target_seqs 200",
+                        "-task blastn -max_target_seqs 10000",
                         "-evalue 1e-4 -strand plus",
-                        "-outfmt '6 qseqid sseqid pident qcovs qlen qstart qend sstart send'",
+                        "-outfmt '6 qseqid sseqid pident qcovs qstart qend sstart send'",
                         paste("-num_threads", n_threads))
+    
+    if(!stdout){
+        blast_args <- paste(blast_args,
+                            "-out", file.path(dirname(fa), "blast_out.txt"))
+    }
     
     check <- try({
         out <- system2(command = file.path(blast_path, "blastn"),
                        args = blast_args, 
-                       stdout = TRUE)
+                       stdout = stdout)
     }, silent = TRUE)
     
     if(inherits(check, "try-error")){
@@ -183,7 +189,7 @@ rbh <- function(object,
         out <- do.call("rbind", strsplit(out, split = "\t", fixed = TRUE))
         out <- as.data.frame(out)
         names(out) <- c("qseqid", "sseqid", "pident", "qcovs",
-                        "qlen", "qstart", "qend", "sstart", "send")
+                        "qstart", "qend", "sstart", "send")
         out <- subset(out, 
                       subset = !is.na(qseqid) & !is.na(sseqid))
     }
@@ -196,9 +202,9 @@ rbh <- function(object,
     diamond_args <- paste("blastp",
                           paste("--db", db),
                           paste("--query", fa),
-                          "--max-target-seqs 200 --evalue 1e-4",
+                          "--max-target-seqs 10000 --evalue 1e-4",
                           "--strand plus",
-                          "--outfmt 6 qseqid sseqid pident qcovhsp qlen qstart qend sstart send",
+                          "--outfmt 6 qseqid sseqid pident qcovhsp qstart qend sstart send",
                           "--quiet --ultra-sensitive", 
                           paste("--threads", n_threads))
     
@@ -218,7 +224,7 @@ rbh <- function(object,
         out <- do.call("rbind", strsplit(out, split = "\t", fixed = TRUE))
         out <- as.data.frame(out)
         names(out) <- c("qseqid", "sseqid", "pident", "qcovs",
-                        "qlen", "qstart", "qend", "sstart", "send")
+                        "qstart", "qend", "sstart", "send")
         out <- subset(out, 
                       subset = !is.na(qseqid) & !is.na(sseqid))
     }
@@ -231,9 +237,9 @@ rbh <- function(object,
     if(all(is.na(df1[1])) || all(is.na(df2[1]))){
         return(NA)
     }
-    names(df1) <- c("qseqid", "sseqid", "pident", "qcovs_q2s", "qlen", 
+    names(df1) <- c("qseqid", "sseqid", "pident", "qcovs_q2s", 
                     "qstart", "qend", "sstart", "send")
-    names(df2) <- c("sseqid", "qseqid", "pident", "qcovs_s2q", "slen", 
+    names(df2) <- c("sseqid", "qseqid", "pident", "qcovs_s2q", 
                     "sstart", "send", "qstart", "qend")
     
     rbh <- inner_join(df1, df2, 

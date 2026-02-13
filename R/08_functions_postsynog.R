@@ -15,7 +15,7 @@
 #'   files.
 #' @param rename Logical; whether to apply split-gene renaming when
 #'   reorganising GFF and orthopair information.
-#' @param n_core Integer; number of cores to use for the internal parallel
+#' @param n_threads Integer; number of cores to use for the internal parallel
 #'   steps (Linux/macOS only; on Windows this falls back to serial execution).
 #' @param overwrite Logical; if \code{TRUE}, recompute the reorganised outputs
 #'   and overwrite existing files in the output directory. If \code{FALSE},
@@ -28,7 +28,7 @@
 #' @export
 reorgOrthopairs <- function(hdf5_fn,
                             rename = TRUE,
-                            n_core = 1L,
+                            n_threads = 1L,
                             overwrite = FALSE,
                             verbose = TRUE) {
     out_dir <- file.path(sub("hdf5_out.*", "", hdf5_fn[1]), "reorg_out")
@@ -36,29 +36,23 @@ reorgOrthopairs <- function(hdf5_fn,
                showWarnings = FALSE,
                recursive = TRUE)
     
-    if(overwrite){
-        ## Faster rename-list construction
-        rename_list <- .getRenameList(hdf5_fn = hdf5_fn,
-                                           rename = rename,
-                                           n_core = n_core)
-        
-        reorg_list <- .reorgGFF(out_dir = out_dir,
-                                     rename_list = rename_list,
-                                     n_core = n_core)
-        
-        orthopair_list <- .reorgOrthoPair(hdf5_fn = hdf5_fn,
-                                               reorg_list = reorg_list,
-                                               n_core = n_core)
-        
-        graph <- .createGraph(orthopair_list = orthopair_list, 
-                              reorg_list = reorg_list)
-        graph_fn <- file.path(out_dir, "orthopair.graphml")
-        write_graph(graph = graph, file = graph_fn, format = "graphml")
-        
-    } else {
-        graph_fn <- file.path(out_dir, "orthopair.graphml")
-        graph <- read_graph(file = graph_fn, format = "graphml")
-    }
+    ## Faster rename-list construction
+    rename_list <- .getRenameList(hdf5_fn = hdf5_fn,
+                                  rename = rename,
+                                  n_threads = n_threads)
+    
+    reorg_list <- .reorgGFF(out_dir = out_dir,
+                            rename_list = rename_list,
+                            n_threads = n_threads)
+    
+    orthopair_list <- .reorgOrthoPair(hdf5_fn = hdf5_fn,
+                                      reorg_list = reorg_list,
+                                      n_threads = n_threads)
+    
+    graph <- .createGraph(orthopair_list = orthopair_list, 
+                          reorg_list = reorg_list)
+    graph_fn <- file.path(out_dir, "orthopair.graphml")
+    write_graph(graph = graph, file = graph_fn, format = "graphml")
     
     .graph2df(graph = graph, out_dir = out_dir)
     
@@ -71,10 +65,10 @@ reorgOrthopairs <- function(hdf5_fn,
 ##   in a single pass over hdf5_fn.
 ## - Fixes the dependency on a loop-local 'meta' variable in the original
 ##   implementation by keeping per-file meta information explicitly.
-.getRenameList <- function(hdf5_fn, rename = FALSE, n_core = 1L) {
+.getRenameList <- function(hdf5_fn, rename = FALSE, n_threads = 1L) {
     idx <- seq_along(hdf5_fn)
     
-    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
+    use_parallel <- (n_threads > 1L && .Platform$OS.type != "windows")
     worker_fun <- function(i) {
         meta_i <- getMeta(hdf5_fn = hdf5_fn[i])
         
@@ -142,7 +136,7 @@ reorgOrthopairs <- function(hdf5_fn,
         res <- mclapply(
             X = idx,
             FUN = worker_fun,
-            mc.cores = n_core
+            mc.cores = n_threads
         )
     } else {
         res <- lapply(idx, worker_fun)
@@ -173,18 +167,17 @@ reorgOrthopairs <- function(hdf5_fn,
 ## Parallelises per-genome GFF reorganisation when possible; each genome’s GFF
 ## is handled independently and written to its own output file, so there are
 ## no write-contention issues.
-.reorgGFF <- function(out_dir, rename_list, n_core = 1L) {
+.reorgGFF <- function(out_dir, rename_list, n_threads = 1L) {
     gff_paths <- rename_list$gff_list$gff
     genomes <- rename_list$gff_list$genomes
     split_list <- rename_list$split_list
     
     idx <- seq_along(gff_paths)
-    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
+    use_parallel <- (n_threads > 1L && .Platform$OS.type != "windows")
     
     worker_fun <- function(i) {
-        gff_fn <- gff_paths[i]
         i_genome <- genomes[i]
-        out_gff <- .setSplitGFF(gff_fn = gff_fn, 
+        out_gff <- .setSplitGFF(gff_fn = gff_paths[i], 
                                 i_genome = i_genome, 
                                 split_list = split_list,
                                 out_dir = out_dir)
@@ -194,11 +187,11 @@ reorgOrthopairs <- function(hdf5_fn,
     }
     
     reorg_list <- list(split_list = split_list)
-    reorg_list$genes_list <- if (FALSE) {
+    reorg_list$genes_list <- if (use_parallel) {
         mclapply(
             X = idx,
             FUN = worker_fun,
-            mc.cores = n_core
+            mc.cores = n_threads
         )
     } else {
         lapply(idx, worker_fun)
@@ -247,10 +240,10 @@ reorgOrthopairs <- function(hdf5_fn,
 ## orphan calculations in a single process to avoid concurrency issues with
 ## the HDF5 backend.
 .reorgOrthoPair <- function(hdf5_fn,
-                                 reorg_list,
-                                 n_core = 1L) {
+                            reorg_list,
+                            n_threads = 1L) {
     idx <- seq_along(hdf5_fn)
-    use_parallel <- (n_core > 1L && .Platform$OS.type != "windows")
+    use_parallel <- (n_threads > 1L && .Platform$OS.type != "windows")
     
     worker_fun <- function(i) {
         opr <- getOrthoPair(hdf5_fn = hdf5_fn[i], score = TRUE, loc = FALSE)[[1]]
@@ -282,7 +275,7 @@ reorgOrthopairs <- function(hdf5_fn,
         mclapply(
             X = idx,
             FUN = worker_fun,
-            mc.cores = n_core
+            mc.cores = n_threads
         )
     } else {
         lapply(idx, worker_fun)
@@ -343,7 +336,7 @@ reorgOrthopairs <- function(hdf5_fn,
     return(graph_out)
 }
 
-#' @importFrom igraph edge_attr ends E
+#' @importFrom igraph edge_attr ends E vertex_attr
 #' @importFrom dplyr full_join
 #'
 .graph2df <- function(graph, out_dir) {
@@ -352,6 +345,7 @@ reorgOrthopairs <- function(hdf5_fn,
     ea <- edge_attr(graph)
     em <- ends(graph, E(graph), names = FALSE)
     rm(graph); gc(); gc()
+    
     dtv <- data.table(membership = comp$membership,
                       genome = va$genome,
                       gene = va$name)
@@ -373,7 +367,9 @@ reorgOrthopairs <- function(hdf5_fn,
            sep = "\t",
            quote = FALSE,
            na = "")
-    eid <- dtv$membership[em[,1]]
+    eid <- dtv$membership[em[, 1]]
+    g1 <- va$genome[em[, 1]]
+    g2 <- va$genome[em[, 2]]
     rm(comp, va, em); gc(); gc()
     
     v_sum <- dtv[, .(nV = .N, nGenome = uniqueN(genome)), by = membership]
@@ -383,7 +379,9 @@ reorgOrthopairs <- function(hdf5_fn,
     
     e_sum <- dte[, .(nE = .N,
                      max_mci = max(mutual_ci, na.rm = TRUE),
+                     q1 = quantile(mutual_ci, 0.25, na.rm = TRUE),
                      median_mci = median(mutual_ci, na.rm = TRUE),
+                     q3 = quantile(mutual_ci, 0.75, na.rm = TRUE),
                      min_mci = min(mutual_ci, na.rm = TRUE),
                      mean_mci = mean(mutual_ci, na.rm = TRUE),
                      sd_mci = sd(mutual_ci, na.rm = TRUE)),
@@ -395,4 +393,29 @@ reorgOrthopairs <- function(hdf5_fn,
            sep = "\t",
            quote = FALSE,
            na = "")
+    
+    genome1 <- pmin(g1, g2)
+    genome2 <- pmax(g1, g2)
+    dt_pair <- data.table(genome1 = genome1,
+                          genome2 = genome2,
+                          mutual_ci = ea$mutual_ci)
+    pair_sum <- dt_pair[, .(nE = .N,
+                            max_mci = max(mutual_ci, na.rm = TRUE),
+                            q1 = quantile(mutual_ci, 0.75, na.rm = TRUE),
+                            median_mci= median(mutual_ci, na.rm = TRUE),
+                            q3 = quantile(mutual_ci, 0.25, na.rm = TRUE),
+                            min_mci = min(mutual_ci, na.rm = TRUE),
+                            mean_mci = mean(mutual_ci, na.rm = TRUE),
+                            sd_mci = sd(mutual_ci, na.rm = TRUE)),
+                        by = .(genome1, genome2)][order(-nE)]
+    
+    fwrite(
+        pair_sum,
+        file.path(out_dir, "genomepair_edge_stats.tsv"),
+        sep = "\t",
+        quote = FALSE,
+        na = ""
+    )
+    
+    rm(dt_pair, pair_sum, g1, g2, genome1, genome2); gc(); gc()
 }

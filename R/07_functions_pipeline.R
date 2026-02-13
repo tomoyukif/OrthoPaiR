@@ -18,8 +18,6 @@ orthopair <- function(in_list,
                       orthopair = TRUE,
                       reorg = TRUE,
                       rename = TRUE,
-                      makegraph = TRUE,
-                      output_table = FALSE,
                       n_threads = NULL,
                       overwrite = FALSE,
                       verbose = TRUE){
@@ -37,36 +35,37 @@ orthopair <- function(in_list,
     input_dir <- file.path(working_dir, "input")
     dir.create(path = input_dir, showWarnings = FALSE, recursive = TRUE)
     
-    if(verbose){
-        message("Start organizing input data...")
-    }
-    in_list <- .orgInput(in_list = in_list,
-                         input_dir = input_dir,
-                         use_prot = use_prot,
-                         run_miniprot = run_miniprot,
-                         blast_path = blast_path,
-                         diamond_path = diamond_path,
-                         overwrite = overwrite,
-                         n_threads = n_threads,
-                         verbose = verbose)
-    saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
-    
-    if(run_miniprot){
+    if(orthopair){
         if(verbose){
-            message("Start missing ORF complementation...")
+            message("Start organizing input data...")
         }
-        in_list <- mapProt(in_list = in_list,
-                           input_dir = input_dir, 
-                           overwrite = overwrite,
-                           miniprot_path = miniprot_path,
-                           blast_path = blast_path, 
-                           diamond_path = diamond_path, 
-                           use_prot = use_prot,
-                           n_threads = n_threads,
-                           verbose = verbose)
+        in_list <- .orgInput(in_list = in_list,
+                             input_dir = input_dir,
+                             use_prot = use_prot,
+                             run_miniprot = run_miniprot,
+                             blast_path = blast_path,
+                             diamond_path = diamond_path,
+                             overwrite = overwrite,
+                             n_threads = n_threads,
+                             verbose = verbose)
+        saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
+        
+        if(run_miniprot){
+            if(verbose){
+                message("Start missing ORF complementation...")
+            }
+            in_list <- mapProt(in_list = in_list,
+                               input_dir = input_dir, 
+                               overwrite = overwrite,
+                               miniprot_path = miniprot_path,
+                               blast_path = blast_path, 
+                               diamond_path = diamond_path, 
+                               use_prot = use_prot,
+                               n_threads = n_threads,
+                               verbose = verbose)
+        }
+        saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
     }
-    saveRDS(object = in_list, file = file.path(input_dir, "in_list.rds"))
-    
     pairwise_input <- .prepPairs(in_list = in_list,
                                  hdf5_out_dir = hdf5_out_dir,
                                  working_dir = working_dir,
@@ -115,72 +114,15 @@ orthopair <- function(in_list,
         if(verbose){
             message("Start reorganizing orthopairs ...")
         }
-        reorg_hdf5_fn <- reorgOrthopiars(hdf5_fn = hdf5_fn,
-                                   out_dir = file.path(working_dir, "reorg_out"),
-                                   out_fn = "reorg_orthopair.h5",
-                                   rename = rename,
-                                   overwrite = overwrite,
-                                   verbose = verbose)
-    }
-    
-    if(makegraph){
-        if(verbose){
-            message("Summarizing orthopairs into graphs ...")
-        }
-        reorg_hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
-        graph <- makeOrthoGraph(hdf5_fn = reorg_hdf5_fn)
-        graph_fn <- file.path(working_dir, "orthopair.graphml")
-        write_graph(graph = graph, file = graph_fn, format = "graphml")
-        
-    } else {
-        graph_fn <- file.path(working_dir, "orthopair.graphml")
-        
-        if(output_table){
-            if(file.exists(graph_fn)){
-                reorg_hdf5_fn <- file.path(working_dir, "reorg_out", "reorg_orthopair.h5")
-                graph <- read_graph(file = graph_fn, format = "graphml")
-                
-            } else {
-                if(verbose){
-                    message("You set 'makegraph = FALSE' and 'output_table = TRUE'.", 
-                            "\nHowever, the graph file ", graph_fn, 
-                            ", which is required to create a table output, is not found",
-                            "The table creation step will be skipped.")
-                }
-                output_table <- FALSE
-            }
-        } else {
-            graph_fn <- NULL
-        }
-    }
-    
-    if(output_table){
-        if(verbose){
-            message("Summarizing orthopairs into a spreadsheat ...")
-        }
-        orthopair_fn <- file.path(working_dir, "orthopair_list.csv")
-        unlink(x = orthopair_fn, force = TRUE)
-        graph2df(hdf5_fn = reorg_hdf5_fn, graph = graph, orthopair_fn = orthopair_fn)
-        
-        orphan <- getOrphan(hdf5_fn = reorg_hdf5_fn)
-        orphan <- lapply(seq_along(orphan), function(i){
-            i_orphan <- orphan[[i]]
-            i_out <- matrix(data = NA, nrow = length(i_orphan), ncol = length(orphan))
-            i_out[, i] <- i_orphan
-            i_out <- data.frame(i_out)
-            names(i_out) <- names(orphan)
-            return(i_out)
-        })
-        orphan <- do.call("rbind", orphan)
-        orphan_fn <- file.path(working_dir, "orphan_list.csv")
-        write.csv(x = orphan, file = orphan_fn, row.names = FALSE)
-    } else {
-        orthopair_fn <- orphan_fn <- NULL
+        reorg_dir <- try(expr = {reorgOrthopairs(hdf5_fn = hdf5_fn,
+                                                 rename = rename,
+                                                 n_threads = n_threads,
+                                                 overwrite = overwrite,
+                                                 verbose = verbose)})
     }
     
     on.exit()
-    out <- c(hdf5_fn = reorg_hdf5_fn, graph_fn = graph_fn, 
-             orthopair_fn = orthopair_fn, orphan_fn = orphan_fn)
+    out <- list(hdf5_fn = hdf5_fn, reorg_dir = reorg_dir)
     
     if(verbose){
         message("Finished all processes in the pipeline!")
@@ -236,7 +178,9 @@ orthopair <- function(in_list,
     dir.create(out_dir_i, showWarnings = FALSE, recursive = TRUE)
     
     if(overwrite){
-        org_gff <- .orgGFF(gff_fn = in_list$gff[i], out_dir_i = out_dir_i)
+        org_gff <- .orgGFF(gff_fn = in_list$gff[i],
+                           out_dir_i = out_dir_i,
+                           index = i)
     }
     
     if(overwrite){
@@ -244,7 +188,8 @@ orthopair <- function(in_list,
                            genome = in_list$genome[i],
                            cds = in_list$cds[i],
                            blast_path = blast_path,
-                           out_dir_i = out_dir_i)
+                           out_dir_i = out_dir_i,
+                           index = i)
     }
     
     if(overwrite & {use_prot | run_miniprot}){
@@ -262,14 +207,15 @@ orthopair <- function(in_list,
                       prot_fn = file.path(out_dir_i, "prot.fa")))
 }
 
-.orgGFF <- function(gff_fn, out_dir_i){
-    gff <- import.gff3(gff_fn)
+.orgGFF <- function(gff_fn, out_dir_i, index){
     entry_type <-  c("gene", "transcript", "mRNA", "CDS")
-    gff <- gff[gff$type %in% entry_type]
+    gff <- import.gff3(gff_fn, feature.type = entry_type)
+    gff <- subset(gff, select = c(source:ID, Parent))
     gff$Name <- gff$ID
     gff <- .setGeneID(gff = gff)
+    gff <- .fixGFF(gff = gff)
     gff <- .orderGFF(gff = gff)
-    gff <- .setIndex(gff = gff)
+    gff <- .setIndex(gff = gff, index = index)
     
     gff_df <- as.data.frame(gff)
     gff_df <- subset(gff_df, select = c(seqnames, start, end,
@@ -284,12 +230,16 @@ orthopair <- function(in_list,
     return(out)
 }
 
-.setIndex <- function(gff){
+.setIndex <- function(gff, index){
     tx_i <- gff$type %in% c("mRNA", "transcript")
     gene_i <- gff$type %in% "gene"
     gff$gene_index <- gff$tx_index <- NA
-    gff$tx_index[tx_i] <- seq_len(sum(tx_i))
-    gff$gene_index[gene_i] <- seq_len(sum(gene_i))
+    gff$tx_index[tx_i] <- as.integer(paste0(index, 
+                                            sprintf("%06d", 
+                                                    seq_len(sum(tx_i)))))
+    gff$gene_index[gene_i] <- as.integer(paste0(index, 
+                                                sprintf("%06d", 
+                                                        seq_len(sum(gene_i)))))
     hit <- match(gff$gene_id[tx_i], gff$gene_id[gene_i])
     gff$gene_index[tx_i] <- gff$gene_index[gene_i][hit]
     gff$Parent[gene_i] <- ""
@@ -300,7 +250,7 @@ orthopair <- function(in_list,
     return(gff)
 }
 
-.orgCDS <- function(org_gff, genome, cds, blast_path, out_dir_i){
+.orgCDS <- function(org_gff, genome, cds, blast_path, out_dir_i, index){
     if(is.na(cds)){
         cds <- .makeCDS(gff = org_gff$gff, genome = genome)
         
@@ -321,7 +271,11 @@ orthopair <- function(in_list,
     names(rep_cds) <- org_gff$gff_df$tx_index[hit]
     cds_fn <- file.path(out_dir_i, "cds.fa")
     writeXStringSet(rep_cds, cds_fn)
-    .makeblastdb(blast_path = blast_path, fn = cds_fn)
+    # .makeblastdb(blast_path = blast_path, fn = cds_fn)
+    taxid_map <- cbind(names(rep_cds), index)
+    taxid_map_fn <- file.path(out_dir_i, "taxid_map.tsv")
+    write.table(taxid_map, taxid_map_fn, quote = FALSE, sep = "\t", 
+                col.names = FALSE, row.names = FALSE)
     out <- list(cds = cds, rep_tx_id = rep_tx_id)
     return(out)
 }
@@ -361,9 +315,14 @@ orthopair <- function(in_list,
     return(rep_tx)
 }
 
-.makeblastdb <- function(blast_path, fn){
+.makeblastdb <- function(blast_path, fn, taxid_map = NULL){
     blast_args <- paste(paste("-in", fn),
                         paste("-dbtype nucl"))
+    
+    if(!is.null(taxid_map)){
+        blast_args <- paste(blast_args, 
+                            "-parse_seqids -taxid_map", taxid_map)
+    }
     check <- try({
         system2(command = file.path(blast_path, "makeblastdb"),
                 args = blast_args, 

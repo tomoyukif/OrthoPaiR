@@ -7,7 +7,7 @@
 reorgOrthopairs(
   hdf5_fn,
   rename = TRUE,
-  n_core = 1L,
+  n_threads = 1L,
   overwrite = FALSE,
   verbose = TRUE
 )
@@ -19,7 +19,7 @@ files.}
 \item{rename}{Logical; whether to apply split-gene renaming when
 reorganising GFF and orthopair information.}
 
-\item{n_core}{Integer; number of cores to use for the internal parallel
+\item{n_threads}{Integer; number of cores to use for the internal parallel
 steps (Linux/macOS only; on Windows this falls back to serial execution).}
 
 \item{overwrite}{Logical; if \code{TRUE}, recompute the reorganised outputs
