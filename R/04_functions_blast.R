@@ -196,7 +196,7 @@ rbh <- function(object,
     return(out)
 }
 
-.diamond_search <- function(fa, db, n_threads, diamond_path){
+.diamond_search <- function(fa, db, n_threads, diamond_path, stdout = TRUE){
     
     # Construct the DIAMOND arguments string
     diamond_args <- paste("blastp",
@@ -208,10 +208,16 @@ rbh <- function(object,
                           "--quiet --ultra-sensitive", 
                           paste("--threads", n_threads))
     
+    if(!stdout){
+        diamond_args <- paste(diamond_args,
+                              "-out", file.path(dirname(fa), "diamond_out.txt"))
+    }
+    
+    
     check <- try({
         out <- system2(command = file.path(diamond_path, "diamond"),
                        args = diamond_args, 
-                       stdout = TRUE)
+                       stdout = stdout)
     }, silent = TRUE)
     
     if(inherits(check, "try-error")){

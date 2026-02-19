@@ -21,19 +21,12 @@ orthopair <- function(in_list,
                       n_threads = NULL,
                       overwrite = FALSE,
                       verbose = TRUE){
-    if(!inherits(x = in_list, what = "OrthoPairInput")){
-        stop("The input object must be a OrthoPairInput class object.",
-             call. = FALSE)
-    }
     
-    if(is.null(n_threads)){
-        core <- detectCores()
-        n_threads <- core - 1
-    }
     hdf5_out_dir <- file.path(working_dir, "hdf5_out")
     dir.create(path = hdf5_out_dir, showWarnings = FALSE, recursive = TRUE)
     input_dir <- file.path(working_dir, "input")
     dir.create(path = input_dir, showWarnings = FALSE, recursive = TRUE)
+    
     
     if(orthopair){
         if(verbose){
@@ -271,7 +264,7 @@ orthopair <- function(in_list,
     names(rep_cds) <- org_gff$gff_df$tx_index[hit]
     cds_fn <- file.path(out_dir_i, "cds.fa")
     writeXStringSet(rep_cds, cds_fn)
-    # .makeblastdb(blast_path = blast_path, fn = cds_fn)
+    .makeblastdb(blast_path = blast_path, fn = cds_fn)
     taxid_map <- cbind(names(rep_cds), index)
     taxid_map_fn <- file.path(out_dir_i, "taxid_map.tsv")
     write.table(taxid_map, taxid_map_fn, quote = FALSE, sep = "\t", 
@@ -470,8 +463,11 @@ orthopair <- function(in_list,
         if(verbose){
             message("Pairing orthologs.")
         }
+        # old_start <- Sys.time()
         syntenicOrtho(object = object)
-        
+        # old_end <- Sys.time()
+        old_end - old_start
+        # Time difference of 46.2233 secs
     } else {
         if(verbose){
             message("skip pairing orthologs.")

@@ -354,7 +354,7 @@ syntenicOrtho <- function(object){
                          root_anchor_chr = g2g_graph$query_df$seqnames[root_hit],
                          leaf_anchor = g2g_graph$subject_df$gene_index[leaf_hit],
                          leaf_anchor_chr = g2g_graph$subject_df$seqnames[leaf_hit],
-                         subset(rbbh, select = c(pident, mutual_ci:pair_id)))
+                         subset(rbbh, select = c(pident, qseqid:sgeneid, mutual_ci:pair_id)))
     anchor <- unique(anchor)
     # anchor2 <- .getSyntenicAnchors(anchor = anchor)
     
