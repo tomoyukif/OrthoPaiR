@@ -8,21 +8,21 @@
 rbh <- function(object, blast_path, target_pair, n_threads, overwrite){
     blast_dir <- file.path(object$working_dir, "blast")
     dir.create(path = blast_dir, showWarnings = FALSE, recursive = TRUE)
-    
-    .makeBlastDB(object = object, 
+
+    .makeBlastDB(object = object,
                  blast_dir = blast_dir,
                  blast_path = blast_path,
                  n_threads = n_threads,
                  overwrite = overwrite)
-    
+
     check_blast_out <- .checkBLASTout(object, blast_dir, overwrite)
     job_assign <- .jobAssign(check_blast_out = check_blast_out,
                              n_threads = n_threads,
                              min_threads = 8)
-    
+
     mclapply(X = unique(job_assign$fasta_chunk$chunk),
-             mc.cores = job_assign$n_parallel_jobs, 
-             FUN = .blastn_search, 
+             mc.cores = job_assign$n_parallel_jobs,
+             FUN = .blastn_search,
              object = object,
              blast_dir = blast_dir,
              blast_path = blast_path,
@@ -338,7 +338,7 @@ NF >= 2 {
                         paste("-db", db_prefix),
                         "-task blastn -max_target_seqs 100",
                         "-evalue 1e-4 -strand plus",
-                        "-outfmt '6 qseqid sseqid pident qcovs qstart qend sstart send'",
+                        "-outfmt '6 qseqid sseqid pident qcovs qstart qend sstart send qlen slen'",
                         paste("-num_threads", threads_per_job),
                         "-out", out_fn)
     out <- try({
@@ -531,7 +531,7 @@ rbh_extract <- function(blast_out_list,
         fi <- file.info(bucket_fn)
         if (is.na(fi$size) || fi$size == 0) return(NA_character_)
         sorted_fn <- sub("\\.tsv$", ".sorted.tsv", bucket_fn)
-        
+
         run_sort_cmd(in_files = bucket_fn,
                      out_file = sorted_fn,
                      sort_mem = sort_mem,
@@ -596,8 +596,8 @@ rbh_extract <- function(blast_out_list,
         norm_nonempty <- !is.na(norm_sizes) & norm_sizes > 0L
         if (!any(norm_nonempty)) {
             stop("All norm files are empty. Normalization wrote no rows. ",
-                 "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 8 columns: ",
-                 "query_tx, subject_tx, pident, qcovs, qstart, qend, sstart, send).")
+                 "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 10 columns: ",
+                 "qseqid sseqid pident qcovs qstart qend sstart send qlen slen).")
         }
         norm_files <- norm_files[norm_nonempty]
         
@@ -630,7 +630,7 @@ rbh_extract <- function(blast_out_list,
         norm_nonempty <- !is.na(norm_sizes) & norm_sizes > 0L
         if (!any(norm_nonempty)) {
             stop("All norm files are empty. Normalization wrote no rows. ",
-                 "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 8 columns).")
+                 "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 10 columns: qseqid sseqid pident qcovs qstart qend sstart send qlen slen).")
         }
         norm_files <- norm_files[norm_nonempty]
         bucketize_norm_files(norm_files, bucket_dir, n_buckets, overwrite = TRUE)

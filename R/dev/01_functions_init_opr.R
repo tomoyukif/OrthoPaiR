@@ -7,7 +7,9 @@
 #'
 init_opr <- function(object, working_dir, overwrite, n_threads){
     input <- .checkInput(object, working_dir)
-    input <- .assignIndex(input = input, working_dir)
+    input <- .assignIndex(input = input, 
+                          working_dir = working_dir,
+                          overwrite = overwrite)
     input <- .orgInput(input = input,
                        working_dir = working_dir,
                        overwrite = overwrite,
@@ -75,16 +77,17 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
     })
 }
 
-.assignIndex <- function(input, working_dir){
+.assignIndex <- function(input, working_dir, overwrite){
     input_dir <- file.path(working_dir, "input")
     
-    index <- rep(NA, length(input$name))
-    if(dir.exists(input_dir)){
+    if(dir.exists(input_dir) & overwrite){
         base_name <- list.files(input_dir)
         base_name[!grepl("_", base_name)] <- NA
-        assigned_index <- sub("_.+", "", base_name)
-        index[!is.na(assigned_index)] <- assigned_index[!is.na(assigned_index)]
-        index[is.na(assigned_index)] <- seq_len(sum(is.na(assigned_index)))
+        index_name <- do.call(rbind, strsplit(base_name, "_"))
+        hit <- match(input$name, index_name[, 2])
+        index <- as.integer(index_name[hit, 1])
+        index_offset <- max(index, na.rm = TRUE)
+        index[is.na(index)] <- seq_len(sum(is.na(index))) + index_offset
         
     } else {
         index <- seq_along(input$name)
@@ -177,11 +180,11 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
     gff <- .setIndex(gff = gff, index = index)
     
     gff_df <- as.data.table(gff)
+    cds_df <- gff_df[type %in% "CDS"][, .(seqnames, start, end, gene_id)]
     gene_df <- gff_df[type %in% "gene", .(seqnames, start, end, strand, gene_id, gene_index)]
     tx_df <- gff_df[type %in% c("transcript", "mRNA")][, .(transcript_id = ID, gene_id, tx_index)]
-    gff_df <- data.table::merge(tx_df, gene_df, by = "gene_id", all.x = TRUE, allow.cartesian = TRUE)
-    saveRDS(object = gff, file = gff_fn)
-    saveRDS(object = gff_df, file = gff_df_fn)
+    gff_df <- merge(tx_df, gene_df, by = "gene_id", all.x = TRUE, allow.cartesian = TRUE)
+    saveRDS(object = list(gff_df, cds_df), file = gff_df_fn)
     out <- list(gff = gff, gff_df = gff_df)
     return(out)
 }
@@ -198,10 +201,8 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
              n_index_limit,
              call. = FALSE)
     }
-    gff$tx_index[tx_i] <- paste0(index + 1000, 
-                                 sprintf("%06d", seq_len(n_tx)))
-    gff$gene_index[gene_i] <- paste0(index + 1000, 
-                                     sprintf("%06d", seq_len(n_gene)))
+    gff$tx_index[tx_i] <- (index + 1000L) * 1e6L + seq_len(n_tx)
+    gff$gene_index[gene_i] <- (index + 1000L) * 1e6L + seq_len(n_gene)
     hit <- match(gff$gene_id[tx_i], gff$gene_id[gene_i])
     gff$gene_index[tx_i] <- gff$gene_index[gene_i][hit]
     gff$Parent[gene_i] <- ""
@@ -214,7 +215,6 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
 
 .orgCDS <- function(org_gff, genome, cds, out_dir_i, index, overwrite){
     cds_fn <- file.path(out_dir_i, "cds.fa")
-    taxid_map_fn <- file.path(out_dir_i, "taxid_map.tsv")
     
     if(!overwrite){
         if(file.exists(taxid_map_fn)){
@@ -243,44 +243,10 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
     
     rep_tx_id <- .getRepTx(gff_cds = gff_cds)
     rep_cds <- cds[names(cds) %in% rep_tx_id]
-    hit <- match(names(rep_cds), org_gff$gff_df$ID)
+    hit <- match(names(rep_cds), org_gff$gff_df$transcript_id)
     names(rep_cds) <- org_gff$gff_df$tx_index[hit]
     writeXStringSet(rep_cds, cds_fn)
-    taxid_map <- cbind(names(rep_cds), index)
-    write.table(taxid_map, taxid_map_fn, quote = FALSE, sep = "\t", 
-                col.names = FALSE, row.names = FALSE)
-    out <- list(cds = cds, rep_tx_id = rep_tx_id)
-    return(out)
-}
-
-.orgProt <- function(org_cds, prot, gff_df, out_dir_i, overwrite){
-    prot_fn <- file.path(out_dir_i, "prot.fa")
-    
-    if(!overwrite){
-        if(file.exists(prot_fn)){
-            return(TRUE)
-        }
-    }
-    
-    if(is.na(prot)){
-        prot <- translate(org_cds$cds, if.fuzzy.codon = "solve")
-        
-    } else {
-        prot <- readDNAStringSet(prot)
-    }
-    
-    check <- names(prot) %in% names(org_cds$cds)
-    if(!all(check)){
-        stop("The following protein names does not appear in the GFF file:",
-             "\n",
-             paste(names(prot)[!check], collapse = ",\n"))
-    }
-    
-    rep_prot <- prot[names(prot) %in% org_cds$rep_tx_id]
-    hit <- match(names(rep_prot), gff_df$ID)
-    names(rep_prot) <- gff_df$tx_index[hit]
-    writeXStringSet(rep_prot, prot_fn)
-    return(TRUE)
+    invisible(rep_cds)
 }
 
 .getRepTx <- function(gff_cds){

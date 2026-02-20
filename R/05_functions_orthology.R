@@ -152,15 +152,16 @@ syntenicOrtho <- function(object){
 }
 
 .getOrphan <- function(orthopair, g2g_graph){
-    query_tx_hit <- g2g_graph$query_gff$Parent %in% orthopair$query_tx
-    hit_gene_id <- g2g_graph$query_gff$gene_id[query_tx_hit]
-    query_gene_hit <- g2g_graph$query_gff$gene_id %in% hit_gene_id
-    query_orphan <- g2g_graph$query_gff$gene_id[!query_gene_hit]
+    ## Use transcript-level gff_df (query_df / subject_df); orthopair$query_tx is tx_index
+    query_tx_hit <- g2g_graph$query_df$tx_index %in% orthopair$query_tx
+    hit_gene_id <- g2g_graph$query_df$gene_id[query_tx_hit]
+    query_gene_hit <- g2g_graph$query_df$gene_id %in% hit_gene_id
+    query_orphan <- g2g_graph$query_df$gene_id[!query_gene_hit]
     
-    subject_tx_hit <- g2g_graph$subject_gff$Parent %in% orthopair$subject_tx
-    hit_gene_id <- g2g_graph$subject_gff$gene_id[subject_tx_hit]
-    subject_gene_hit <- g2g_graph$subject_gff$gene_id %in% hit_gene_id
-    subject_orphan <- g2g_graph$subject_gff$gene_id[!subject_gene_hit]
+    subject_tx_hit <- g2g_graph$subject_df$tx_index %in% orthopair$subject_tx
+    hit_gene_id <- g2g_graph$subject_df$gene_id[subject_tx_hit]
+    subject_gene_hit <- g2g_graph$subject_df$gene_id %in% hit_gene_id
+    subject_orphan <- g2g_graph$subject_df$gene_id[!subject_gene_hit]
     out <- list(query = unique(query_orphan),
                 subject = unique(subject_orphan))
 }
@@ -818,8 +819,8 @@ syntenicOrtho <- function(object){
 }
 
 .splitGene <- function(orthopair, g2g_graph){
-    split_1toM <- .split1toM(orthopair, gff = g2g_graph$query_gff)
-    split_Mto1 <- .splitMto1(orthopair, gff = g2g_graph$subject_gff)
+    split_1toM <- .split1toM(orthopair, gff = g2g_graph$query_df)
+    split_Mto1 <- .splitMto1(orthopair, gff = g2g_graph$subject_df)
     split_MtoM <- .splitMtoM(orthopair, g2g_graph = g2g_graph)
     
     out <- list(query = c(split_1toM, split_MtoM$query),
@@ -919,14 +920,10 @@ syntenicOrtho <- function(object){
 
 #' @importFrom GenomicRanges findOverlaps
 .split1toM <- function(orthopair, gff){
-    gff$strand[gff$strand == 1] <- "+"
-    gff$strand[gff$strand == 2] <- "-"
     gff <- GRanges(seqnames = gff$seqnames, 
                    ranges = IRanges(start = gff$start,
                                     end = gff$end), 
-                   strand = gff$strand,
                    gene_id = gff$gene_id,
-                   Parent = gff$Parent,
                    tx_index = gff$tx_index, 
                    gene_index = gff$gene_index)
     query_ol <- findOverlaps(gff, gff)
@@ -969,55 +966,14 @@ syntenicOrtho <- function(object){
     splitable <- subset(splitable,
                         subset = query_gene != query_ol_gene | is.na(query_ol_gene))
     out <- splitable$query_tx
-    # tmp <- orthopair[sog_1toM]
-    # best_pair <- tapply(seq_along(tmp$subject_gene),
-    #                     tmp$subject_gene, function(i){
-    #                         tmp_i <- tmp[i, ]
-    #                         return(tmp_i[which.max(tmp_i$mutual_ci), ])
-    #                     })
-    # best_pair <- do.call("rbind", best_pair)
-    # best_pair <- best_pair[order(best_pair$SOG), ]
-    # 
-    # best_pair_split <- tapply(seq_along(best_pair$SOG), best_pair$SOG, function(i){
-    #     tmp_i <- best_pair[i, ]
-    #     if(length(unique(tmp_i$query_tx)) == 1){
-    #         return(rep(FALSE, length(i)))
-    #     }
-    #     best_pair_ol <- sapply(seq_along(tmp_i$query_tx), function(j){
-    #         x <- tmp_i$query_tx[j]
-    #         x_ol <- query_ol$query_ol_tx[query_ol$query_tx %in% x]
-    #         return(any(x_ol %in% tmp_i$query_tx[-j]))
-    #     })
-    #     return(!best_pair_ol)
-    # })
-    # best_pair$split <- unlist(best_pair_split)
-    # 
-    # out <- best_pair
-    # if(any(best_pair$split)){
-    #     split_gene <- subset(best_pair, subset = split)
-    #     check <- tapply(split_gene$query_tx, split_gene$query_gene, unique)
-    #     check <- sapply(check, length)
-    #     valid_split <- names(check[check > 1])
-    #     split_gene <- subset(split_gene, subset = query_gene %in% valid_split)
-    #     if(nrow(split_gene) > 1){
-    #         split_gene$query_gene <- paste0(split_gene$query_tx, ":split_gene")
-    #         non_split_gene <- subset(best_pair,
-    #                                  subset = !subject_gene %in% split_gene$subject_gene)
-    #         out <- rbind(split_gene, non_split_gene)
-    #     }
-    # }
     return(out)
 }
 
 .splitMto1 <- function(orthopair, gff){
-    gff$strand[gff$strand == 1] <- "+"
-    gff$strand[gff$strand == 2] <- "-"
     gff <- GRanges(seqnames = gff$seqnames, 
                    ranges = IRanges(start = gff$start,
                                     end = gff$end), 
-                   strand = gff$strand,
                    gene_id = gff$gene_id,
-                   Parent = gff$Parent,
                    tx_index = gff$tx_index, 
                    gene_index = gff$gene_index)
     subject_ol <- findOverlaps(gff, gff)
@@ -1060,43 +1016,6 @@ syntenicOrtho <- function(object){
     splitable <- subset(splitable,
                         subset = subject_gene != subject_ol_gene | is.na(subject_ol_gene))
     out <- splitable$subject_tx
-    
-    # best_pair <- tapply(seq_along(tmp$query_gene),
-    #                     tmp$query_gene, function(i){
-    #                         tmp_i <- tmp[i, ]
-    #                         return(tmp_i[which.max(tmp_i$mutual_ci), ])
-    #                     })
-    # best_pair <- do.call("rbind", best_pair)
-    # best_pair <- best_pair[order(best_pair$SOG), ]
-    # 
-    # best_pair_split <- tapply(seq_along(best_pair$SOG), best_pair$SOG, function(i){
-    #     tmp_i <- best_pair[i, ]
-    #     if(length(unique(tmp_i$subject_tx)) == 1){
-    #         return(rep(FALSE, length(i)))
-    #     }
-    #     best_pair_ol <- sapply(seq_along(tmp_i$subject_tx), function(j){
-    #         x <- tmp_i$subject_tx[j]
-    #         x_ol <- subject_ol$subject_ol_tx[subject_ol$subject_tx %in% x]
-    #         return(any(x_ol %in% tmp_i$subject_tx[-j]))
-    #     })
-    #     return(!best_pair_ol)
-    # })
-    # best_pair$split <- unlist(best_pair_split)
-    # 
-    # out <- best_pair
-    # if(any(best_pair$split)){
-    #     split_gene <- subset(best_pair, subset = split)
-    #     check <- tapply(split_gene$subject_tx, split_gene$subject_gene, unique)
-    #     check <- sapply(check, length)
-    #     valid_split <- names(check[check > 1])
-    #     split_gene <- subset(split_gene, subset = subject_gene %in% valid_split)
-    #     if(nrow(split_gene) > 1){
-    #         split_gene$subject_gene <- paste0(split_gene$subject_tx, ":split_gene")
-    #         non_split_gene <- subset(best_pair,
-    #                                  subset = !query_gene %in% split_gene$query_gene)
-    #         out <- rbind(split_gene, non_split_gene)
-    #     }
-    # }
     return(out)
 }
 
@@ -1127,40 +1046,6 @@ syntenicOrtho <- function(object){
                                     subset = SOG %in% names(n_member[n_member > 1])),
                              gff = g2g_graph$subject_gff)
     out <- list(query = split_1toM, subject = split_Mto1)
-    # hit <- match(tmp$tx_pair_id, split_1toM$tx_pair_id)
-    # tmp$split_1toM <- split_1toM$split[hit]
-    # hit <- match(tmp$tx_pair_id, split_Mto1$tx_pair_id)
-    # tmp$split_Mto1 <- split_Mto1$split[hit]
-    # tmp <- tmp[order(tmp$SOG), ]
-    # 
-    # tmp$split <- tmp$split_1toM & tmp$split_Mto1
-    # tmp$split[is.na(tmp$split)] <- FALSE
-    # tmp$split <- tmp$split | {tmp$query_is_anchor & tmp$subject_is_anchor}
-    # 
-    # if(any(tmp$split)){
-    #     split_gene <- subset(tmp, subset = split)
-    #     push_back <- lapply(seq_along(split_gene$query_gene),
-    #                         function(i){
-    #                             tmp_i <- tmp[tmp$query_tx %in% split_gene$query_tx[i], ]
-    #                             q_valid_i <- tmp_i[tmp_i$mutual_ci == split_gene$mutual_ci[i], ]
-    #                             tmp_i <- tmp[tmp$subject_tx %in% split_gene$subject_tx[i], ]
-    #                             s_valid_i <- tmp_i[tmp_i$mutual_ci == split_gene$mutual_ci[i], ]
-    #                             return(unique(rbind(q_valid_i, s_valid_i)))
-    #                         })
-    #     push_back <- do.call("rbind", push_back)
-    #     split_gene <- rbind(split_gene, push_back)
-    #     split_gene <- subset(split_gene, select = -c(tx_pair_id:split))
-    #     non_split_gene <- subset(tmp,
-    #                              subset = !(query_gene %in% split_gene$query_gene &
-    #                                             subject_gene %in% split_gene$subject_gene),
-    #                              select = -c(tx_pair_id:split))
-    #     out <- list(split_gene = unique(split_gene),
-    #                 non_split_gene = unique(non_split_gene))
-    #     
-    # } else {
-    #     tmp <- subset(tmp, select = -c(tx_pair_id:split))
-    #     out <- list(split_gene = unique(tmp), non_split_gene = NULL)
-    # }
     return(out)
 }
 
