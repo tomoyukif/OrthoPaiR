@@ -180,7 +180,7 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
     gff <- .setIndex(gff = gff, index = index)
     
     gff_df <- as.data.table(gff)
-    cds_df <- gff_df[type %in% "CDS"][, .(seqnames, start, end, gene_id)]
+    cds_df <- gff_df[type %in% "CDS"][, .(seqnames, start, end, gene_id, transcript_id = unlist(Parent))]
     gene_df <- gff_df[type %in% "gene", .(seqnames, start, end, strand, gene_id, gene_index)]
     tx_df <- gff_df[type %in% c("transcript", "mRNA")][, .(transcript_id = ID, gene_id, tx_index)]
     gff_df <- merge(tx_df, gene_df, by = "gene_id", all.x = TRUE, allow.cartesian = TRUE)

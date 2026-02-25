@@ -8,18 +8,18 @@
 rbh <- function(object, blast_path, target_pair, n_threads, overwrite){
     blast_dir <- file.path(object$working_dir, "blast")
     dir.create(path = blast_dir, showWarnings = FALSE, recursive = TRUE)
-
+    
     .makeBlastDB(object = object,
                  blast_dir = blast_dir,
                  blast_path = blast_path,
                  n_threads = n_threads,
                  overwrite = overwrite)
-
+    
     check_blast_out <- .checkBLASTout(object, blast_dir, overwrite)
     job_assign <- .jobAssign(check_blast_out = check_blast_out,
                              n_threads = n_threads,
                              min_threads = 8)
-
+    
     mclapply(X = unique(job_assign$fasta_chunk$chunk),
              mc.cores = job_assign$n_parallel_jobs,
              FUN = .blastn_search,
@@ -62,6 +62,12 @@ rbh <- function(object, blast_path, target_pair, n_threads, overwrite){
     
     # Create rbh output directory
     dir.create(path = rbh_dir, showWarnings = FALSE, recursive = TRUE)
+    
+    # Delete any existing .rbh files in the output directory before writing new ones
+    existing_rbh <- list.files(path = rbh_dir, pattern = "\\.rbh$", full.names = TRUE)
+    if (length(existing_rbh) > 0L) {
+        unlink(existing_rbh, force = TRUE)
+    }
     
     # Use awk for fast single-pass splitting (much faster than R line-by-line processing)
     # Columns: query_tx, subject_tx, pident, q2s_qcovs, s2q_qcovs, q2s_ci, s2q_ci, mutual_ci
@@ -306,11 +312,13 @@ NF >= 2 {
     query_fn <- file.path(blast_dir, paste0(index, "_query_cds.fa"))
     write(x = query_cds, file = query_fn, sep = "\t")
     
+    n_genome <- length(object$input$name)
     blast_out <- .run_blastn(query_fn = query_fn, 
                              db_prefix = db_prefix,
                              blast_dir = blast_dir,
                              blast_path = blast_path,
                              threads_per_job = threads_per_job,
+                             max_target_seqs = n_genome * 100,
                              index = index)
     if(isTRUE(blast_out)){
         blast_out_list_fn <- file.path(blast_dir, 
@@ -331,15 +339,20 @@ NF >= 2 {
                         blast_dir, 
                         blast_path, 
                         threads_per_job, 
+                        max_target_seqs,
                         index){
     out_fn <- file.path(blast_dir, paste0(index, "_blast.out"))
     
-    blast_args <- paste(paste("-query", query_fn),
-                        paste("-db", db_prefix),
-                        "-task blastn -max_target_seqs 100",
-                        "-evalue 1e-4 -strand plus",
-                        "-outfmt '6 qseqid sseqid pident qcovs qstart qend sstart send qlen slen'",
-                        paste("-num_threads", threads_per_job),
+    blast_args <- paste("-query", query_fn,
+                        "-db", db_prefix,
+                        "-task blastn", 
+                        "-max_target_seqs", max_target_seqs,
+                        "-evalue 1e-4",
+                        "-strand plus",
+                        "-perc_identity 10",
+                        "-qcov_hsp_perc 10",
+                        "-outfmt '6 qseqid sseqid pident qstart qend sstart send qlen'",
+                        "-num_threads", threads_per_job,
                         "-out", out_fn)
     out <- try({
         system2(command = file.path(blast_path, "blastn"),
@@ -531,7 +544,7 @@ rbh_extract <- function(blast_out_list,
         fi <- file.info(bucket_fn)
         if (is.na(fi$size) || fi$size == 0) return(NA_character_)
         sorted_fn <- sub("\\.tsv$", ".sorted.tsv", bucket_fn)
-
+        
         run_sort_cmd(in_files = bucket_fn,
                      out_file = sorted_fn,
                      sort_mem = sort_mem,

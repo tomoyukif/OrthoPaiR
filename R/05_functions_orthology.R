@@ -224,13 +224,6 @@ syntenicOrtho <- function(object){
     query_gff <- gff_ls$query_gff[q_cds_i, ]
     hit <- match(unlist((query_gff$Parent)), gff_ls$query_gff$ID)
     query_gff$tx_index <- gff_ls$query_gff$tx_index[hit]
-    # query_df <- data.frame(chr = query_gff$seqnames,
-    #                        tx = query_gff$ID, 
-    #                        tx_id = seq_along(query_gff$ID),
-    #                        index = query_gff$index,
-    #                        gene = query_gff$gene_id)
-    # query_df$gene_id <- as.numeric(factor(query_df$gene, 
-    #                                       unique(query_df$gene)))
     
     s_tx_i <- gff_ls$subject_gff$type %in% c("transcript", "mRNA")
     subject_df <- gff_ls$subject_gff[s_tx_i, ]
@@ -238,13 +231,6 @@ syntenicOrtho <- function(object){
     subject_gff <- gff_ls$subject_gff[s_cds_i, ]
     hit <- match(unlist((subject_gff$Parent)), gff_ls$subject_gff$ID)
     subject_gff$tx_index <- gff_ls$subject_gff$tx_index[hit]
-    # subject_df <- data.frame(chr = subject_gff$seqnames,
-    #                          tx = subject_gff$ID, 
-    #                          tx_id = seq_along(subject_gff$ID),
-    #                          index = subject_gff$index,
-    #                          gene = subject_gff$gene_id)
-    # subject_df$gene_id <- as.numeric(factor(subject_df$gene, 
-    #                                         unique(subject_df$gene)))
     out <- list(query_df = query_df,
                 subject_df = subject_df,
                 query_gff = query_gff,
@@ -355,9 +341,8 @@ syntenicOrtho <- function(object){
                          root_anchor_chr = g2g_graph$query_df$seqnames[root_hit],
                          leaf_anchor = g2g_graph$subject_df$gene_index[leaf_hit],
                          leaf_anchor_chr = g2g_graph$subject_df$seqnames[leaf_hit],
-                         subset(rbbh, select = c(pident, qseqid:sgeneid, mutual_ci:pair_id)))
+                         subset(rbbh, select = c(qseqid:sgeneid, ci_q2s:pair_id)))
     anchor <- unique(anchor)
-    # anchor2 <- .getSyntenicAnchors(anchor = anchor)
     
     anchor <- .checkHighCopyGenes(anchor = anchor, rbh = rbh)
     
