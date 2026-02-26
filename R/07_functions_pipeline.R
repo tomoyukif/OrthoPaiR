@@ -463,11 +463,7 @@ orthopair <- function(in_list,
         if(verbose){
             message("Pairing orthologs.")
         }
-        # old_start <- Sys.time()
         syntenicOrtho(object = object)
-        # old_end <- Sys.time()
-        old_end - old_start
-        # Time difference of 46.2233 secs
     } else {
         if(verbose){
             message("skip pairing orthologs.")

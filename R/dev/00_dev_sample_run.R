@@ -208,9 +208,9 @@ in_list <- orgInputFiles(name = "NB",
                          validation = FALSE)
 
 in_list <- orgInputFiles(object = in_list, 
-                         name = in_gff_id[1:29],
-                         genome = in_genome[1:29],
-                         gff = in_gff[1:29],
+                         name = in_gff_id,
+                         genome = in_genome,
+                         gff = in_gff,
                          validation = FALSE)
 
 working_dir <- "/home/ftom/workspace/orthology/rice_dev"

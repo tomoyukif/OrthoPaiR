@@ -342,16 +342,14 @@ NF >= 2 {
                         max_target_seqs,
                         index){
     out_fn <- file.path(blast_dir, paste0(index, "_blast.out"))
-    
+    options(scipen = 9999)
     blast_args <- paste("-query", query_fn,
                         "-db", db_prefix,
                         "-task blastn", 
                         "-max_target_seqs", max_target_seqs,
                         "-evalue 1e-4",
                         "-strand plus",
-                        "-perc_identity 10",
-                        "-qcov_hsp_perc 10",
-                        "-outfmt '6 qseqid sseqid pident qstart qend sstart send qlen'",
+                        "-outfmt '6 qseqid sseqid pident qstart qend sstart send qlen qcovs'",
                         "-num_threads", threads_per_job,
                         "-out", out_fn)
     out <- try({

@@ -377,7 +377,6 @@ orthopair <- function(working_dir,
         sseqid = as.integer(rbh$subject_tx),
         qgeneid = as.integer(query_gff_full$gene_index[query_tx_match]),
         sgeneid = as.integer(subject_gff_full$gene_index[subject_tx_match]),
-        pid = paste(query_gff_full$gene_id[query_tx_match], subject_gff_full$gene_id[subject_tx_match], sep = "_"),
         ci_q2s = rbh$q2s_ci,
         ci_s2q = rbh$s2q_ci,
         pident = rbh$pident,
@@ -387,6 +386,7 @@ orthopair <- function(working_dir,
     
     rbh_df <- rbh_df[!is.na(rbh_df$qgeneid) & !is.na(rbh_df$sgeneid), ]
     rbh_df$pair_id <- paste(rbh_df$qgeneid, rbh_df$sgeneid, sep = "_")
+    rbh_df <- subset(rbh_df, subset = !duplicated(rbh_df$pair_id))
     
     if (nrow(rbh_df) == 0L) {
         if (verbose) message("[ortho] Pair ", pair_id, ": No RBH after GFF merge")

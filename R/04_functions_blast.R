@@ -178,6 +178,9 @@ rbh <- function(object,
                        stdout = stdout)
     }, silent = TRUE)
     
+    fwrite(as.data.frame(out), file.path(dirname(fa), "blast_out.tsv"), sep = "\t", 
+           row.names = FALSE, col.names = FALSE)
+    
     if(inherits(check, "try-error")){
         stop("Error in blastn of BLAST.\n", check)
     }
