@@ -274,17 +274,18 @@ load_all_gff <- TRUE
 library(data.table)
 source("R/dev/01_functions_init_opr.R")
 init_start <- Sys.time()
-opr <- init_opr(object = in_list, 
-                working_dir = working_dir, 
-                overwrite = overwrite,
-                n_threads = n_threads)
+reformatFiles(object = in_list, 
+              working_dir = working_dir, 
+              overwrite = overwrite,
+              n_threads = n_threads)
 init_end <- Sys.time()
 
 source("R/dev/02_functions_rbh.R")
 Rcpp::sourceCpp("inst/src/rbh.cpp")
 rbh_start <- Sys.time()
-rbh(object = opr,
+rbh(working_dir = working_dir,
     blast_path = blast_path,
+    reference = "NB",
     n_threads = n_threads,
     overwrite = overwrite)
 rbh_end <- Sys.time()

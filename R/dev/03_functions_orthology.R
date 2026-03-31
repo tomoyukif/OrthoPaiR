@@ -123,23 +123,38 @@ orthopair <- function(working_dir,
                 verbose = FALSE
             )
             
+            # Standardise output column names: query_* -> genome1_*, subject_* -> genome2_*
+            if (!is.null(result)) {
+                cn <- names(result)
+                cn <- sub("^query_", "genome1_", cn)
+                cn <- sub("^subject_", "genome2_", cn)
+                names(result) <- cn
+            }
+
             # Write result to TSV file
             out_tsv <- file.path(orthopair_dir, paste0(pair_id, ".tsv"))
             if (!is.null(result) && nrow(result) > 0L) {
-                fwrite(result, file = out_tsv, sep = "\t", quote = FALSE, row.names = FALSE)
+                data.table::fwrite(result, file = out_tsv, sep = "\t",
+                                   quote = FALSE, row.names = FALSE)
             } else {
                 # Write empty file with header
-                empty_df <- if (!is.null(result)) result[0L, , drop = FALSE] else 
-                    data.frame(query_gene = character(0), subject_gene = character(0))
-                write.table(empty_df, file = out_tsv, sep = "\t", quote = FALSE, 
+                if (!is.null(result)) {
+                    empty_df <- result[0L, , drop = FALSE]
+                } else {
+                    empty_df <- data.frame(
+                        genome1_gene = character(0),
+                        genome2_gene = character(0)
+                    )
+                }
+                write.table(empty_df, file = out_tsv, sep = "\t", quote = FALSE,
                             row.names = FALSE, col.names = TRUE)
             }
             
-            return(list(pair_id = pair_id, result = result, error = NULL))
+            return(list(pair_id = pair_id, error = NULL))
         }, error = function(e) {
             out_tsv <- file.path(orthopair_dir, paste0(pair_id, ".tsv"))
-            writeLines("query_gene\tsubject_gene", con = out_tsv)
-            return(list(pair_id = pair_id, result = NULL, error = e$message))
+            writeLines("genome1_gene\tgenome2_gene", con = out_tsv)
+            return(list(pair_id = pair_id, error = e$message))
         })
     }
     
@@ -147,13 +162,13 @@ orthopair <- function(working_dir,
     if (n_threads > 1L && .Platform$OS.type != "windows") {
         if (verbose) message("[ortho] Using parallel processing with ", n_threads, " cores")
         results_list <- parallel::mclapply(rbh_files, process_one_rbh_file, mc.cores = n_threads)
+        
     } else {
         if (verbose) message("[ortho] Using sequential processing")
         results_list <- lapply(rbh_files, process_one_rbh_file)
     }
     
     # Extract results and errors
-    results <- lapply(results_list, function(x) x$result)
     errors <- lapply(results_list, function(x) x$error)
     pair_ids <- sapply(results_list, function(x) x$pair_id)
     
@@ -166,34 +181,20 @@ orthopair <- function(working_dir,
                 paste(sprintf("  %s: %s", error_pairs, error_msgs), collapse = "\n"))
     }
     
-    # Report NULL results
-    null_idx <- sapply(results, is.null)
-    if (any(null_idx) && verbose) {
-        null_pairs <- pair_ids[null_idx]
-        message("[ortho] ", sum(null_idx), " pairs returned NULL results: ", 
-                paste(head(null_pairs, 10), collapse = ", "), 
-                if (length(null_pairs) > 10) " ..." else "")
-    }
-    
-    # Remove NULL results
-    results <- results[!sapply(results, is.null)]
-    
     # Summary statistics
     n_total <- length(rbh_files)
-    n_with_results <- length(results)
-    n_null <- sum(null_idx)
+    n_success <- sum(!error_idx)
     n_error <- sum(error_idx)
     
     if (verbose) {
         message("[ortho] Processing summary:")
         message("[ortho]   Total pairs: ", n_total)
-        message("[ortho]   Pairs with results: ", n_with_results)
-        message("[ortho]   Pairs with NULL results: ", n_null)
+        message("[ortho]   Pairs with results: ", n_success)
         message("[ortho]   Pairs with errors: ", n_error)
         message("[ortho] Output TSV files written to: ", orthopair_dir)
     }
     
-    return(results)
+    invisible(TRUE)
 }
 
 #' Create GFF lookup: genome ID -> GFF file path

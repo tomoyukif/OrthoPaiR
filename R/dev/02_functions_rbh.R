@@ -5,32 +5,45 @@
 #'
 #' @export
 #'
-rbh <- function(object, blast_path, target_pair, n_threads, overwrite){
-    blast_dir <- file.path(object$working_dir, "blast")
+rbh <- function(working_dir, blast_path, reference = NULL, n_threads, overwrite){
+    blast_dir <- file.path(working_dir, "blast")
     dir.create(path = blast_dir, showWarnings = FALSE, recursive = TRUE)
     
-    .makeBlastDB(object = object,
+    cds_files <- list.files(path = file.path(working_dir, "input"),
+                            "cds.fa", 
+                            full.names = TRUE,
+                            recursive = TRUE)
+    dir_names <- list.dirs(path = file.path(working_dir, "input"),
+                           recursive = FALSE)
+    sample_names <- sub(".+input\\/[0-9]+_", "", dir_names)
+    input_list <- list(cds = cds_files, names = sample_names)
+    
+    .makeBlastDB(input_list = input_list,
                  blast_dir = blast_dir,
                  blast_path = blast_path,
                  n_threads = n_threads,
                  overwrite = overwrite)
     
-    check_blast_out <- .checkBLASTout(object, blast_dir, overwrite)
+    check_blast_out <- .checkBLASTout(input_list = input_list, 
+                                      reference = reference, 
+                                      blast_dir = blast_dir, 
+                                      overwrite = overwrite)
     job_assign <- .jobAssign(check_blast_out = check_blast_out,
+                             input_list = input_list,
                              n_threads = n_threads,
-                             min_threads = 8)
+                             min_threads = 8L)
     
     mclapply(X = unique(job_assign$fasta_chunk$chunk),
              mc.cores = job_assign$n_parallel_jobs,
              FUN = .blastn_search,
-             object = object,
+             input_list = input_list,
              blast_dir = blast_dir,
              blast_path = blast_path,
              fasta_chunk = job_assign$fasta_chunk,
              threads_per_job = job_assign$threads_per_job,
              index_offset = check_blast_out$blast_out_index_offset)
     
-    rbh_dir <- file.path(object$working_dir, "rbh")
+    rbh_dir <- file.path(working_dir, "rbh")
     dir.create(rbh_dir, showWarnings = FALSE, recursive = TRUE)
     tmp_dir <- file.path(rbh_dir, "tmp")
     dir.create(tmp_dir, showWarnings = FALSE, recursive = TRUE)
@@ -52,6 +65,7 @@ rbh <- function(object, blast_path, target_pair, n_threads, overwrite){
     .splitRBHbyGenomePair(rbh_fn = out_rbh_fn,
                           rbh_dir = rbh_dir,
                           genome_width = 4L)
+    invisible(TRUE)
 }
 
 .splitRBHbyGenomePair <- function(rbh_fn, rbh_dir, genome_width = 4L){
@@ -113,28 +127,27 @@ NF >= 2 {
     invisible(TRUE)
 }
 
-.makeBlastDB <- function(object, blast_dir, blast_path, n_threads, overwrite){
-    check_db <- .checkDBexist(object = object, 
+.makeBlastDB <- function(input_list, blast_dir, blast_path, reference, n_threads, overwrite){
+    check_db <- .checkDBexist(input_list = input_list, 
                               blast_dir = blast_dir,
                               overwrite = overwrite)
     
-    .makeMergedFASTA(object = object, 
-                     check_db = check_db, 
-                     blast_dir = blast_dir)
+    target_list <- .makeMergedFASTA(input_list = input_list, 
+                                    check_db = check_db, 
+                                    blast_dir = blast_dir)
     
-    cds_fn_list <- list.files(blast_dir, "all_cds.fa", full.names = TRUE)
-    
-    mclapply(X = cds_fn_list,
-             mc.cores = min(n_threads, length(cds_fn_list)),
-             FUN = .blastDBengine,
-             blast_dir = blast_dir,
-             blast_path = blast_path,
-             overwrite = overwrite)
+    .blastDBengine(cds_fn = target_list$cds_fn,
+                   blast_dir = blast_dir,
+                   blast_path = blast_path, 
+                   overwrite = overwrite)
+    write.table(x = target_list$to_be_db,
+                file = sub(".fa", "_blastdb.list", target_list$cds_fn),
+                quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
     invisible(TRUE)
 }
 
-.checkDBexist <- function(object, blast_dir, overwrite){
-    to_be_db <- object$input$name
+.checkDBexist <- function(input_list, blast_dir, overwrite){
+    to_be_db <- input_list$names
     blast_db_list <- list.files(blast_dir,
                                 "_blastdb.list",
                                 full.names = TRUE,
@@ -148,7 +161,7 @@ NF >= 2 {
                            stringsAsFactors = FALSE)
             return(as.vector(x_out))
         })
-        to_be_db <- to_be_db[!to_be_db %in% genome_in_db]
+        to_be_db <- to_be_db[!to_be_db %in% unlist(genome_in_db)]
         db_index_offset <- max(as.numeric(sub("_.+",
                                               "",
                                               basename(blast_db_list))))
@@ -157,25 +170,27 @@ NF >= 2 {
     return(out)
 }
 
-.makeMergedFASTA <- function(object, check_db, blast_dir){
-    index <- check_db$db_index_offset + 1
-    fn <- file.path(blast_dir, paste(index, "all_cds.fa", sep = "_"))
-    cds_fn_list <- object$input$cds[object$input$name %in% check_db$to_be_db]
+.makeMergedFASTA <- function(input_list, check_db, blast_dir){
+    to_be_db <- input_list$names[input_list$names %in% check_db$to_be_db]
+    cds_fn_list <- input_list$cds[input_list$names %in% check_db$to_be_db]
     cds_fn_list <- normalizePath(cds_fn_list, mustWork = TRUE)
+    
+    index <- check_db$db_index_offset + 1
+    cds_fn <- file.path(blast_dir, paste(index, "all_cds.fa", sep = "_"))
     
     sys <- Sys.info()[["sysname"]]
     if (sys %in% c("Linux", "Darwin")) {
         # Fast merge via cat: no R parsing, minimal memory, very fast
-        status <- system2("cat", cds_fn_list, stdout = fn)
+        status <- system2("cat", cds_fn_list, stdout = cds_fn)
         if (status != 0L) {
             stop("Merge of CDS FASTA files failed (cat exited with status ", status, ")")
         }
     } else {
         # Fallback: read and write in R (e.g. Windows)
         fa <- readDNAStringSet(cds_fn_list)
-        writeXStringSet(fa, fn)
+        writeXStringSet(fa, cds_fn)
     }
-    invisible(TRUE)
+    return(list(cds_fn = cds_fn, to_be_db = to_be_db))
 }
 
 .blastDBengine <- function(cds_fn, blast_dir, blast_path, overwrite){
@@ -210,12 +225,13 @@ NF >= 2 {
     invisible(TRUE)
 }
 
-.checkBLASTout <- function(object, blast_dir, overwrite){
+.checkBLASTout <- function(input_list, blast_dir, overwrite){
     blast_db_list <- list.files(blast_dir,
-                                ".blastdb.nsq",
+                                ".blastdb.ndb",
                                 full.names = TRUE,
                                 recursive = TRUE)
-    to_be_blast <- expand.grid(genome = object$input$name, db = blast_db_list)
+    blast_db_list <- sub("\\.ndb", "", blast_db_list)
+    to_be_blast <- expand.grid(genome = input_list$names, db = blast_db_list)
     
     blast_out_list <- list.files(blast_dir,
                                  "blast.out.list",
@@ -243,64 +259,209 @@ NF >= 2 {
     return(out)
 }
 
-.jobAssign <- function(check_blast_out, n_threads, min_threads = 8){
-    n_fasta <- length(check_blast_out$to_be_blast$genome)
+## Sum of on-disk byte sizes for all BLAST DB files sharing db_prefix (e.g. *.ndb, *.nin, ...).
+.blastdb_disk_bytes <- function(db_prefix) {
+    dir <- dirname(db_prefix)
+    base <- basename(db_prefix)
+    if (!nzchar(base) || !dir.exists(dir)) {
+        return(0)
+    }
+    pat <- paste0("^", gsub("([.|()\\^{}$+\\[\\]\\\\])", "\\\\\\1", base), "\\.")
+    fn <- list.files(dir, pattern = pat, full.names = TRUE)
+    if (!length(fn)) {
+        return(0)
+    }
+    sum(file.size(fn))
+}
+
+## Per-genome CDS file sizes (bytes), named by sample name.
+.cds_file_sizes <- function(input_list) {
+    nm <- input_list$names
+    cds <- input_list$cds
+    if (length(nm) != length(cds)) {
+        stop("input_list$names and input_list$cds must have the same length.")
+    }
+    sz <- file.size(cds)
+    names(sz) <- nm
+    sz[is.na(sz)] <- 0
+    sz
+}
+
+## Greedy packing: keep sum(S_q) <= S_q_max per chunk; order follows `genomes` order.
+.chunk_genomes_by_Sq_max <- function(genomes, cds_sizes, S_q_max) {
+    if (!length(genomes)) {
+        return(integer(0))
+    }
+    if (!length(S_q_max) || !is.finite(S_q_max) || S_q_max <= 0) {
+        return(seq_along(genomes))
+    }
+    chunk_id <- integer(length(genomes))
+    cur <- 1L
+    sum_s <- 0
+    for (i in seq_along(genomes)) {
+        g <- genomes[[i]]
+        sz <- as.numeric(cds_sizes[[g]])
+        if (!length(sz) || is.na(sz)) {
+            sz <- 0
+        }
+        if (sum_s > 0 && sum_s + sz > S_q_max) {
+            cur <- cur + 1L
+            sum_s <- 0
+        }
+        chunk_id[[i]] <- cur
+        sum_s <- sum_s + sz
+    }
+    chunk_id
+}
+
+.jobAssign <- function(check_blast_out,
+                       input_list,
+                       n_threads,
+                       min_threads = 8L,
+                       k_db = 1,
+                       k_q = 1.75,
+                       M_fixed_bytes = 384 * 1024^2,
+                       frac_ma = 0.25,
+                       max_threads_blastn = 16L,
+                       verbose = TRUE) {
     ma <- .mem_available_bytes()
-    ma_per_single_fasta <- n_fasta * 2e8
-    chunk_per_fasta <- ma / ma_per_single_fasta
-    fasta_chunk <- tapply(seq_along(check_blast_out$to_be_blast$genome), 
+    margin <- max(512 * 1024^2, 0.05 * ma)
+    ma_budget <- ma - margin
+    if (!is.finite(ma_budget) || ma_budget <= 0) {
+        warning("MemAvailable margin leaves no budget; using single-threaded BLAST.")
+        ma_budget <- max(1, ma * 0.5)
+    }
+    M_q_max <- frac_ma * ma
+    S_q_max <- M_q_max / k_q
+    
+    cds_sizes <- .cds_file_sizes(input_list)
+    
+    if (!length(check_blast_out$to_be_blast$genome)) {
+        return(list(
+            fasta_chunk = data.frame(
+                chunk = integer(),
+                genome = character(),
+                db = character(),
+                stringsAsFactors = FALSE
+            ),
+            n_parallel_jobs = 1L,
+            threads_per_job = max(1L, as.integer(n_threads))
+        ))
+    }
+    
+    fasta_chunk <- tapply(seq_along(check_blast_out$to_be_blast$genome),
                           check_blast_out$to_be_blast$db,
-                          function(i){
-                              x <- check_blast_out$to_be_blast$genome[i]
+                          function(i) {
+                              x <- as.character(check_blast_out$to_be_blast$genome[i])
                               db_name <- check_blast_out$to_be_blast$db[i][1]
-                              n_breaks <- ceiling(length(x) / chunk_per_fasta)
-                              if(n_breaks > 1){
-                                  chunk <- cut(seq_along(x), 
-                                               breaks = n_breaks)
-                                  chunk <- as.integer(chunk)
-                              } else {
-                                  chunk <- rep(1L, length(x))
-                              }
-                              out <- data.frame(chunk = chunk, 
+                              chunk_loc <- .chunk_genomes_by_Sq_max(x, cds_sizes, S_q_max)
+                              out <- data.frame(chunk = as.integer(chunk_loc),
                                                 genome = x,
-                                                db = db_name)
-                              return(out)
+                                                db = db_name,
+                                                stringsAsFactors = FALSE)
+                              out
                           })
     fasta_chunk <- do.call(rbind, fasta_chunk)
+    rownames(fasta_chunk) <- NULL
     fasta_chunk_id <- paste(fasta_chunk$chunk, fasta_chunk$db, sep = "_")
     fasta_chunk_id <- factor(fasta_chunk_id)
     fasta_chunk$chunk <- as.integer(fasta_chunk_id)
     n_chunk <- max(fasta_chunk$chunk)
     
-    if(n_threads < min_threads){
-        threads_per_job <- n_threads
-        n_parallel_jobs <- 1
+    ## M_job per global chunk, J_mem
+    M_worst <- 0
+    for (ch in seq_len(n_chunk)) {
+        rows <- fasta_chunk$chunk == ch
+        db_pref <- fasta_chunk$db[rows][1]
+        S_db <- .blastdb_disk_bytes(as.character(db_pref))
+        genomes_ch <- as.character(fasta_chunk$genome[rows])
+        S_q <- sum(as.numeric(cds_sizes[genomes_ch]), na.rm = TRUE)
+        M_job <- k_db * S_db + k_q * S_q + M_fixed_bytes
+        if (M_job > M_worst) {
+            M_worst <- M_job
+        }
+    }
+    if (M_worst <= 0) {
+        J_mem <- Inf
+    } else {
+        J_mem <- floor(ma_budget / M_worst)
+    }
+    J_cap_display <- if (!is.finite(J_mem)) {
+        as.integer(n_chunk)
+    } else {
+        max(1L, min(as.integer(J_mem), as.integer(n_chunk)))
+    }
+    
+    if (is.finite(J_mem) && J_mem < 1L) {
+        warning(
+            "Estimated RAM allows <1 parallel BLAST job (J_mem=", J_mem,
+            "). Forcing single job; consider smaller chunks or more memory."
+        )
+        threads_per_job <- min(as.integer(n_threads), as.integer(max_threads_blastn))
+        n_parallel_jobs <- 1L
+        
+    } else if (n_threads < min_threads) {
+        threads_per_job <- as.integer(n_threads)
+        n_parallel_jobs <- 1L
         
     } else {
-        threads_per_job <- floor(n_threads / n_chunk)
-        if(threads_per_job < min_threads){
-            threads_per_job <- min_threads
+        if (!is.finite(J_mem)) {
+            J_cap <- as.integer(n_chunk)
+        } else {
+            J_cap <- max(1L, min(as.integer(J_mem), as.integer(n_chunk)))
         }
-        n_parallel_jobs <- floor(n_threads / threads_per_job)
+        threads_per_job <- max(
+            min_threads,
+            min(max_threads_blastn, floor(n_threads / J_cap))
+        )
+        n_parallel_jobs <- min(J_cap, max(1L, floor(n_threads / threads_per_job)))
+        ## Reconcile oversubscription of logical CPUs
+        while (n_parallel_jobs * threads_per_job > n_threads) {
+            if (threads_per_job > min_threads) {
+                threads_per_job <- threads_per_job - 1L
+            } else if (n_parallel_jobs > 1L) {
+                n_parallel_jobs <- n_parallel_jobs - 1L
+            } else {
+                break
+            }
+        }
     }
+    
+    if (isTRUE(verbose)) {
+        message(sprintf(
+            "[rbh] blastn schedule: MemAvailable~%.1f GiB, M_worst~%.2f MiB, J_mem=%s, J_cap=%d, n_chunk=%d, threads_per_job=%d, n_parallel_jobs=%d",
+            ma / 1024^3,
+            M_worst / 1024^2,
+            if (M_worst <= 0) {
+                "Inf"
+            } else {
+                as.character(J_mem)
+            },
+            J_cap_display,
+            n_chunk,
+            threads_per_job,
+            n_parallel_jobs
+        ))
+    }
+    
     out <- list(fasta_chunk = fasta_chunk,
-                n_parallel_jobs = n_parallel_jobs, 
-                threads_per_job = threads_per_job)
+                n_parallel_jobs = as.integer(n_parallel_jobs),
+                threads_per_job = as.integer(threads_per_job))
     return(out)
 }
 
 .blastn_search <- function(index,
-                           object, 
+                           input_list, 
                            blast_dir,
                            blast_path,
                            fasta_chunk, 
                            threads_per_job,
                            index_offset){
     db_fn <- fasta_chunk$db[fasta_chunk$chunk == index][1]
-    db_prefix <- sub(".nsq", "", db_fn)
+    db_prefix <- sub(".ndb", "", db_fn)
     fasta_chunk_i <- fasta_chunk$genome[fasta_chunk$chunk == index]
     index <- index_offset + index
-    query_cds_list <- object$input$cds[object$input$name %in% fasta_chunk_i]
+    query_cds_list <- input_list$cds[input_list$names %in% fasta_chunk_i]
     query_cds <- sapply(query_cds_list, function(x){
         x_out <- fread(file = x, 
                        sep = "\t",
@@ -312,7 +473,7 @@ NF >= 2 {
     query_fn <- file.path(blast_dir, paste0(index, "_query_cds.fa"))
     write(x = query_cds, file = query_fn, sep = "\t")
     
-    n_genome <- length(object$input$name)
+    n_genome <- length(input_list$names)
     blast_out <- .run_blastn(query_fn = query_fn, 
                              db_prefix = db_prefix,
                              blast_dir = blast_dir,

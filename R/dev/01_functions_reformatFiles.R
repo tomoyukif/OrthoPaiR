@@ -5,20 +5,17 @@
 #'
 #' @export
 #'
-init_opr <- function(object, working_dir, overwrite, n_threads){
+reformatFiles <- function(object, working_dir, overwrite, n_threads){
     input <- .checkInput(object, working_dir)
     input <- .assignIndex(input = input, 
                           working_dir = working_dir,
                           overwrite = overwrite)
-    input <- .orgInput(input = input,
-                       working_dir = working_dir,
-                       overwrite = overwrite,
-                       n_threads = n_threads,
-                       verbose = verbose)
-    out <- c(input = list(input),
-             working_dir = list(working_dir))
-    class(out) <- c(class(out), "initOPR")
-    return(out)
+    .orgInput(input = input,
+              working_dir = working_dir,
+              overwrite = overwrite,
+              n_threads = n_threads,
+              verbose = verbose)
+    invisible(TRUE)
 }
 
 .checkInput <- function(input, working_dir){
@@ -111,11 +108,6 @@ init_opr <- function(object, working_dir, overwrite, n_threads){
                            working_dir = working_dir,
                            overwrite = overwrite)
     input_list <- do.call(rbind, input_list)
-    input$gff <- input_list$gff_fn
-    input$gff_df <- input_list$gff_df_fn
-    input$cds <- input_list$cds_fn
-    input$prot <- input_list$prot_fn
-    return(input)
 }
 
 
