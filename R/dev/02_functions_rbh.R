@@ -5,7 +5,11 @@
 #'
 #' @export
 #'
-rbh <- function(working_dir, blast_path, reference = NULL, n_threads, overwrite){
+rbh <- function(working_dir, 
+                blast_path, 
+                target_pair = NULL, 
+                n_threads = 1, 
+                overwrite = FALSE){
     blast_dir <- file.path(working_dir, "blast")
     dir.create(path = blast_dir, showWarnings = FALSE, recursive = TRUE)
     
@@ -18,30 +22,42 @@ rbh <- function(working_dir, blast_path, reference = NULL, n_threads, overwrite)
     sample_names <- sub(".+input\\/[0-9]+_", "", dir_names)
     input_list <- list(cds = cds_files, names = sample_names)
     
-    .makeBlastDB(input_list = input_list,
-                 blast_dir = blast_dir,
-                 blast_path = blast_path,
-                 n_threads = n_threads,
-                 overwrite = overwrite)
+    tp <- .normalize_target_pair(target_pair = target_pair, 
+                                 sample_names = input_list$names)
+    .validate_target_pair_samples(target_pair = tp,
+                                  sample_names = input_list$names)
     
-    check_blast_out <- .checkBLASTout(input_list = input_list, 
-                                      reference = reference, 
-                                      blast_dir = blast_dir, 
-                                      overwrite = overwrite)
+    cds_sizes <- .cds_file_sizes(input_list)
+    scheme <- .plan_blast_scheme_from_target_pair(target_pair = tp,
+                                                  cds_sizes = cds_sizes)
+    
+    db_map <- .makeBlastDB_from_scheme(scheme = scheme,
+                                       input_list = input_list,
+                                       blast_dir = blast_dir,
+                                       blast_path = blast_path,
+                                       overwrite = overwrite)
+    
+    check_blast_out <- .checkBLASTout_target(blast_jobs = scheme$blast_jobs,
+                                             db_map = db_map,
+                                             blast_dir = blast_dir,
+                                             overwrite = overwrite)
+    
     job_assign <- .jobAssign(check_blast_out = check_blast_out,
                              input_list = input_list,
                              n_threads = n_threads,
                              min_threads = 8L)
     
-    mclapply(X = unique(job_assign$fasta_chunk$chunk),
-             mc.cores = job_assign$n_parallel_jobs,
-             FUN = .blastn_search,
-             input_list = input_list,
-             blast_dir = blast_dir,
-             blast_path = blast_path,
-             fasta_chunk = job_assign$fasta_chunk,
-             threads_per_job = job_assign$threads_per_job,
-             index_offset = check_blast_out$blast_out_index_offset)
+    if (nrow(job_assign$fasta_chunk) > 0L) {
+        mclapply(X = unique(job_assign$fasta_chunk$chunk),
+                 mc.cores = job_assign$n_parallel_jobs,
+                 FUN = .blastn_search,
+                 input_list = input_list,
+                 blast_dir = blast_dir,
+                 blast_path = blast_path,
+                 fasta_chunk = job_assign$fasta_chunk,
+                 threads_per_job = job_assign$threads_per_job,
+                 index_offset = check_blast_out$blast_out_index_offset)
+    }
     
     rbh_dir <- file.path(working_dir, "rbh")
     dir.create(rbh_dir, showWarnings = FALSE, recursive = TRUE)
@@ -66,6 +82,158 @@ rbh <- function(working_dir, blast_path, reference = NULL, n_threads, overwrite)
                           rbh_dir = rbh_dir,
                           genome_width = 4L)
     invisible(TRUE)
+}
+
+.normalize_target_pair <- function(target_pair, sample_names) {
+    if (is.null(target_pair)) {
+        message("Process all possible pairs.", call. = FALSE)
+        target_pair <- combn(x = sample_names, m = 2)
+    }
+    if (is.data.frame(target_pair)) {
+        target_pair <- as.matrix(target_pair)
+    }
+    if (!is.matrix(target_pair)) {
+        stop("`target_pair` must be a matrix (N x 2) or a data.frame convertible to a matrix.", call. = FALSE)
+    }
+    if (ncol(target_pair) != 2L) {
+        stop("`target_pair` must have exactly 2 columns.", call. = FALSE)
+    }
+    storage.mode(target_pair) <- "character"
+    target_pair <- trimws(target_pair)
+    if (anyNA(target_pair) || any(!nzchar(target_pair))) {
+        stop("`target_pair` must not contain NA or empty strings.", call. = FALSE)
+    }
+    keep <- target_pair[, 1] != target_pair[, 2]
+    target_pair <- target_pair[keep, , drop = FALSE]
+    if (!nrow(target_pair)) {
+        stop("`target_pair` contains no valid pairs after removing self-pairs.", call. = FALSE)
+    }
+    target_pair
+}
+
+.validate_target_pair_samples <- function(target_pair, sample_names) {
+    samples <- unique(c(target_pair[, 1], target_pair[, 2]))
+    missing <- setdiff(samples, sample_names)
+    if (length(missing)) {
+        stop(
+            "The following samples in `target_pair` were not found in `working_dir/input/*_<sample>/`:\n",
+            paste(missing, collapse = ", "),
+            call. = FALSE
+        )
+    }
+    invisible(TRUE)
+}
+
+.cost_db <- function(sum_db_bytes) {
+    as.numeric(sum_db_bytes)
+}
+
+.cost_blast <- function(sum_query_bytes, sum_db_bytes) {
+    as.numeric(sum_query_bytes) * as.numeric(sum_db_bytes)
+}
+
+.connected_components_undirected <- function(vertices, edges) {
+    vertices <- sort(unique(as.character(vertices)))
+    if (!length(vertices)) {
+        return(data.frame(vertex = character(), comp_id = integer(), stringsAsFactors = FALSE))
+    }
+    parent <- seq_along(vertices)
+    names(parent) <- vertices
+    
+    find_root <- function(v) {
+        i <- match(v, vertices)
+        while (parent[[i]] != i) {
+            parent[[i]] <- parent[[parent[[i]]]]
+            i <- parent[[i]]
+        }
+        i
+    }
+    
+    union <- function(v1, v2) {
+        r1 <- find_root(v1)
+        r2 <- find_root(v2)
+        if (r1 != r2) {
+            parent[[r2]] <<- r1
+        }
+    }
+    
+    if (nrow(edges)) {
+        for (i in seq_len(nrow(edges))) {
+            union(as.character(edges$u[i]), as.character(edges$v[i]))
+        }
+    }
+    
+    roots <- vapply(vertices, function(v) vertices[[find_root(v)]], character(1L))
+    comp_levels <- unique(roots)
+    comp_id <- match(roots, comp_levels)
+    data.frame(vertex = vertices, comp_id = as.integer(comp_id), stringsAsFactors = FALSE)
+}
+
+.plan_blast_scheme_from_target_pair <- function(target_pair, cds_sizes) {
+    a <- as.character(target_pair[, 1])
+    b <- as.character(target_pair[, 2])
+    lo <- pmin(a, b)
+    hi <- pmax(a, b)
+    edges <- unique(data.frame(u = lo, v = hi, stringsAsFactors = FALSE))
+    
+    comps <- .connected_components_undirected(vertices = unique(c(edges$u, edges$v)), edges = edges)
+    comp_ids <- unique(comps$comp_id)
+    
+    db_sets <- list()
+    blast_jobs <- list()
+    comp_plan <- list()
+    
+    for (cid in comp_ids) {
+        V <- comps$vertex[comps$comp_id == cid]
+        V <- sort(unique(as.character(V)))
+        if (length(V) < 2L) next
+        
+        edges_c <- edges[edges$u %in% V & edges$v %in% V, , drop = FALSE]
+        if (!nrow(edges_c)) next
+        
+        sumV <- sum(as.numeric(cds_sizes[V]), na.rm = TRUE)
+        costA <- .cost_db(sumV) + .cost_blast(sumV, sumV)
+        best <- list(type = "all_in_one", cost = costA, hub = NA_character_)
+        
+        for (hub in V) {
+            rest <- setdiff(V, hub)
+            if (!length(rest)) next
+            
+            edges_rest <- edges_c[edges_c$u %in% rest & edges_c$v %in% rest, , drop = FALSE]
+            if (nrow(edges_rest) > 0L) next
+            
+            sumHub <- as.numeric(cds_sizes[[hub]])
+            sumRest <- sum(as.numeric(cds_sizes[rest]), na.rm = TRUE)
+            costB <- .cost_db(sumHub) + .cost_db(sumRest) +
+                .cost_blast(sumHub, sumRest) + .cost_blast(sumRest, sumHub)
+            if (is.finite(costB) && costB < best$cost) {
+                best <- list(type = "hub_rest", cost = costB, hub = hub)
+            }
+        }
+        
+        if (identical(best$type, "all_in_one")) {
+            db_sets[[length(db_sets) + 1L]] <- V
+            db_id <- length(db_sets)
+            blast_jobs[[length(blast_jobs) + 1L]] <- list(query = V, db_set_id = db_id)
+        } else {
+            hub <- best$hub
+            rest <- setdiff(V, hub)
+            db_sets[[length(db_sets) + 1L]] <- hub
+            db_hub_id <- length(db_sets)
+            db_sets[[length(db_sets) + 1L]] <- rest
+            db_rest_id <- length(db_sets)
+            blast_jobs[[length(blast_jobs) + 1L]] <- list(query = hub, db_set_id = db_rest_id)
+            blast_jobs[[length(blast_jobs) + 1L]] <- list(query = rest, db_set_id = db_hub_id)
+        }
+        
+        comp_plan[[as.character(cid)]] <- best
+    }
+    
+    if (!length(db_sets) || !length(blast_jobs)) {
+        stop("No BLAST jobs planned from `target_pair` (check pairs).", call. = FALSE)
+    }
+    
+    list(db_sets = db_sets, blast_jobs = blast_jobs, comp_plan = comp_plan)
 }
 
 .splitRBHbyGenomePair <- function(rbh_fn, rbh_dir, genome_width = 4L){
@@ -127,70 +295,150 @@ NF >= 2 {
     invisible(TRUE)
 }
 
-.makeBlastDB <- function(input_list, blast_dir, blast_path, reference, n_threads, overwrite){
-    check_db <- .checkDBexist(input_list = input_list, 
-                              blast_dir = blast_dir,
-                              overwrite = overwrite)
+.makeBlastDB_from_scheme <- function(scheme,
+                                     input_list,
+                                     blast_dir,
+                                     blast_path,
+                                     overwrite) {
+    stopifnot(is.list(scheme), !is.null(scheme$db_sets))
+    dir.create(blast_dir, showWarnings = FALSE, recursive = TRUE)
     
-    target_list <- .makeMergedFASTA(input_list = input_list, 
-                                    check_db = check_db, 
-                                    blast_dir = blast_dir)
-    
-    .blastDBengine(cds_fn = target_list$cds_fn,
-                   blast_dir = blast_dir,
-                   blast_path = blast_path, 
-                   overwrite = overwrite)
-    write.table(x = target_list$to_be_db,
-                file = sub(".fa", "_blastdb.list", target_list$cds_fn),
-                quote = FALSE, sep = "\t", row.names = FALSE, col.names = FALSE)
-    invisible(TRUE)
-}
-
-.checkDBexist <- function(input_list, blast_dir, overwrite){
-    to_be_db <- input_list$names
-    blast_db_list <- list.files(blast_dir,
-                                "_blastdb.list",
-                                full.names = TRUE,
-                                recursive = TRUE)
-    db_index_offset <- 0
-    if(length(blast_dir) > 0 & !overwrite){
-        genome_in_db <- sapply(blast_db_list, function(x){
-            x_out <- fread(file = x, 
-                           sep = "\t",
-                           header = FALSE,
-                           stringsAsFactors = FALSE)
-            return(as.vector(x_out))
+    # Existing DB definitions
+    existing_list_files <- list.files(blast_dir, pattern = "_blastdb\\.list$", full.names = TRUE, recursive = TRUE)
+    existing_sets <- list()
+    if (length(existing_list_files)) {
+        existing_sets <- lapply(existing_list_files, function(fn) {
+            x <- try(fread(file = fn, sep = "\t", header = FALSE, stringsAsFactors = FALSE), silent = TRUE)
+            if (inherits(x, "try-error")) return(character(0))
+            sort(unique(as.character(unlist(x))))
         })
-        to_be_db <- to_be_db[!to_be_db %in% unlist(genome_in_db)]
-        db_index_offset <- max(as.numeric(sub("_.+",
-                                              "",
-                                              basename(blast_db_list))))
+        names(existing_sets) <- existing_list_files
     }
-    out <- list(to_be_db = to_be_db, db_index_offset = db_index_offset)
-    return(out)
+    
+    # index offset
+    idx_offset <- 0L
+    if (length(existing_list_files)) {
+        idx <- suppressWarnings(as.integer(sub("_.+", "", basename(existing_list_files))))
+        idx_offset <- max(idx, na.rm = TRUE)
+        if (!is.finite(idx_offset)) idx_offset <- 0L
+    }
+    
+    db_map <- vector("list", length(scheme$db_sets))
+    for (i in seq_along(scheme$db_sets)) {
+        set_i <- sort(unique(as.character(scheme$db_sets[[i]])))
+        if (!length(set_i)) stop("Empty db_set in scheme at index ", i, call. = FALSE)
+        
+        # Try reuse exact-match DB if overwrite==FALSE
+        reused <- FALSE
+        if (!overwrite && length(existing_sets)) {
+            hit <- vapply(existing_sets, function(s) identical(s, set_i), logical(1L))
+            if (any(hit)) {
+                list_fn <- names(existing_sets)[which(hit)[1L]]
+                cds_fn <- sub("_blastdb\\.list$", ".fa", list_fn)
+                # Old naming used all_cds.fa; also allow that
+                if (!file.exists(cds_fn)) {
+                    alt <- sub("_blastdb\\.list$", "_cds.fa", list_fn)
+                    if (file.exists(alt)) cds_fn <- alt
+                }
+                db_prefix <- sub("\\.fa$", ".blastdb", cds_fn)
+                db_map[[i]] <- list(
+                    set = set_i,
+                    cds_fn = cds_fn,
+                    db_prefix = db_prefix,
+                    blastdb_list_fn = list_fn,
+                    reused = TRUE
+                )
+                reused <- TRUE
+            }
+        }
+        
+        if (!reused) {
+            idx_offset <- idx_offset + 1L
+            cds_fn <- file.path(blast_dir, paste0(idx_offset, "_group_cds.fa"))
+            cds_fn_list <- input_list$cds[input_list$names %in% set_i]
+            cds_fn_list <- normalizePath(cds_fn_list, mustWork = TRUE)
+            
+            sys <- Sys.info()[["sysname"]]
+            if (sys %in% c("Linux", "Darwin")) {
+                status <- system2("cat", cds_fn_list, stdout = cds_fn)
+                if (!identical(status, 0L)) {
+                    stop("Merge of CDS FASTA files failed for DB set ", i, " (cat exit ", status, ")", call. = FALSE)
+                }
+            } else {
+                fa <- readDNAStringSet(cds_fn_list)
+                writeXStringSet(fa, cds_fn)
+            }
+            
+            .blastDBengine(cds_fn = cds_fn, blast_dir = blast_dir, blast_path = blast_path, overwrite = overwrite)
+            blastdb_list_fn <- sub("\\.fa$", "_blastdb.list", cds_fn)
+            write.table(
+                x = set_i,
+                file = blastdb_list_fn,
+                quote = FALSE,
+                sep = "\t",
+                row.names = FALSE,
+                col.names = FALSE
+            )
+            
+            db_map[[i]] <- list(
+                set = set_i,
+                cds_fn = cds_fn,
+                db_prefix = sub("\\.fa$", ".blastdb", cds_fn),
+                blastdb_list_fn = blastdb_list_fn,
+                reused = FALSE
+            )
+        }
+    }
+    
+    names(db_map) <- paste0("db_set_", seq_along(db_map))
+    db_map
 }
 
-.makeMergedFASTA <- function(input_list, check_db, blast_dir){
-    to_be_db <- input_list$names[input_list$names %in% check_db$to_be_db]
-    cds_fn_list <- input_list$cds[input_list$names %in% check_db$to_be_db]
-    cds_fn_list <- normalizePath(cds_fn_list, mustWork = TRUE)
-    
-    index <- check_db$db_index_offset + 1
-    cds_fn <- file.path(blast_dir, paste(index, "all_cds.fa", sep = "_"))
-    
-    sys <- Sys.info()[["sysname"]]
-    if (sys %in% c("Linux", "Darwin")) {
-        # Fast merge via cat: no R parsing, minimal memory, very fast
-        status <- system2("cat", cds_fn_list, stdout = cds_fn)
-        if (status != 0L) {
-            stop("Merge of CDS FASTA files failed (cat exited with status ", status, ")")
-        }
-    } else {
-        # Fallback: read and write in R (e.g. Windows)
-        fa <- readDNAStringSet(cds_fn_list)
-        writeXStringSet(fa, cds_fn)
+.checkBLASTout_target <- function(blast_jobs, db_map, blast_dir, overwrite) {
+    if (!length(blast_jobs)) {
+        return(list(to_be_blast = data.frame(genome = character(), db = character(), stringsAsFactors = FALSE),
+                    blast_out_index_offset = 0L))
     }
-    return(list(cds_fn = cds_fn, to_be_db = to_be_db))
+    
+    # Build desired genome->db tasks
+    rows <- lapply(blast_jobs, function(job) {
+        q <- as.character(job$query)
+        sid <- as.integer(job$db_set_id)
+        if (!length(q)) return(NULL)
+        if (is.na(sid) || sid < 1L || sid > length(db_map)) {
+            stop("Invalid db_set_id in blast_jobs: ", sid, call. = FALSE)
+        }
+        db_prefix <- db_map[[sid]]$db_prefix
+        data.frame(genome = q, db = rep(db_prefix, length(q)), stringsAsFactors = FALSE)
+    })
+    to_be_blast <- do.call(rbind, rows)
+    if (is.null(to_be_blast) || !nrow(to_be_blast)) {
+        return(list(to_be_blast = data.frame(genome = character(), db = character(), stringsAsFactors = FALSE),
+                    blast_out_index_offset = 0L))
+    }
+    to_be_blast <- unique(to_be_blast)
+    
+    blast_out_list <- list.files(blast_dir, "blast\\.out\\.list$", full.names = TRUE, recursive = TRUE)
+    blast_out_index_offset <- 0L
+    if (length(blast_out_list) > 0L && !overwrite) {
+        done <- lapply(blast_out_list, function(x) {
+            x_out <- fread(file = x, sep = "\t", header = FALSE, stringsAsFactors = FALSE)
+            as.data.frame(x_out)
+        })
+        done <- do.call(rbind, done)
+        if (ncol(done) >= 2L) {
+            done <- done[, 1:2, drop = FALSE]
+            names(done) <- c("genome", "db")
+            to_be_id <- paste(to_be_blast$genome, to_be_blast$db, sep = "_")
+            done_id <- paste(done$genome, done$db, sep = "_")
+            to_be_blast <- to_be_blast[!to_be_id %in% done_id, , drop = FALSE]
+        }
+        idx <- suppressWarnings(as.integer(sub("_.+", "", basename(blast_out_list))))
+        blast_out_index_offset <- max(idx, na.rm = TRUE)
+        if (!is.finite(blast_out_index_offset)) blast_out_index_offset <- 0L
+    }
+    
+    list(to_be_blast = to_be_blast, blast_out_index_offset = as.integer(blast_out_index_offset))
 }
 
 .blastDBengine <- function(cds_fn, blast_dir, blast_path, overwrite){
@@ -216,47 +464,13 @@ NF >= 2 {
         }, silent = TRUE)
         
         if(inherits(out, "try-error")){
-            write(out, file.path(blast_dir, paste0(index, "_makeblastdb.error")))
+            write(out, paste0(out_prefix, ".makeblastdb.error"))
             
         } else {
             write("", job_finish_marker)
         }
     }
     invisible(TRUE)
-}
-
-.checkBLASTout <- function(input_list, blast_dir, overwrite){
-    blast_db_list <- list.files(blast_dir,
-                                ".blastdb.ndb",
-                                full.names = TRUE,
-                                recursive = TRUE)
-    blast_db_list <- sub("\\.ndb", "", blast_db_list)
-    to_be_blast <- expand.grid(genome = input_list$names, db = blast_db_list)
-    
-    blast_out_list <- list.files(blast_dir,
-                                 "blast.out.list",
-                                 full.names = TRUE,
-                                 recursive = TRUE)
-    blast_out_index_offset <- 0
-    if(length(blast_out_list) > 0 & !overwrite){
-        blast_out_list <- lapply(blast_out_list, function(x){
-            x_out <- fread(file = x, 
-                           sep = "\t",
-                           header = FALSE,
-                           stringsAsFactors = FALSE)
-            return(x_out)
-        })
-        blast_out_list <- do.call(rbind, blast_out_list)
-        to_be_blast_id <- apply(to_be_blast, 1, paste, collapse = "_")
-        blast_out_list_id <- apply(blast_out_list, 1, paste, collapse = "_")
-        to_be_blast <- to_be_blast[!to_be_blast_id %in% blast_out_list_id, ]
-        blast_out_index_offset <- max(as.numeric(sub("_.+",
-                                                     "",
-                                                     basename(blast_out_list))))
-    }
-    out <- list(to_be_blast = to_be_blast, 
-                blast_out_index_offset = blast_out_index_offset)
-    return(out)
 }
 
 ## Sum of on-disk byte sizes for all BLAST DB files sharing db_prefix (e.g. *.ndb, *.nin, ...).
@@ -462,16 +676,17 @@ NF >= 2 {
     fasta_chunk_i <- fasta_chunk$genome[fasta_chunk$chunk == index]
     index <- index_offset + index
     query_cds_list <- input_list$cds[input_list$names %in% fasta_chunk_i]
-    query_cds <- sapply(query_cds_list, function(x){
-        x_out <- fread(file = x, 
-                       sep = "\t",
-                       header = FALSE,
-                       stringsAsFactors = FALSE)
-        return(x_out)
-    })
-    query_cds <- unlist(query_cds)
     query_fn <- file.path(blast_dir, paste0(index, "_query_cds.fa"))
-    write(x = query_cds, file = query_fn, sep = "\t")
+    
+    query_cds_list <- normalizePath(query_cds_list, mustWork = TRUE)
+    sys <- Sys.info()[["sysname"]]
+    if (!sys %in% c("Linux", "Darwin")) {
+        stop("Linux/macOS only (requires cat).")
+    }
+    status <- system2("cat", query_cds_list, stdout = query_fn)
+    if (!identical(status, 0L)) {
+        stop("Merge of query CDS FASTA files failed (cat exited with status ", status, ")")
+    }
     
     n_genome <- length(input_list$names)
     blast_out <- .run_blastn(query_fn = query_fn, 

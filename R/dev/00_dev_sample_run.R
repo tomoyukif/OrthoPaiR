@@ -150,18 +150,17 @@ init_end <- Sys.time()
 source("R/dev/02_functions_rbh.R")
 Rcpp::sourceCpp("inst/src/rbh.cpp")
 rbh_start <- Sys.time()
-rbh(object = opr,
+rbh(working_dir = working_dir,
     blast_path = blast_path,
     n_threads = n_threads,
     overwrite = overwrite)
 rbh_end <- Sys.time()
 
 source("R/dev/03_functions_orthology.R")
+Rcpp::sourceCpp("inst/src/synteny.cpp")
 opr_start <- Sys.time()
 out <- orthopair(working_dir = working_dir,
-                 n_threads = n_threads,
-                 load_all_gff = TRUE,
-                 verbose = TRUE)
+                 n_threads = n_threads)
 opr_end <- Sys.time()
 init_runtime <- init_end - init_start
 rbh_runtime <- rbh_end - rbh_start
@@ -272,7 +271,7 @@ rename <- TRUE
 load_all_gff <- TRUE
 
 library(data.table)
-source("R/dev/01_functions_init_opr.R")
+source("R/dev/01_functions_reformatFiles.R")
 init_start <- Sys.time()
 reformatFiles(object = in_list, 
               working_dir = working_dir, 
@@ -283,9 +282,15 @@ init_end <- Sys.time()
 source("R/dev/02_functions_rbh.R")
 Rcpp::sourceCpp("inst/src/rbh.cpp")
 rbh_start <- Sys.time()
+# target_pair <- if (length(in_gff_id) >= 2L) {
+#     t(combn(as.character(in_gff_id), 2L))
+# } else {
+#     stop("Need at least 2 genomes to run rbh().")
+# }
+target_pair <- cbind("NB", in_gff_id)
 rbh(working_dir = working_dir,
     blast_path = blast_path,
-    reference = "NB",
+    target_pair = target_pair,
     n_threads = n_threads,
     overwrite = overwrite)
 rbh_end <- Sys.time()

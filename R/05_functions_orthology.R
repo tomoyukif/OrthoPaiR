@@ -529,8 +529,7 @@ syntenicOrtho <- function(object){
 .findSyntenicOrtho <- function(rbh, 
                                anchor,
                                g2g_graph,
-                               t2a_graph,
-                               rbh_threshold){
+                               t2a_graph){
     colnames(rbh)[1:2] <- c("query_tx", "subject_tx")
     root_hit <- match(rbh$query_tx, g2g_graph$query_df$tx_index)
     leaf_hit <- match(rbh$subject_tx, g2g_graph$subject_df$tx_index)

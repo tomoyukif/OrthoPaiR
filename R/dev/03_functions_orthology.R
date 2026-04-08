@@ -24,19 +24,13 @@
 #' @importFrom parallel mclapply
 #' @export
 orthopair <- function(working_dir,
-                      rbh_dir = NULL,
-                      gff_df_paths = NULL,
                       genome_width = 4L,
                       pident_threshold_quantile = 0.25,
                       mutual_ci_min = NULL,
                       n_threads = 1L,
-                      load_all_gff = FALSE,
+                      load_all_gff = TRUE,
                       verbose = TRUE) {
-    
-    # Set default rbh_dir if not provided
-    if (is.null(rbh_dir)) {
-        rbh_dir <- file.path(working_dir, "rbh")
-    }
+    rbh_dir <- file.path(working_dir, "rbh")
     
     # Find all RBH files (exclude same-genome comparisons, e.g. 0001_0001.rbh)
     rbh_files <- list.files(rbh_dir, pattern = "\\.rbh$", full.names = TRUE)
@@ -54,30 +48,28 @@ orthopair <- function(working_dir,
     if (verbose) message("[ortho] Found ", length(rbh_files), " RBH pair files")
     
     # Get GFF data paths - search in working_dir/input/<index>_<genome_name>/ folders
-    if (is.null(gff_df_paths)) {
-        input_dir <- file.path(working_dir, "input")
-        if (!dir.exists(input_dir)) {
-            stop("Input directory not found: ", input_dir)
-        }
-        
-        # Find all folders matching pattern <index>_<genome_name>
-        input_folders <- list.dirs(input_dir, full.names = TRUE, recursive = FALSE)
-        # Filter folders that match pattern (have underscore and contain gff_df.rds)
-        gff_df_paths <- character(0)
-        for (folder in input_folders) {
-            gff_fn <- file.path(folder, "gff_df.rds")
-            if (file.exists(gff_fn)) {
-                gff_df_paths <- c(gff_df_paths, gff_fn)
-            }
-        }
-        
-        if (length(gff_df_paths) == 0L) {
-            stop("No gff_df.rds files found in ", input_dir, 
-                 " subdirectories (expected pattern: <index>_<genome_name>/gff_df.rds)")
-        }
-        
-        if (verbose) message("[ortho] Found ", length(gff_df_paths), " GFF files")
+    input_dir <- file.path(working_dir, "input")
+    if (!dir.exists(input_dir)) {
+        stop("Input directory not found: ", input_dir)
     }
+    
+    # Find all folders matching pattern <index>_<genome_name>
+    input_folders <- list.dirs(input_dir, full.names = TRUE, recursive = FALSE)
+    # Filter folders that match pattern (have underscore and contain gff_df.rds)
+    gff_df_paths <- character(0)
+    for (folder in input_folders) {
+        gff_fn <- file.path(folder, "gff_df.rds")
+        if (file.exists(gff_fn)) {
+            gff_df_paths <- c(gff_df_paths, gff_fn)
+        }
+    }
+    
+    if (length(gff_df_paths) == 0L) {
+        stop("No gff_df.rds files found in ", input_dir, 
+             " subdirectories (expected pattern: <index>_<genome_name>/gff_df.rds)")
+    }
+    
+    if (verbose) message("[ortho] Found ", length(gff_df_paths), " GFF files")
     
     # Create output directory for ortholog pairs
     orthopair_dir <- file.path(working_dir, "orthopair")
@@ -130,7 +122,7 @@ orthopair <- function(working_dir,
                 cn <- sub("^subject_", "genome2_", cn)
                 names(result) <- cn
             }
-
+            
             # Write result to TSV file
             out_tsv <- file.path(orthopair_dir, paste0(pair_id, ".tsv"))
             if (!is.null(result) && nrow(result) > 0L) {
@@ -373,17 +365,15 @@ orthopair <- function(working_dir,
     query_tx_match <- match(rbh$query_tx, query_gff_full$tx_index)
     subject_tx_match <- match(rbh$subject_tx, subject_gff_full$tx_index)
     
-    rbh_df <- data.frame(
-        qseqid = as.integer(rbh$query_tx),
-        sseqid = as.integer(rbh$subject_tx),
-        qgeneid = as.integer(query_gff_full$gene_index[query_tx_match]),
-        sgeneid = as.integer(subject_gff_full$gene_index[subject_tx_match]),
-        ci_q2s = rbh$q2s_ci,
-        ci_s2q = rbh$s2q_ci,
-        pident = rbh$pident,
-        mutual_ci = rbh$mutual_ci,
-        stringsAsFactors = FALSE
-    )
+    rbh_df <- data.frame(qseqid = as.integer(rbh$query_tx),
+                         sseqid = as.integer(rbh$subject_tx),
+                         qgeneid = as.integer(query_gff_full$gene_index[query_tx_match]),
+                         sgeneid = as.integer(subject_gff_full$gene_index[subject_tx_match]),
+                         ci_q2s = rbh$q2s_ci,
+                         ci_s2q = rbh$s2q_ci,
+                         pident = rbh$pident,
+                         mutual_ci = rbh$mutual_ci,
+                         stringsAsFactors = FALSE)
     
     rbh_df <- rbh_df[!is.na(rbh_df$qgeneid) & !is.na(rbh_df$sgeneid), ]
     rbh_df$pair_id <- paste(rbh_df$qgeneid, rbh_df$sgeneid, sep = "_")
@@ -392,6 +382,21 @@ orthopair <- function(working_dir,
     if (nrow(rbh_df) == 0L) {
         if (verbose) message("[ortho] Pair ", pair_id, ": No RBH after GFF merge")
         return(NULL)
+    }
+    
+    
+    .findShortestPath <- function(rbh, g2g_graph){
+        q_chr <- g2g_graph$query_df$seqnames[match(rbh$qgeneid, g2g_graph$query_df$gene_index)]
+        s_chr <- g2g_graph$subject_df$seqnames[match(rbh$sgeneid, g2g_graph$subject_df$gene_index)]
+        out <- rbh_shortest_path(qgeneid = rbh$qgeneid, 
+                                 sgeneid = rbh$sgeneid,
+                                 q_chr = q_chr, 
+                                 s_chr = s_chr
+        )
+        rbh$rbh_shortest_path <- out$shortest_path
+        dist_threshold <- quantile(out$best_dist, c(0.25, 0.75))
+        dist_threshold <- dist_threshold[2] + diff(dist_threshold) * 1.5
+        rbh <- subset(rbh, subset = out$best_dist <= dist_threshold)
     }
     
     # Apply R/05_functions_orthology.R algorithm from linkGene2Genome onwards
@@ -408,8 +413,7 @@ orthopair <- function(working_dir,
     orthopair <- .findSyntenicOrtho(rbh = rbh_df,
                                     anchor = anchor,
                                     g2g_graph = g2g_graph,
-                                    t2a_graph = t2a_graph,
-                                    rbh_threshold = NULL)
+                                    t2a_graph = t2a_graph)
     
     if (is.null(orthopair) || nrow(orthopair) == 0L) {
         if (verbose) message("[ortho] Pair ", pair_id, ": No syntenic orthologs")
