@@ -49,11 +49,10 @@ rbh(object = opr,
 rbh_end <- Sys.time()
 
 source("R/dev/03_functions_orthology.R")
+Rcpp::sourceCpp("inst/src/synteny.cpp")
 opr_start <- Sys.time()
 out <- orthopair(working_dir = working_dir,
-                 n_threads = n_threads,
-                 load_all_gff = TRUE,
-                 verbose = TRUE)
+                 n_threads = n_threads)
 opr_end <- Sys.time()
 init_runtime <- init_end - init_start
 rbh_runtime <- rbh_end - rbh_start
@@ -61,11 +60,15 @@ opr_runtime <- opr_end - opr_start
 overall_runtime <- c(init_runtime + rbh_runtime + opr_runtime)
 overall_runtime
 
-og <- subset(out[[1]], select = c("original_query_gene", "original_subject_gene"))
+source("/home/ftom/workspace/orthology/script/00_functions/02_eval_pairing.R")
+nb_wk21_busco_list <- read.csv(file.path(root_dir, "input/benchmark/benchmark_list/nb_wk21_buscolist.csv"))
+nb_wk21_del_list <- read.csv(file.path(root_dir, "input/benchmark/benchmark_list/nb_wk21_falsepositive.csv"))
+og <- read.table(file.path(working_dir, "orthopair", "1001_1002.tsv"), sep = "\t", header = TRUE)
+og <- subset(og, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = nb_wk21_busco_list,
-                del = del,
+                del = nb_wk21_del_list,
                 query = "query",
                 subject = "subject")
 # ortholog_pairs    recall precision specificity  accuracy  f1_score   tp
@@ -102,6 +105,8 @@ new_rbh$sgene <- og[[1]]$gene_id[hit]
 new_rbh$pair_id <- paste(new_rbh$qgene, new_rbh$sgene, sep = "_")
 View(new_rbh[new_rbh$pair_id %in% missing_pair_id, ])
 
+orthopair$tx_pair_id <- paste(orthopair$genome1_tx, orthopair$genome2_tx, sep="_")
+View(orthopair[orthopair$tx_pair_id %in% missing_pair_index, ])
 
 ################################################################################
 root_dir <- "/home/ftom/workspace/orthology"
@@ -176,7 +181,7 @@ osat_hvul_del_list <- read.csv(file.path(root_dir, "input/benchmark_plant/benchm
 osat_atha_del_list <- read.csv(file.path(root_dir, "input/benchmark_plant/benchmark_list/osat_atha_falsepositive.csv"))
 osat_mpol_del_list <- read.csv(file.path(root_dir, "input/benchmark_plant/benchmark_list/osat_mpol_falsepositive.csv"))
 og <- read.table(file = file.path(working_dir, "orthopair", "1001_1002.tsv"), sep = "\t", header = TRUE)
-og <- subset(og, select = c("original_query_gene", "original_subject_gene"))
+og <- subset(og, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = osat_hvul_busco_list,
@@ -184,7 +189,7 @@ eval_busco_list(og = og,
                 query = "query",
                 subject = "subject")
 og <- read.table(file = file.path(working_dir, "orthopair", "1001_1003.tsv"), sep = "\t", header = TRUE)
-og <- subset(og, select = c("original_query_gene", "original_subject_gene"))
+og <- subset(og, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = osat_atha_busco_list,
@@ -192,7 +197,7 @@ eval_busco_list(og = og,
                 query = "query",
                 subject = "subject")
 og <- read.table(file = file.path(working_dir, "orthopair", "1001_1004.tsv"), sep = "\t", header = TRUE)
-og <- subset(og, select = c("original_query_gene", "original_subject_gene"))
+og <- subset(og, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = osat_mpol_busco_list,
@@ -200,9 +205,7 @@ eval_busco_list(og = og,
                 query = "query",
                 subject = "subject")
 
-source("R/dev/04_functions_reorganise.R")
-working_dir <- "/home/ftom/workspace/orthology/dev_plant"
-n_threads <- 32
+source("R/dev/04_functions_reorgOrthopairs.R")
 verbose <- overwrite <- rename <- TRUE
 reorgOrthopairs(working_dir = working_dir, 
                 rename = rename, 

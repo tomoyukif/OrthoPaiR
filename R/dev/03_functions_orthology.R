@@ -114,14 +114,7 @@ orthopair <- function(working_dir,
                 load_all_gff = load_all_gff,
                 verbose = FALSE
             )
-            
-            # Standardise output column names: query_* -> genome1_*, subject_* -> genome2_*
-            if (!is.null(result)) {
-                cn <- names(result)
-                cn <- sub("^query_", "genome1_", cn)
-                cn <- sub("^subject_", "genome2_", cn)
-                names(result) <- cn
-            }
+            # Column names are already genome1_* / genome2_* (see .process_one_pair_dataframe)
             
             # Write result to TSV file
             out_tsv <- file.path(orthopair_dir, paste0(pair_id, ".tsv"))
@@ -251,7 +244,7 @@ orthopair <- function(working_dir,
                  header = FALSE,
                  sep = "\t",
                  select = c(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L),
-                 col.names = c("query_tx", "subject_tx", "pident", "q2s_qcovs", 
+                 col.names = c("genome1_tx", "genome2_tx", "pident", "q2s_qcovs", 
                                "s2q_qcovs", "q2s_ci", "s2q_ci", "mutual_ci"),
                  na.strings = "",
                  colClasses = c("integer", "integer", "numeric", "integer", 
@@ -262,15 +255,15 @@ orthopair <- function(working_dir,
     if (verbose) message("[ortho] Pair ", pair_id, ": Read ", nrow(rbh), " RBH records")
     
     # Filter valid pairs
-    rbh <- rbh[!is.na(query_tx) & !is.na(subject_tx) & query_tx != subject_tx]
+    rbh <- rbh[!is.na(genome1_tx) & !is.na(genome2_tx) & genome1_tx != genome2_tx]
     if (nrow(rbh) == 0L) {
         if (verbose) message("[ortho] Pair ", pair_id, ": No valid RBH pairs")
         return(NULL)
     }
     
     # Extract genome IDs
-    query_genome_pre <- as.integer(substr(as.character(rbh$query_tx), 1L, genome_width))
-    subject_genome_pre <- as.integer(substr(as.character(rbh$subject_tx), 1L, genome_width))
+    genome1_genome_pre <- as.integer(substr(as.character(rbh$genome1_tx), 1L, genome_width))
+    genome2_genome_pre <- as.integer(substr(as.character(rbh$genome2_tx), 1L, genome_width))
     
     # Filter by mutual_ci if specified
     if (!is.null(mutual_ci_min)) {
@@ -280,7 +273,7 @@ orthopair <- function(working_dir,
     
     # Load GFF data for this pair
     if (!load_all_gff || is.null(gff_data_all)) {
-        pair_genomes <- unique(c(query_genome_pre, subject_genome_pre))
+        pair_genomes <- unique(c(genome1_genome_pre, genome2_genome_pre))
         gff_data_pair <- lapply(as.character(pair_genomes), function(gid) {
             path <- gff_lookup[[gid]]
             if (is.null(path) || !file.exists(path)) return(NULL)
@@ -289,7 +282,7 @@ orthopair <- function(working_dir,
         gff_data_pair <- gff_data_pair[!sapply(gff_data_pair, is.null)]
     } else {
         # Extract GFF data for this pair from pre-loaded data (each element can be list(gff_df, cds_df))
-        pair_genomes <- unique(c(query_genome_pre, subject_genome_pre))
+        pair_genomes <- unique(c(genome1_genome_pre, genome2_genome_pre))
         gff_data_pair <- lapply(as.character(pair_genomes), function(gid) {
             path <- gff_lookup[[gid]]
             if (is.null(path)) return(NULL)
@@ -315,14 +308,14 @@ orthopair <- function(working_dir,
         return(NULL)
     }
     
-    # Split GFF data into query and subject based on genome IDs
-    query_genome_id <- as.character(min(pair_genomes))
-    subject_genome_id <- as.character(max(pair_genomes))
+    # Split GFF data into genome1 (min genome id) and genome2 (max genome id)
+    genome1_genome_id <- as.character(min(pair_genomes))
+    genome2_genome_id <- as.character(max(pair_genomes))
     
-    query_gff_full <- NULL
-    subject_gff_full <- NULL
-    query_cds_full <- NULL
-    subject_cds_full <- NULL
+    genome1_gff_full <- NULL
+    genome2_gff_full <- NULL
+    genome1_cds_full <- NULL
+    genome2_cds_full <- NULL
     
     for (el in gff_data_pair) {
         gff_df <- if (is.list(el) && length(el) >= 1L) el[[1L]] else el
@@ -331,52 +324,51 @@ orthopair <- function(working_dir,
         tx_idx <- as.character(gff_df$tx_index[1L])
         if (nchar(tx_idx) >= genome_width) {
             gid <- as.character(as.integer(substr(tx_idx, 1L, genome_width)))
-            if (gid == query_genome_id) {
-                query_gff_full <- gff_df
-                query_cds_full <- cds_df_el
-            } else if (gid == subject_genome_id) {
-                subject_gff_full <- gff_df
-                subject_cds_full <- cds_df_el
+            if (gid == genome1_genome_id) {
+                genome1_gff_full <- gff_df
+                genome1_cds_full <- cds_df_el
+            } else if (gid == genome2_genome_id) {
+                genome2_gff_full <- gff_df
+                genome2_cds_full <- cds_df_el
             }
         }
     }
     
-    if (is.null(query_gff_full) || is.null(subject_gff_full)) {
-        warning("Could not identify query/subject GFF for pair: ", pair_id)
+    if (is.null(genome1_gff_full) || is.null(genome2_gff_full)) {
+        warning("Could not identify genome1/genome2 GFF for pair: ", pair_id)
         return(NULL)
     }
     
     # Order GFF data (as expected by linkGene2Genome)
-    query_gff_full <- query_gff_full[order(query_gff_full$seqnames, query_gff_full$start), ]
-    subject_gff_full <- subject_gff_full[order(subject_gff_full$seqnames, subject_gff_full$start), ]
-    query_gff_full$gene_index <- as.integer(query_gff_full$gene_index)
-    query_gff_full$tx_index <- as.integer(query_gff_full$tx_index)
-    subject_gff_full$gene_index <- as.integer(subject_gff_full$gene_index)
-    subject_gff_full$tx_index <- as.integer(subject_gff_full$tx_index)
+    genome1_gff_full <- genome1_gff_full[order(genome1_gff_full$seqnames, genome1_gff_full$start), ]
+    genome2_gff_full <- genome2_gff_full[order(genome2_gff_full$seqnames, genome2_gff_full$start), ]
+    genome1_gff_full$gene_index <- as.integer(genome1_gff_full$gene_index)
+    genome1_gff_full$tx_index <- as.integer(genome1_gff_full$tx_index)
+    genome2_gff_full$gene_index <- as.integer(genome2_gff_full$gene_index)
+    genome2_gff_full$tx_index <- as.integer(genome2_gff_full$tx_index)
     
-    # Create g2g_graph: gff_df -> query_df/subject_df, cds_df -> query_gff/subject_gff
-    g2g_graph <- .linkGene2Genome_dataframe(query_gff_df = query_gff_full,
-                                            subject_gff_df = subject_gff_full,
-                                            query_cds_df = query_cds_full,
-                                            subject_cds_df = subject_cds_full)
+    # g2g_graph list names genome1_df/genome2_df match R/05_functions_orthology.R (.linkGene2Genome).
+    g2g_graph <- .linkGene2Genome_dataframe(genome1_gff_df = genome1_gff_full,
+                                            genome2_gff_df = genome2_gff_full,
+                                            genome1_cds_df = genome1_cds_full,
+                                            genome2_cds_df = genome2_cds_full)
     
     # Convert RBH to format expected by R/05_functions_orthology.R
-    # Merge with GFF to get gene_index
-    query_tx_match <- match(rbh$query_tx, query_gff_full$tx_index)
-    subject_tx_match <- match(rbh$subject_tx, subject_gff_full$tx_index)
+    genome1_tx_match <- match(rbh$genome1_tx, genome1_gff_full$tx_index)
+    genome2_tx_match <- match(rbh$genome2_tx, genome2_gff_full$tx_index)
     
-    rbh_df <- data.frame(qseqid = as.integer(rbh$query_tx),
-                         sseqid = as.integer(rbh$subject_tx),
-                         qgeneid = as.integer(query_gff_full$gene_index[query_tx_match]),
-                         sgeneid = as.integer(subject_gff_full$gene_index[subject_tx_match]),
+    rbh_df <- data.frame(genome1_tx = as.integer(rbh$genome1_tx),
+                         genome2_tx = as.integer(rbh$genome2_tx),
+                         genome1_gene = as.integer(genome1_gff_full$gene_index[genome1_tx_match]),
+                         genome2_gene = as.integer(genome2_gff_full$gene_index[genome2_tx_match]),
                          ci_q2s = rbh$q2s_ci,
                          ci_s2q = rbh$s2q_ci,
                          pident = rbh$pident,
                          mutual_ci = rbh$mutual_ci,
                          stringsAsFactors = FALSE)
     
-    rbh_df <- rbh_df[!is.na(rbh_df$qgeneid) & !is.na(rbh_df$sgeneid), ]
-    rbh_df$pair_id <- paste(rbh_df$qgeneid, rbh_df$sgeneid, sep = "_")
+    rbh_df <- rbh_df[!is.na(rbh_df$genome1_gene) & !is.na(rbh_df$genome2_gene), ]
+    rbh_df$pair_id <- paste(rbh_df$genome1_gene, rbh_df$genome2_gene, sep = "_")
     rbh_df <- subset(rbh_df, subset = !duplicated(rbh_df$pair_id))
     
     if (nrow(rbh_df) == 0L) {
@@ -384,48 +376,37 @@ orthopair <- function(working_dir,
         return(NULL)
     }
     
-    
-    .findShortestPath <- function(rbh, g2g_graph){
-        q_chr <- g2g_graph$query_df$seqnames[match(rbh$qgeneid, g2g_graph$query_df$gene_index)]
-        s_chr <- g2g_graph$subject_df$seqnames[match(rbh$sgeneid, g2g_graph$subject_df$gene_index)]
-        out <- rbh_shortest_path(qgeneid = rbh$qgeneid, 
-                                 sgeneid = rbh$sgeneid,
-                                 q_chr = q_chr, 
-                                 s_chr = s_chr
-        )
-        rbh$rbh_shortest_path <- out$shortest_path
-        dist_threshold <- quantile(out$best_dist, c(0.25, 0.75))
-        dist_threshold <- dist_threshold[2] + diff(dist_threshold) * 1.5
-        rbh <- subset(rbh, subset = out$best_dist <= dist_threshold)
-    }
-    
-    # Apply R/05_functions_orthology.R algorithm from linkGene2Genome onwards
-    # Note: .findAnchors checks length(rbh) == 1, so ensure rbh_df is a data.frame
+    # 
+    # # Apply R/05_functions_orthology.R algorithm from linkGene2Genome onwards
+    # # Note: .findAnchors checks length(rbh) == 1, so ensure rbh_df is a data.frame
     anchor <- .findAnchors(rbh = rbh_df, g2g_graph = g2g_graph)
+    # 
+    # if (all(is.na(anchor)) || (is.data.frame(anchor) && nrow(anchor) == 0L)) {
+    #     if (verbose) message("[ortho] Pair ", pair_id, ": No anchors found")
+    #     return(NULL)
+    # }
+    # 
+    # t2a_graph <- .link2Anchor(g2g_graph = g2g_graph, anchor = anchor)
+    # # .findSyntenicOrtho expects rbh as data.frame and will rename first 2 columns
+    # orthopair <- .findSyntenicOrtho(rbh = rbh_df,
+    #                                 anchor = anchor,
+    #                                 g2g_graph = g2g_graph,
+    #                                 t2a_graph = t2a_graph)
+    # 
+    # if (is.null(orthopair) || nrow(orthopair) == 0L) {
+    #     if (verbose) message("[ortho] Pair ", pair_id, ": No syntenic orthologs")
+    #     return(NULL)
+    # }
+    # 
+    # orthopair <- .findSyntenyBlocks(orthopair = orthopair)
     
-    if (all(is.na(anchor)) || (is.data.frame(anchor) && nrow(anchor) == 0L)) {
-        if (verbose) message("[ortho] Pair ", pair_id, ": No anchors found")
-        return(NULL)
-    }
-    
-    t2a_graph <- .link2Anchor(g2g_graph = g2g_graph, anchor = anchor)
-    # .findSyntenicOrtho expects rbh as data.frame and will rename first 2 columns
-    orthopair <- .findSyntenicOrtho(rbh = rbh_df,
-                                    anchor = anchor,
-                                    g2g_graph = g2g_graph,
-                                    t2a_graph = t2a_graph)
-    
-    if (is.null(orthopair) || nrow(orthopair) == 0L) {
-        if (verbose) message("[ortho] Pair ", pair_id, ": No syntenic orthologs")
-        return(NULL)
-    }
-    
-    orthopair <- .findSyntenyBlocks(orthopair = orthopair)
+    orthopair <- .findShortestPath(rbh = rbh_df, anchor = anchor, g2g_graph = g2g_graph)
     orthopair <- .pickBestPair(orthopair = orthopair)
     orthopair <- .classifyOrthoPair(orthopair = orthopair)
     orthopair <- .filterOrthopair(orthopair = orthopair, g2g_graph = g2g_graph)
     orthopair <- .classifyOrthoPair(orthopair = orthopair)
-    orthopair <- .reformatOrthoPair(orthopair = orthopair, g2g_graph = g2g_graph)
+    # .reformatOrthoPair() was modified!!!
+    orthopair <- .reformatOrthoPair(orthopair = orthopair, g2g_graph = g2g_graph) 
     
     # Convert to data.table for consistency
     setDT(orthopair)
@@ -437,65 +418,106 @@ orthopair <- function(working_dir,
     return(orthopair)
 }
 
-#' Create g2g_graph structure from GFF data (equivalent to linkGene2Genome)
-#' When query_cds_df/subject_cds_df are provided, first two args are gff_df (transcript-level),
-#' and CDS tables are used as query_gff/subject_gff. Otherwise treats first two args as full GFF with type column.
-.linkGene2Genome_dataframe <- function(query_gff_df, subject_gff_df, query_cds_df = NULL, subject_cds_df = NULL) {
-    # Transcript-level: gff_df has transcript_id, tx_index, gene_id, etc. (no type column)
-    has_type <- "type" %in% names(query_gff_df)
+.findShortestPath <- function(rbh, anchor, g2g_graph){
+    rbh$genome1_chr <- g2g_graph$genome1_df$seqnames[match(rbh$genome1_gene, g2g_graph$genome1_df$gene_index)]
+    rbh$genome2_chr <- g2g_graph$genome2_df$seqnames[match(rbh$genome2_gene, g2g_graph$genome2_df$gene_index)]
+    anchor$genome1_chr <- g2g_graph$genome1_df$seqnames[match(anchor$genome1_gene, g2g_graph$genome1_df$gene_index)]
+    anchor$genome2_chr <- g2g_graph$genome2_df$seqnames[match(anchor$genome2_gene, g2g_graph$genome2_df$gene_index)]
+    anchor$index <- seq_along(anchor$genome1_tx)
+    rbh$is_anchor_pair <- rbh$pair_id %in% anchor$pair_id
+    anchor_out <- rbh_shortest_path(qgeneid = anchor$genome1_gene, 
+                                    sgeneid = anchor$genome2_gene,
+                                    q_chr = anchor$genome1_chr, 
+                                    s_chr = anchor$genome2_chr,
+                                    anchor_qgeneid = anchor$genome1_gene,
+                                    anchor_sgeneid = anchor$genome2_gene,
+                                    anchor_q_chr = anchor$genome1_chr,
+                                    anchor_s_chr = anchor$genome2_chr,
+                                    omit_zero = TRUE)
+    q <- quantile(anchor_out$best_dist, na.rm = T, c(0.25, 0.75))
+    dist_threshold <- q[2] + diff(q) * 1.5
+    out <- rbh_shortest_path(qgeneid = rbh$genome1_gene, 
+                             sgeneid = rbh$genome2_gene,
+                             q_chr = rbh$genome1_chr, 
+                             s_chr = rbh$genome2_chr,
+                             anchor_qgeneid = anchor$genome1_gene,
+                             anchor_sgeneid = anchor$genome2_gene,
+                             anchor_q_chr = anchor$genome1_chr,
+                             anchor_s_chr = anchor$genome2_chr,
+                             omit_zero = FALSE)
+    rbh$best_dist <- out$best_dist
+    rbh$rbh_shortest_path <- as.integer(factor(x = out$shortest_path,
+                                               levels = unique(out$shortest_path)))
+    rbh$index <- seq_along(rbh$genome1_tx)
+    out <- subset(rbh, subset = best_dist < dist_threshold | is_anchor_pair, 
+                  select = -c(best_dist, rbh_shortest_path, index))
+    names(out)[1:4] <- c("genome1_tx", "genome2_tx", "genome1_gene", "genome2_gene")
+    return(out)
+}
+
+#' Create g2g_graph structure from GFF data (equivalent to linkGene2Genome).
+#' genome1_* is the query side, genome2_* the subject side; list element names
+#' List names match R/05_functions_orthology.R `.linkGene2Genome()`.
+.linkGene2Genome_dataframe <- function(genome1_gff_df, genome2_gff_df,
+                                        genome1_cds_df = NULL, genome2_cds_df = NULL) {
+    has_type <- "type" %in% names(genome1_gff_df)
     
-    if (!is.null(query_cds_df) && !is.null(subject_cds_df) && is.data.frame(query_cds_df) && is.data.frame(subject_cds_df)) {
-        query_df <- as.data.frame(query_gff_df)
-        subject_df <- as.data.frame(subject_gff_df)
-        if ("transcript_id" %in% names(query_df) && !("ID" %in% names(query_df))) query_df$ID <- query_df$transcript_id
-        if ("transcript_id" %in% names(subject_df) && !("ID" %in% names(subject_df))) subject_df$ID <- subject_df$transcript_id
-        query_gff_cds <- as.data.frame(query_cds_df)
-        subject_gff_cds <- as.data.frame(subject_cds_df)
-        if (nrow(query_gff_cds) > 0L && "gene_id" %in% names(query_gff_cds)) {
-            hit <- match(query_gff_cds$gene_id, query_gff_df$gene_id)
-            if ("tx_index" %in% names(query_gff_df)) query_gff_cds$tx_index <- query_gff_df$tx_index[hit]
-            if ("gene_index" %in% names(query_gff_df)) query_gff_cds$gene_index <- query_gff_df$gene_index[hit]
-            if ("strand" %in% names(query_gff_df)) query_gff_cds$strand <- query_gff_df$strand[hit]
-            if (!("Parent" %in% names(query_gff_cds)) && "transcript_id" %in% names(query_gff_df)) query_gff_cds$Parent <- query_gff_df$transcript_id[hit]
+    if (!is.null(genome1_cds_df) && !is.null(genome2_cds_df) &&
+        is.data.frame(genome1_cds_df) && is.data.frame(genome2_cds_df)) {
+        genome1_df <- as.data.frame(genome1_gff_df)
+        genome2_df <- as.data.frame(genome2_gff_df)
+        if ("transcript_id" %in% names(genome1_df) && !("ID" %in% names(genome1_df))) genome1_df$ID <- genome1_df$transcript_id
+        if ("transcript_id" %in% names(genome2_df) && !("ID" %in% names(genome2_df))) genome2_df$ID <- genome2_df$transcript_id
+        genome1_gff_cds <- as.data.frame(genome1_cds_df)
+        genome2_gff_cds <- as.data.frame(genome2_cds_df)
+        if (nrow(genome1_gff_cds) > 0L && "gene_id" %in% names(genome1_gff_cds)) {
+            hit <- match(genome1_gff_cds$gene_id, genome1_gff_df$gene_id)
+            if ("tx_index" %in% names(genome1_gff_df)) genome1_gff_cds$tx_index <- genome1_gff_df$tx_index[hit]
+            if ("gene_index" %in% names(genome1_gff_df)) genome1_gff_cds$gene_index <- genome1_gff_df$gene_index[hit]
+            if ("strand" %in% names(genome1_gff_df)) genome1_gff_cds$strand <- genome1_gff_df$strand[hit]
+            if (!("Parent" %in% names(genome1_gff_cds)) && "transcript_id" %in% names(genome1_gff_df)) {
+                genome1_gff_cds$Parent <- genome1_gff_df$transcript_id[hit]
+            }
         }
-        if (nrow(subject_gff_cds) > 0L && "gene_id" %in% names(subject_gff_cds)) {
-            hit <- match(subject_gff_cds$gene_id, subject_gff_df$gene_id)
-            if ("tx_index" %in% names(subject_gff_df)) subject_gff_cds$tx_index <- subject_gff_df$tx_index[hit]
-            if ("gene_index" %in% names(subject_gff_df)) subject_gff_cds$gene_index <- subject_gff_df$gene_index[hit]
-            if ("strand" %in% names(subject_gff_df)) subject_gff_cds$strand <- subject_gff_df$strand[hit]
-            if (!("Parent" %in% names(subject_gff_cds)) && "transcript_id" %in% names(subject_gff_df)) subject_gff_cds$Parent <- subject_gff_df$transcript_id[hit]
+        if (nrow(genome2_gff_cds) > 0L && "gene_id" %in% names(genome2_gff_cds)) {
+            hit <- match(genome2_gff_cds$gene_id, genome2_gff_df$gene_id)
+            if ("tx_index" %in% names(genome2_gff_df)) genome2_gff_cds$tx_index <- genome2_gff_df$tx_index[hit]
+            if ("gene_index" %in% names(genome2_gff_df)) genome2_gff_cds$gene_index <- genome2_gff_df$gene_index[hit]
+            if ("strand" %in% names(genome2_gff_df)) genome2_gff_cds$strand <- genome2_gff_df$strand[hit]
+            if (!("Parent" %in% names(genome2_gff_cds)) && "transcript_id" %in% names(genome2_gff_df)) {
+                genome2_gff_cds$Parent <- genome2_gff_df$transcript_id[hit]
+            }
         }
     } else if (has_type) {
-        q_tx_i <- query_gff_df$type %in% c("transcript", "mRNA")
-        query_df <- as.data.frame(query_gff_df[q_tx_i, ])
-        q_cds_i <- query_gff_df$type %in% "CDS"
-        query_gff_cds <- query_gff_df[q_cds_i, ]
-        if (nrow(query_gff_cds) > 0L && "Parent" %in% names(query_gff_cds)) {
-            hit <- match(unlist(query_gff_cds$Parent), query_gff_df$ID)
-            query_gff_cds$tx_index <- query_gff_df$tx_index[hit]
+        q_tx_i <- genome1_gff_df$type %in% c("transcript", "mRNA")
+        genome1_df <- as.data.frame(genome1_gff_df[q_tx_i, ])
+        q_cds_i <- genome1_gff_df$type %in% "CDS"
+        genome1_gff_cds <- genome1_gff_df[q_cds_i, ]
+        if (nrow(genome1_gff_cds) > 0L && "Parent" %in% names(genome1_gff_cds)) {
+            hit <- match(unlist(genome1_gff_cds$Parent), genome1_gff_df$ID)
+            genome1_gff_cds$tx_index <- genome1_gff_df$tx_index[hit]
         }
-        query_gff_cds <- as.data.frame(query_gff_cds)
-        s_tx_i <- subject_gff_df$type %in% c("transcript", "mRNA")
-        subject_df <- as.data.frame(subject_gff_df[s_tx_i, ])
-        s_cds_i <- subject_gff_df$type %in% "CDS"
-        subject_gff_cds <- subject_gff_df[s_cds_i, ]
-        if (nrow(subject_gff_cds) > 0L && "Parent" %in% names(subject_gff_cds)) {
-            hit <- match(unlist(subject_gff_cds$Parent), subject_gff_df$ID)
-            subject_gff_cds$tx_index <- subject_gff_df$tx_index[hit]
+        genome1_gff_cds <- as.data.frame(genome1_gff_cds)
+        s_tx_i <- genome2_gff_df$type %in% c("transcript", "mRNA")
+        genome2_df <- as.data.frame(genome2_gff_df[s_tx_i, ])
+        s_cds_i <- genome2_gff_df$type %in% "CDS"
+        genome2_gff_cds <- genome2_gff_df[s_cds_i, ]
+        if (nrow(genome2_gff_cds) > 0L && "Parent" %in% names(genome2_gff_cds)) {
+            hit <- match(unlist(genome2_gff_cds$Parent), genome2_gff_df$ID)
+            genome2_gff_cds$tx_index <- genome2_gff_df$tx_index[hit]
         }
-        subject_gff_cds <- as.data.frame(subject_gff_cds)
+        genome2_gff_cds <- as.data.frame(genome2_gff_cds)
     } else {
-        query_df <- as.data.frame(query_gff_df)
-        subject_df <- as.data.frame(subject_gff_df)
-        if ("transcript_id" %in% names(query_df) && !("ID" %in% names(query_df))) query_df$ID <- query_df$transcript_id
-        if ("transcript_id" %in% names(subject_df) && !("ID" %in% names(subject_df))) subject_df$ID <- subject_df$transcript_id
-        query_gff_cds <- data.frame()
-        subject_gff_cds <- data.frame()
+        genome1_df <- as.data.frame(genome1_gff_df)
+        genome2_df <- as.data.frame(genome2_gff_df)
+        if ("transcript_id" %in% names(genome1_df) && !("ID" %in% names(genome1_df))) genome1_df$ID <- genome1_df$transcript_id
+        if ("transcript_id" %in% names(genome2_df) && !("ID" %in% names(genome2_df))) genome2_df$ID <- genome2_df$transcript_id
+        genome1_gff_cds <- data.frame()
+        genome2_gff_cds <- data.frame()
     }
     
-    out <- list(query_df = query_df,
-                subject_df = subject_df,
-                query_gff = query_gff_cds,
-                subject_gff = subject_gff_cds)
-    return(out)
+    list(genome1_df = genome1_df,
+         genome2_df = genome2_df,
+         genome1_gff = genome1_gff_cds,
+         genome2_gff = genome2_gff_cds)
 }

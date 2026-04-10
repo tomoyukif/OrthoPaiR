@@ -29,7 +29,7 @@
 #'   }
 #' @param rename Logical; whether to apply split-gene renaming when reorganising
 #'   orthopair information. Split genes are identified by \code{\"split\"}
-#'   appearing in \code{query_gene} / \code{subject_gene}.
+#'   appearing in \code{genome1_gene} / \code{genome2_gene}.
 #' @param n_threads Integer; number of cores to use for internal parallel steps
 #'   (Linux/macOS only; on Windows this falls back to serial execution).
 #' @param overwrite Logical; reserved for future use (currently ignored).
@@ -118,45 +118,45 @@ reorgOrthopairs <- function(working_dir,
         dt <- data.table::fread(fn, sep = "\t", header = TRUE)
         
         # Gene sets per genome (after any renaming)
-        dt_query <- unique(dt[, .(original = original_query_gene, gene = query_gene)])
-        dt_query[, genome := genomes_i[1]]
+        dt_genome1 <- unique(dt[, .(original = original_genome1_gene, gene = genome1_gene)])
+        dt_genome1[, genome := genomes_i[1]]
 
-        dt_subject <- unique(dt[, .(original = original_subject_gene, gene = subject_gene)])
-        dt_subject[, genome := genomes_i[2]]
+        dt_genome2 <- unique(dt[, .(original = original_genome2_gene, gene = genome2_gene)])
+        dt_genome2[, genome := genomes_i[2]]
 
-        genes_dt <- rbind(dt_query, dt_subject)
+        genes_dt <- rbind(dt_genome1, dt_genome2)
         
         split_dt <- NULL
         if (rename) {
             # Identify split genes by pattern "split" in gene IDs
-            query_split <- dt[grepl("split", query_gene),
-                              .(original = original_query_gene, 
-                                gene = query_gene, 
-                                tx = query_tx)]
-            subject_split <- dt[grepl("split", subject_gene),
-                                .(original = original_subject_gene, 
-                                  gene = subject_gene, 
-                                  tx = subject_tx)]
+            genome1_split <- dt[grepl("split", genome1_gene),
+                              .(original = original_genome1_gene, 
+                                gene = genome1_gene, 
+                                tx = genome1_tx)]
+            genome2_split <- dt[grepl("split", genome2_gene),
+                                .(original = original_genome2_gene, 
+                                  gene = genome2_gene, 
+                                  tx = genome2_tx)]
             
-            if (nrow(query_split) > 0L) {
+            if (nrow(genome1_split) > 0L) {
                 split_dt <- rbind(
                     split_dt,
                     data.table::data.table(
                         genome = genomes_i[1],
-                        original = query_split$original, 
-                        gene = query_split$gene,
-                        tx = query_split$tx
+                        original = genome1_split$original, 
+                        gene = genome1_split$gene,
+                        tx = genome1_split$tx
                     )
                 )
             }
-            if (nrow(subject_split) > 0L) {
+            if (nrow(genome2_split) > 0L) {
                 split_dt <- rbind(
                     split_dt,
                     data.table::data.table(
                         genome = genomes_i[2],
-                        original = subject_split$original, 
-                        gene = subject_split$gene,
-                        tx = subject_split$tx
+                        original = genome2_split$original, 
+                        gene = genome2_split$gene,
+                        tx = genome2_split$tx
                     )
                 )
             }
@@ -225,8 +225,8 @@ reorgOrthopairs <- function(working_dir,
         opr <- data.table::fread(fn, sep = "\t", header = TRUE)
         
         # Ensure required columns exist
-        required_cols <- c("query_gene", "subject_gene",
-                           "query_tx", "subject_tx",
+        required_cols <- c("genome1_gene", "genome2_gene",
+                           "genome1_tx", "genome2_tx",
                            "mutual_ci", "class")
         missing_cols <- setdiff(required_cols, names(opr))
         if (length(missing_cols)) {
@@ -236,19 +236,19 @@ reorgOrthopairs <- function(working_dir,
         
         if (!rename) {
             # Use original_* genes if available (pre-split), otherwise current genes
-            if (all(c("original_query_gene", "original_subject_gene") %in% names(opr))) {
-                target_col <- c("original_query_gene", "original_subject_gene",
-                                "query_tx", "subject_tx",
+            if (all(c("original_genome1_gene", "original_genome2_gene") %in% names(opr))) {
+                target_col <- c("original_genome1_gene", "original_genome2_gene",
+                                "genome1_tx", "genome2_tx",
                                 "mutual_ci", "class")
                 opr <- as.data.frame(opr)[, target_col]
-                names(opr) <- c("query_gene", "subject_gene",
-                                "query_tx", "subject_tx",
+                names(opr) <- c("genome1_gene", "genome2_gene",
+                                "genome1_tx", "genome2_tx",
                                 "mutual_ci", "class")
             } else {
                 opr <- as.data.frame(opr)[, required_cols]
             }
         } else {
-            # Use current query_gene/subject_gene and apply split renaming
+            # Use current genome1_gene/genome2_gene and apply split renaming
             opr <- as.data.frame(opr)[, required_cols]
             meta <- list(genomes = genomes_i)
             opr <- .renameOrthoPair(opr = opr,
@@ -256,8 +256,8 @@ reorgOrthopairs <- function(working_dir,
                                     reorg_list = reorg_list)
         }
         
-        opr$query_id <- paste(genomes_i[1], opr$query_gene, sep = ":")
-        opr$subject_id <- paste(genomes_i[2], opr$subject_gene, sep = ":")
+        opr$genome1_id <- paste(genomes_i[1], opr$genome1_gene, sep = ":")
+        opr$genome2_id <- paste(genomes_i[2], opr$genome2_gene, sep = ":")
         opr
     }
     
@@ -281,18 +281,18 @@ reorgOrthopairs <- function(working_dir,
     
     genome_1 <- split_list$genome == meta$genomes[1]
     if (any(genome_1)) {
-        hit <- match(opr$query_tx, split_list$tx[genome_1])
+        hit <- match(opr$genome1_tx, split_list$tx[genome_1])
         not_na <- !is.na(hit)
         if (any(not_na)) {
-            opr$query_gene[not_na] <- split_list$gene[genome_1][hit[not_na]]
+            opr$genome1_gene[not_na] <- split_list$gene[genome_1][hit[not_na]]
         }
     }
     genome_2 <- split_list$genome == meta$genomes[2]
     if (any(genome_2)) {
-        hit <- match(opr$subject_tx, split_list$tx[genome_2])
+        hit <- match(opr$genome2_tx, split_list$tx[genome_2])
         not_na <- !is.na(hit)
         if (any(not_na)) {
-            opr$subject_gene[not_na] <- split_list$gene[genome_2][hit[not_na]]
+            opr$genome2_gene[not_na] <- split_list$gene[genome_2][hit[not_na]]
         }
     }
     opr
@@ -308,8 +308,8 @@ reorgOrthopairs <- function(working_dir,
     vertex_list$id <- paste(vertex_list$genome, vertex_list$gene, sep = ":")
     
     ## Build edge data.frame
-    edges_df <- data.frame(from = edges_list$query_id,
-                           to = edges_list$subject_id,
+    edges_df <- data.frame(from = edges_list$genome1_id,
+                           to = edges_list$genome2_id,
                            mutual_ci = edges_list$mutual_ci,
                            class = edges_list$class,
                            stringsAsFactors = FALSE)

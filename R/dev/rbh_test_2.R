@@ -39,7 +39,7 @@ out <- orthopair(working_dir = working_dir,
 # ortholog_pairs    recall precision specificity  accuracy  f1_score  tp  fn    tn   fp
 # 1          22118 0.8827508 0.2663265   0.9288917 0.9275808 0.4091978 783 104 28177 2157
 
-og <- subset(out[[1]], select = c("original_query_gene", "original_subject_gene"))
+og <- subset(out[[1]], select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = osat_hvul_busco_list,
@@ -147,25 +147,25 @@ query_gff_full$gene_index <- as.integer(query_gff_full$gene_index)
 query_gff_full$tx_index <- as.integer(query_gff_full$tx_index)
 subject_gff_full$gene_index <- as.integer(subject_gff_full$gene_index)
 subject_gff_full$tx_index <- as.integer(subject_gff_full$tx_index)
-g2g_graph <- .linkGene2Genome_dataframe(query_gff_df = query_gff_full,
-                                        subject_gff_df = subject_gff_full,
-                                        query_cds_df = query_cds_full,
-                                        subject_cds_df = subject_cds_full)
+g2g_graph <- .linkGene2Genome_dataframe(genome1_gff_df = query_gff_full,
+                                        genome2_gff_df = subject_gff_full,
+                                        genome1_cds_df = query_cds_full,
+                                        genome2_cds_df = subject_cds_full)
 query_tx_match <- match(rbh$query_tx, query_gff_full$tx_index)
 subject_tx_match <- match(rbh$subject_tx, subject_gff_full$tx_index)
 rbh_df <- data.frame(
-    qseqid = as.integer(rbh$query_tx),
-    sseqid = as.integer(rbh$subject_tx),
-    qgeneid = as.integer(query_gff_full$gene_index[query_tx_match]),
-    sgeneid = as.integer(subject_gff_full$gene_index[subject_tx_match]),
+    genome1_tx = as.integer(rbh$query_tx),
+    genome2_tx = as.integer(rbh$subject_tx),
+    genome1_gene = as.integer(query_gff_full$gene_index[query_tx_match]),
+    genome2_gene = as.integer(subject_gff_full$gene_index[subject_tx_match]),
     ci_q2s = rbh$q2s_ci,
     ci_s2q = rbh$s2q_ci,
     pident = rbh$pident,
     mutual_ci = rbh$mutual_ci,
     stringsAsFactors = FALSE
 )
-rbh_df <- rbh_df[!is.na(rbh_df$qgeneid) & !is.na(rbh_df$sgeneid), ]
-rbh_df$pair_id <- paste(rbh_df$qgeneid, rbh_df$sgeneid, sep = "_")
+rbh_df <- rbh_df[!is.na(rbh_df$genome1_gene) & !is.na(rbh_df$genome2_gene), ]
+rbh_df$pair_id <- paste(rbh_df$genome1_gene, rbh_df$genome2_gene, sep = "_")
 rbh_df <- subset(rbh_df, subset = !duplicated(rbh_df$pair_id))
 anchor <- .findAnchors(rbh = rbh_df, g2g_graph = g2g_graph)
 t2a_graph <- .link2Anchor(g2g_graph = g2g_graph, anchor = anchor)
@@ -181,7 +181,7 @@ orthopair <- .filterOrthopair(orthopair = orthopair, g2g_graph = g2g_graph)
 orthopair <- .classifyOrthoPair(orthopair = orthopair)
 orthopair <- .reformatOrthoPair(orthopair = orthopair, g2g_graph = g2g_graph)
 
-og <- subset(orthopair, select = c("original_query_gene", "original_subject_gene"))
+og <- subset(orthopair, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = osat_hvul_busco_list,

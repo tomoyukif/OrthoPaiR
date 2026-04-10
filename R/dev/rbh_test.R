@@ -68,29 +68,29 @@ old_rbh$qseqid <- old_rbh$qseqid + 1001000000
 old_rbh$sseqid <- old_rbh$sseqid + 1002000000
 fwrite(old_rbh, "~/workspace/orthology/dev_osat_ogla/rbh/1001_1002.rbh", sep = "\t", row.names = F, col.names = F)
 
-gff_list <- list(query_gff = readRDS("~/workspace/orthology/output/benchmark/orthopair/input/Osat/gff_df.rds"),
-                 subject_gff = readRDS("~/workspace/orthology/output/benchmark/orthopair/input/Ogla/gff_df.rds"))
-q_tx_i <- gff_list$query_gff$type %in% c("transcript", "mRNA")
-query_df <- gff_list$query_gff[q_tx_i, ]
-q_cds_i <- gff_list$query_gff$type %in% "CDS"
-query_gff <- gff_list$query_gff[q_cds_i, ]
-hit <- match(unlist((query_gff$Parent)), gff_list$query_gff$ID)
-query_gff$tx_index <- gff_list$query_gff$tx_index[hit]
-s_tx_i <- gff_list$subject_gff$type %in% c("transcript", "mRNA")
-subject_df <- gff_list$subject_gff[s_tx_i, ]
-s_cds_i <- gff_list$subject_gff$type %in% "CDS"
-subject_gff <- gff_list$subject_gff[s_cds_i, ]
-hit <- match(unlist((subject_gff$Parent)), gff_list$subject_gff$ID)
-subject_gff$tx_index <- gff_list$subject_gff$tx_index[hit]
-g2g_graph <- list(query_df = query_df,
-                  subject_df = subject_df,
-                  query_gff = query_gff,
-                  subject_gff = subject_gff)
+gff_list <- list(genome1_gff = readRDS("~/workspace/orthology/output/benchmark/orthopair/input/Osat/gff_df.rds"),
+                 genome2_gff = readRDS("~/workspace/orthology/output/benchmark/orthopair/input/Ogla/gff_df.rds"))
+q_tx_i <- gff_list$genome1_gff$type %in% c("transcript", "mRNA")
+genome1_df <- gff_list$genome1_gff[q_tx_i, ]
+q_cds_i <- gff_list$genome1_gff$type %in% "CDS"
+genome1_gff <- gff_list$genome1_gff[q_cds_i, ]
+hit <- match(unlist((genome1_gff$Parent)), gff_list$genome1_gff$ID)
+genome1_gff$tx_index <- gff_list$genome1_gff$tx_index[hit]
+s_tx_i <- gff_list$genome2_gff$type %in% c("transcript", "mRNA")
+genome2_df <- gff_list$genome2_gff[s_tx_i, ]
+s_cds_i <- gff_list$genome2_gff$type %in% "CDS"
+genome2_gff <- gff_list$genome2_gff[s_cds_i, ]
+hit <- match(unlist((genome2_gff$Parent)), gff_list$genome2_gff$ID)
+genome2_gff$tx_index <- gff_list$genome2_gff$tx_index[hit]
+g2g_graph <- list(genome1_df = genome1_df,
+                  genome2_df = genome2_df,
+                  genome1_gff = genome1_gff,
+                  genome2_gff = genome2_gff)
 
-hit <- match(rbh$qseqid, gff_list$query_gff$tx_index)
-rbh$qgeneid <- gff_list$query_gff$gene_index[hit]
-hit <- match(rbh$sseqid, gff_list$subject_gff$tx_index)
-rbh$sgeneid <- gff_list$subject_gff$gene_index[hit]
+hit <- match(rbh$qseqid, gff_list$genome1_gff$tx_index)
+rbh$qgeneid <- gff_list$genome1_gff$gene_index[hit]
+hit <- match(rbh$sseqid, gff_list$genome2_gff$tx_index)
+rbh$sgeneid <- gff_list$genome2_gff$gene_index[hit]
 rbh$pair_id <- paste(rbh$qgeneid, rbh$sgeneid, sep = "0")
 rbh <- subset(rbh, subset = !duplicated(pair_id))
 rbh <- lapply(rbh, as.numeric)
@@ -110,14 +110,14 @@ orthopair <- .reformatOrthoPair(orthopair = orthopair,
                                 g2g_graph = g2g_graph)
 collapsed_id <- .collapseOverlappingGene(orthopair = orthopair, 
                                          g2g_graph = g2g_graph)
-orthopair$query_collapse <- collapsed_id$query_collapse
-orthopair$subject_collapse <- collapsed_id$subject_collapse
+orthopair$genome1_collapse <- collapsed_id$genome1_collapse
+orthopair$genome2_collapse <- collapsed_id$genome2_collapse
 
 
-hit <- match(old_rbh$qseqid, gff_list$query_gff$tx_index)
-old_rbh$qgeneid <- gff_list$query_gff$gene_index[hit]
-hit <- match(old_rbh$sseqid, gff_list$subject_gff$tx_index)
-old_rbh$sgeneid <- gff_list$subject_gff$gene_index[hit]
+hit <- match(old_rbh$qseqid, gff_list$genome1_gff$tx_index)
+old_rbh$qgeneid <- gff_list$genome1_gff$gene_index[hit]
+hit <- match(old_rbh$sseqid, gff_list$genome2_gff$tx_index)
+old_rbh$sgeneid <- gff_list$genome2_gff$gene_index[hit]
 old_rbh$pair_id <- paste(old_rbh$qgeneid, old_rbh$sgeneid, sep = "0")
 old_rbh <- subset(old_rbh, subset = !duplicated(pair_id))
 old_rbh <- lapply(old_rbh, as.numeric)
@@ -138,11 +138,11 @@ old_orthopair <- .reformatOrthoPair(orthopair = old_orthopair,
                                     g2g_graph = g2g_graph)
 collapsed_id <- .collapseOverlappingGene(orthopair = old_orthopair, 
                                          g2g_graph = g2g_graph)
-old_orthopair$query_collapse <- collapsed_id$query_collapse
-old_orthopair$subject_collapse <- collapsed_id$subject_collapse
+old_orthopair$genome1_collapse <- collapsed_id$genome1_collapse
+old_orthopair$genome2_collapse <- collapsed_id$genome2_collapse
 
 
-og <- subset(out[[1]], select = c("original_query_gene", "original_subject_gene"))
+og <- subset(out[[1]], select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
                 busco_list = nb_wk21_busco_list,
@@ -150,7 +150,7 @@ eval_busco_list(og = og,
                 query = "query",
                 subject = "subject")
 
-old_og <- subset(old_orthopair, select = c("original_query_gene", "original_subject_gene"))
+old_og <- subset(old_orthopair, select = c("original_genome1_gene", "original_genome2_gene"))
 names(old_og)[1:2] <- c("query", "subject")
 eval_busco_list(og = old_og,
                 busco_list = nb_wk21_busco_list,
@@ -170,16 +170,16 @@ old_og_hit <- old_og_hit[!old_og_hit %in% og_hit]
 og_missing <- nb_wk21_busco_list$pair_id[!nb_wk21_busco_list$pair_id %in% og$pair_id]
 
 out <- out[[1]]
-out[out$original_query_gene == "Os01g0231600", ]
-out[out$original_query_gene == "Os11g0579800", ]
-out[out$original_query_gene == "Os09g0347900", ]
-out[out$original_query_gene == "Os07g0168000", ]
-out[out$original_query_gene == "Os04g0577300", ]
-out[out$original_subject_gene == "Ogla-WK21_01G0154200", ]
-out[out$original_subject_gene == "Ogla-WK21_11G0499600", ]
-out[out$original_subject_gene == "Ogla-WK21_09G0246200", ]
-out[out$original_subject_gene == "Ogla-WK21_07G0093600", ]
-out[out$original_subject_gene == "Ogla-WK21_04G0625800", ]
+out[out$original_genome1_gene == "Os01g0231600", ]
+out[out$original_genome1_gene == "Os11g0579800", ]
+out[out$original_genome1_gene == "Os09g0347900", ]
+out[out$original_genome1_gene == "Os07g0168000", ]
+out[out$original_genome1_gene == "Os04g0577300", ]
+out[out$original_genome2_gene == "Ogla-WK21_01G0154200", ]
+out[out$original_genome2_gene == "Ogla-WK21_11G0499600", ]
+out[out$original_genome2_gene == "Ogla-WK21_09G0246200", ]
+out[out$original_genome2_gene == "Ogla-WK21_07G0093600", ]
+out[out$original_genome2_gene == "Ogla-WK21_04G0625800", ]
 rbh <- fread("/home/ftom/workspace/orthology/dev_osat_ogla/rbh/1001_1002.rbh", sep = "\t")
 qg <- readRDS("/home/ftom/workspace/orthology/dev_osat_ogla/input/1_Osat/gff_df.rds")
 hit <- match(rbh$V1, qg[[1]]$tx_index)
@@ -206,15 +206,15 @@ old_rbh[old_rbh$qgeneid == "Os09g0347900" & old_rbh$sgeneid == "Ogla-WK21_09G024
 old_rbh[old_rbh$qgeneid == "Os07g0168000" & old_rbh$sgeneid == "Ogla-WK21_07G0093600", ]
 old_rbh[old_rbh$qgeneid == "Os04g0577300" & old_rbh$sgeneid == "Ogla-WK21_04G0625800", ]
 
-g2g_graph <- list(query_df = qg[[1]],
-                  subject_df = sg[[1]],
-                  query_gff = qg[[1]],
-                  subject_gff = sg[[1]])
+g2g_graph <- list(genome1_df = qg[[1]],
+                  genome2_df = sg[[1]],
+                  genome1_gff = qg[[1]],
+                  genome2_gff = sg[[1]])
 names(rbh) <- names(old_rbh)
-hit <- match(rbh$qseqid, g2g_graph$query_gff$tx_index)
-rbh$qgeneid <- g2g_graph$query_gff$gene_index[hit]
-hit <- match(rbh$sseqid, g2g_graph$subject_gff$tx_index)
-rbh$sgeneid <- g2g_graph$subject_gff$gene_index[hit]
+hit <- match(rbh$qseqid, g2g_graph$genome1_gff$tx_index)
+rbh$qgeneid <- g2g_graph$genome1_gff$gene_index[hit]
+hit <- match(rbh$sseqid, g2g_graph$genome2_gff$tx_index)
+rbh$sgeneid <- g2g_graph$genome2_gff$gene_index[hit]
 rbh$pair_id <- paste(rbh$qgeneid, rbh$sgeneid, sep = "0")
 rbh <- subset(rbh, subset = !duplicated(pair_id))
 rbh <- lapply(rbh, as.numeric)
@@ -226,10 +226,10 @@ orthopair <- .findSyntenicOrtho(rbh = rbh,
                                 g2g_graph = g2g_graph, 
                                 t2a_graph = t2a_graph)
 
-hit <- match(old_rbh$qseqid, g2g_graph$query_gff$tx_index)
-old_rbh$qgeneid <- g2g_graph$query_gff$gene_index[hit]
-hit <- match(old_rbh$sseqid, g2g_graph$subject_gff$tx_index)
-old_rbh$sgeneid <- g2g_graph$subject_gff$gene_index[hit]
+hit <- match(old_rbh$qseqid, g2g_graph$genome1_gff$tx_index)
+old_rbh$qgeneid <- g2g_graph$genome1_gff$gene_index[hit]
+hit <- match(old_rbh$sseqid, g2g_graph$genome2_gff$tx_index)
+old_rbh$sgeneid <- g2g_graph$genome2_gff$gene_index[hit]
 old_rbh$pair_id <- paste(old_rbh$qgeneid, old_rbh$sgeneid, sep = "0")
 old_rbh <- subset(old_rbh, subset = !duplicated(pair_id))
 old_rbh <- lapply(old_rbh, as.numeric)

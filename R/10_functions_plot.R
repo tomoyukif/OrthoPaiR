@@ -11,8 +11,8 @@
 ##' Each element of the resulting `op` should contain at least
 ##' the columns defined in the `target_col` object from `devel_script.R`,
 ##' in particular:
-##'   - `query_chr`, `query_synteny_block`
-##'   - `subject_chr`, `subject_synteny_block`
+##'   - `genome1_chr`, `genome1_synteny_block`
+##'   - `genome2_chr`, `genome2_synteny_block`
 ##'
 ##' The function aggregates genes into synteny blocks on each side,
 ##' arranges blocks along the x–axis, and draws curved ribbons connecting
@@ -168,10 +168,10 @@ plotRiparian <- function(hdf5_fn = NULL,
         index <- eval_order[i]
         pair_id <- ordered_pair_id[i]
         op_i <- as.data.table(op[[index]])
-        needed_cols <- c("query_gene", "subject_gene",
-                         "query_chr", "query_synteny_block",
-                         "subject_chr", "subject_synteny_block",
-                         "query_start","query_end","subject_start","subject_end")
+        needed_cols <- c("genome1_gene", "genome2_gene",
+                         "genome1_chr", "genome1_synteny_block",
+                         "genome2_chr", "genome2_synteny_block",
+                         "genome1_start","genome1_end","genome2_start","genome2_end")
         
         missing_cols <- setdiff(needed_cols, names(op_i))
         if (length(missing_cols) > 0L) {
@@ -182,10 +182,10 @@ plotRiparian <- function(hdf5_fn = NULL,
         op_i <- subset(op_i, select = needed_cols)
         if(target_pair_order[i] == -1){
             op_i_names <- names(op_i)
-            query <- grep("query_", op_i_names)
-            subject <- grep("subject_", op_i_names)
-            names(op_i)[query] <- sub("query_", "subject_", op_i_names[query])
-            names(op_i)[subject] <- sub("subject_", "query_", op_i_names[subject])
+            g1i <- grep("^genome1_", op_i_names)
+            g2i <- grep("^genome2_", op_i_names)
+            names(op_i)[g1i] <- sub("^genome1_", "genome2_", op_i_names[g1i])
+            names(op_i)[g2i] <- sub("^genome2_", "genome1_", op_i_names[g2i])
         }
         
         # Filter by selected chromosomes if specified
@@ -194,41 +194,41 @@ plotRiparian <- function(hdf5_fn = NULL,
         if (!is.null(select_chr)) {
             # Filter query chromosomes
             if (!is.null(select_chr[[g1]])) {
-                keep_query <- vapply(op_i$query_chr, function(chr) .chr_in_selection(chr, g1, select_chr), logical(1))
+                keep_query <- vapply(op_i$genome1_chr, function(chr) .chr_in_selection(chr, g1, select_chr), logical(1))
                 op_i <- op_i[keep_query]
             }
             # Filter subject chromosomes
             if (!is.null(select_chr[[g2]])) {
-                keep_subject <- vapply(op_i$subject_chr, function(chr) .chr_in_selection(chr, g2, select_chr), logical(1))
+                keep_subject <- vapply(op_i$genome2_chr, function(chr) .chr_in_selection(chr, g2, select_chr), logical(1))
                 op_i <- op_i[keep_subject]
             }
         }
         
         # 1) sort（in-placeに近い）
-        setorder(op_i, query_chr, query_start, subject_chr, subject_start)
-        op_i <- op_i[!is.na(query_synteny_block) & !is.na(subject_synteny_block)]
+        setorder(op_i, genome1_chr, genome1_start, genome2_chr, genome2_start)
+        op_i <- op_i[!is.na(genome1_synteny_block) & !is.na(genome2_synteny_block)]
         
         # 4) q_blocks / s_blocks（tapply複数回→1回の集計）
         block_df <- op_i[, .(
-            query_block_chr   = first(query_chr),
-            query_block_start = min(query_start),
-            query_block_end   = max(query_end),
-            query_block_direction = tail(query_start, 1) - head(query_start, 1),
-            subject_block_chr   = first(subject_chr),
-            subject_block_start = min(subject_start),
-            subject_block_end   = max(subject_end),
-            subject_block_direction = tail(subject_start, 1) - head(subject_start, 1)
-        ), by = .(query_block = query_synteny_block, subject_block = subject_synteny_block)]
-        block_df[, query_block_width := query_block_end - query_block_start]
-        block_df[, subject_block_width := subject_block_end - subject_block_start]
-        setorder(block_df, query_block_chr, query_block_start, subject_block_chr, subject_block_start)
+            genome1_block_chr   = first(genome1_chr),
+            genome1_block_start = min(genome1_start),
+            genome1_block_end   = max(genome1_end),
+            genome1_block_direction = tail(genome1_start, 1) - head(genome1_start, 1),
+            genome2_block_chr   = first(genome2_chr),
+            genome2_block_start = min(genome2_start),
+            genome2_block_end   = max(genome2_end),
+            genome2_block_direction = tail(genome2_start, 1) - head(genome2_start, 1)
+        ), by = .(genome1_block = genome1_synteny_block, genome2_block = genome2_synteny_block)]
+        block_df[, genome1_block_width := genome1_block_end - genome1_block_start]
+        block_df[, genome2_block_width := genome2_block_end - genome2_block_start]
+        setorder(block_df, genome1_block_chr, genome1_block_start, genome2_block_chr, genome2_block_start)
         
-        query_reverse <- block_df$query_block_direction < 0
-        block_df$query_block_direction <- rep("+", length(block_df$query_block_direction))
-        block_df$query_block_direction[query_reverse] <- "-"
-        subject_reverse <- block_df$subject_block_direction < 0
-        block_df$subject_block_direction <- rep("+", length(block_df$subject_block_direction))
-        block_df$subject_block_direction[subject_reverse] <- "-"
+        query_reverse <- block_df$genome1_block_direction < 0
+        block_df$genome1_block_direction <- rep("+", length(block_df$genome1_block_direction))
+        block_df$genome1_block_direction[query_reverse] <- "-"
+        subject_reverse <- block_df$genome2_block_direction < 0
+        block_df$genome2_block_direction <- rep("+", length(block_df$genome2_block_direction))
+        block_df$genome2_block_direction[subject_reverse] <- "-"
         new_blocks <- list(block_df)
         names(new_blocks) <- pair_id
         pair_blocks <- c(pair_blocks, new_blocks)
@@ -317,14 +317,14 @@ plotRiparian <- function(hdf5_fn = NULL,
             dt <- as.data.table(pair_blocks[[pnm]])
             
             dt[, `:=`(
-                query_block_chr   = norm_chr(query_block_chr),
-                subject_block_chr = norm_chr(subject_block_chr),
-                query_block_end   = as.numeric(query_block_end),
-                subject_block_end = as.numeric(subject_block_end)
+                genome1_block_chr   = norm_chr(genome1_block_chr),
+                genome2_block_chr = norm_chr(genome2_block_chr),
+                genome1_block_end   = as.numeric(genome1_block_end),
+                genome2_block_end = as.numeric(genome2_block_end)
             )]
             
-            cs1 <- dt[, .(len = max(query_block_end, na.rm=TRUE)), by=.(chr=query_block_chr)]
-            cs2 <- dt[, .(len = max(subject_block_end, na.rm=TRUE)), by=.(chr=subject_block_chr)]
+            cs1 <- dt[, .(len = max(genome1_block_end, na.rm=TRUE)), by=.(chr=genome1_block_chr)]
+            cs2 <- dt[, .(len = max(genome2_block_end, na.rm=TRUE)), by=.(chr=genome2_block_chr)]
             chr_sizes[[g1]] <- rbindlist(list(chr_sizes[[g1]], cs1), use.names=TRUE, fill=TRUE)
             chr_sizes[[g2]] <- rbindlist(list(chr_sizes[[g2]], cs2), use.names=TRUE, fill=TRUE)
         }
@@ -489,34 +489,34 @@ plotRiparian <- function(hdf5_fn = NULL,
         g1 <- parts[1]; g2 <- parts[2]
         dt <- as.data.table(copy(pair_blocks[[pnm]]))
         
-        needed <- c("query_block_chr","query_block_start","query_block_end","query_block_direction",
-                    "subject_block_chr","subject_block_start","subject_block_end","subject_block_direction")
+        needed <- c("genome1_block_chr","genome1_block_start","genome1_block_end","genome1_block_direction",
+                    "genome2_block_chr","genome2_block_start","genome2_block_end","genome2_block_direction")
         miss <- setdiff(needed, names(dt))
         if (length(miss) > 0) stop(pnm, " missing columns: ", paste(miss, collapse=", "))
         
         dt[, `:=`(
-            query_block_chr     = norm_chr(query_block_chr),
-            subject_block_chr   = norm_chr(subject_block_chr),
-            query_block_start   = as.numeric(query_block_start),
-            query_block_end     = as.numeric(query_block_end),
-            subject_block_start = as.numeric(subject_block_start),
-            subject_block_end   = as.numeric(subject_block_end),
-            qmid = (as.numeric(query_block_start) + as.numeric(query_block_end))/2,
-            smid = (as.numeric(subject_block_start) + as.numeric(subject_block_end))/2,
-            inv  = (query_block_direction != subject_block_direction)
+            genome1_block_chr     = norm_chr(genome1_block_chr),
+            genome2_block_chr   = norm_chr(genome2_block_chr),
+            genome1_block_start   = as.numeric(genome1_block_start),
+            genome1_block_end     = as.numeric(genome1_block_end),
+            genome2_block_start = as.numeric(genome2_block_start),
+            genome2_block_end   = as.numeric(genome2_block_end),
+            qmid = (as.numeric(genome1_block_start) + as.numeric(genome1_block_end))/2,
+            smid = (as.numeric(genome2_block_start) + as.numeric(genome2_block_end))/2,
+            inv  = (genome1_block_direction != genome2_block_direction)
         )]
         
-        dt[, q_bw := abs(query_block_end - query_block_start)]
-        dt[, s_bw := abs(subject_block_end - subject_block_start)]
+        dt[, q_bw := abs(genome1_block_end - genome1_block_start)]
+        dt[, s_bw := abs(genome2_block_end - genome2_block_start)]
         if (min_block_width > 0) dt <- dt[q_bw >= min_block_width & s_bw >= min_block_width]
         
-        dt[, x1 := map_x(g1, query_block_chr, qmid)]
-        dt[, x2 := map_x(g2, subject_block_chr, smid)]
+        dt[, x1 := map_x(g1, genome1_block_chr, qmid)]
+        dt[, x2 := map_x(g2, genome2_block_chr, smid)]
         dt <- dt[is.finite(x1) & is.finite(x2)]
         
         dt[, `:=`(
             pair = pnm,
-            group = paste0(pnm, "::", query_block, "::", subject_block),
+            group = paste0(pnm, "::", genome1_block, "::", genome2_block),
             y1 = y_map[g1],
             y2 = y_map[g2],
             ymid = (y_map[g1] + y_map[g2]) / 2,

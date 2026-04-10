@@ -96,10 +96,10 @@ rbh <- function(object,
 
 .reorganizeRBH <- function(object, rbh_out){
     gff_list <- .getGFFlist(object = object)
-    hit <- match(rbh_out$qseqid, gff_list$query_gff$tx_index)
-    rbh_out$qgeneid <- gff_list$query_gff$gene_index[hit]
-    hit <- match(rbh_out$sseqid, gff_list$subject_gff$tx_index)
-    rbh_out$sgeneid <- gff_list$subject_gff$gene_index[hit]
+    hit <- match(rbh_out$qseqid, gff_list$genome1_gff$tx_index)
+    rbh_out$qgeneid <- gff_list$genome1_gff$gene_index[hit]
+    hit <- match(rbh_out$sseqid, gff_list$genome2_gff$tx_index)
+    rbh_out$sgeneid <- gff_list$genome2_gff$gene_index[hit]
     rbh_out$pair_id <- paste(rbh_out$qgeneid, rbh_out$sgeneid, sep = "0")
     rbh_out <- subset(rbh_out, subset = !duplicated(pair_id))
     rbh_out <- lapply(rbh_out, as.numeric)

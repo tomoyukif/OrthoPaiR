@@ -84,9 +84,9 @@ summaryOrthoPair <- function(object = NULL, hdf5_fn = NULL){
     }
     
     orthopair <- h5$orthopair[[1]]
-    query <- subset(orthopair, subset = !duplicated(orthopair$query_gene))
+    query <- subset(orthopair, subset = !duplicated(orthopair$genome1_gene))
     query_summary <- table(factor(query$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
-    subject <- subset(orthopair, subset = !duplicated(orthopair$subject_gene))
+    subject <- subset(orthopair, subset = !duplicated(orthopair$genome2_gene))
     subject_summary <- table(factor(subject$class, levels = c("1to1", "1toM", "Mto1", "MtoM")))
     query_orphan <- length(h5$orphan[[1]])
     subject_orphan <- length(h5$orphan[[2]])
@@ -140,26 +140,26 @@ getOrthoPair <- function(object = NULL,
         stop("Run syntenicOrtho() to obtain genewise ortholog info.")
     }
     
-    target_col <- c("original_query_gene", "original_subject_gene", 
-                    "query_gene", "query_tx", 
-                    "subject_gene", "subject_tx", 
-                    "query_synteny_block", "subject_synteny_block",
+    target_col <- c("original_genome1_gene", "original_genome2_gene", 
+                    "genome1_gene", "genome1_tx", 
+                    "genome2_gene", "genome2_tx", 
+                    "genome1_synteny_block", "genome2_synteny_block",
                     "class", "SOG", 
-                    "query_collapse", "subject_collapse")
+                    "genome1_collapse", "genome2_collapse")
     if(score){
         target_col <- c(target_col, 
                         "pident", "qcovs_q2s", "qcovs_s2q", 
                         "ci_q2s", "ci_s2q", "mutual_ci",
-                        "query_is_anchor", "subject_is_anchor", 
+                        "genome1_is_anchor", "genome2_is_anchor", 
                         "is_anchor_pair")
     }
     
     if(loc){
         target_col <- c(target_col, 
-                        "query_chr", "query_start",
-                        "query_end", "query_strand",
-                        "subject_chr", "subject_start",
-                        "subject_end", "subject_strand")
+                        "genome1_chr", "genome1_start",
+                        "genome1_end", "genome1_strand",
+                        "genome2_chr", "genome2_start",
+                        "genome2_end", "genome2_strand")
     }
     
     out <- NULL
@@ -168,11 +168,11 @@ getOrthoPair <- function(object = NULL,
         col_names <- names(h5$orthopair[[i]])
         out_i <- h5$orthopair[[i]][, target_col]
         
-        if(all(out_i$query_collapse == 0)){
-            out_i$query_collapse <- NA
+        if(all(out_i$genome1_collapse == 0)){
+            out_i$genome1_collapse <- NA
         }
-        if(all(out_i$subject_collapse == 0)){
-            out_i$subject_collapse <- NA
+        if(all(out_i$genome2_collapse == 0)){
+            out_i$genome2_collapse <- NA
         }
         out <- c(out, list(out_i))
     }
@@ -206,8 +206,8 @@ getOrphan <- function(object = NULL, hdf5_fn = NULL, loc = FALSE){
         if(!H5Lexists(h5, "orphan")){
             stop("Run geneOrtho to obtain genewise ortholog info.")
         }
-        out <- list(query = unique(h5$orphan[[1]]),
-                    subject = unique(h5$orphan[[2]]))
+        out <- list(genome1 = unique(h5$orphan[[1]]),
+                    genome2 = unique(h5$orphan[[2]]))
     }
     return(out)
 }

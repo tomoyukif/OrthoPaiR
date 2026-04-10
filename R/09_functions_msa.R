@@ -343,8 +343,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         label <- "PROMOTER_"
     }
     
-    seq1_hit <- names(seq1) == orthopair_gene$query_tx[index]
-    seq2_hit <- names(seq2) == orthopair_gene$subject_tx[index]
+    seq1_hit <- names(seq1) == orthopair_gene$genome1_tx[index]
+    seq2_hit <- names(seq2) == orthopair_gene$genome2_tx[index]
     
     if(sum(seq1_hit) == 0 | sum(seq2_hit) == 0){
         if(sum(seq1_hit) != 0){
@@ -359,8 +359,8 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
         } else {
             seq2_len <- NA
         }
-        baseinfo <- cbind(seq1 = orthopair_gene$query_tx[index],
-                     seq2 = orthopair_gene$subject_tx[index], 
+        baseinfo <- cbind(seq1 = orthopair_gene$genome1_tx[index],
+                     seq2 = orthopair_gene$genome2_tx[index], 
                      seq1_len = seq1_len, seq2_len = seq2_len)
         
         if(type == "aa"){

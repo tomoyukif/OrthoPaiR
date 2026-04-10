@@ -96,13 +96,13 @@ reorgOrthopairs <- function(hdf5_fn,
             
             query_split <- subset(
                 opr,
-                subset = grepl("split", query_gene),
-                select = c(query_gene, query_tx)
+                subset = grepl("split", genome1_gene),
+                select = c(genome1_gene, genome1_tx)
             )
             subject_split <- subset(
                 opr,
-                subset = grepl("split", subject_gene),
-                select = c(subject_gene, subject_tx)
+                subset = grepl("split", genome2_gene),
+                select = c(genome2_gene, genome2_tx)
             )
             
             if (nrow(query_split) > 0L) {
@@ -110,8 +110,8 @@ reorgOrthopairs <- function(hdf5_fn,
                     split_df,
                     data.frame(
                         genome = genomes_i[1],
-                        gene = query_split$query_gene,
-                        tx = query_split$query_tx,
+                        gene = query_split$genome1_gene,
+                        tx = query_split$genome1_tx,
                         stringsAsFactors = FALSE
                     )
                 )
@@ -121,8 +121,8 @@ reorgOrthopairs <- function(hdf5_fn,
                     split_df,
                     data.frame(
                         genome = genomes_i[2],
-                        gene = subject_split$subject_gene,
-                        tx = subject_split$subject_tx,
+                        gene = subject_split$genome2_gene,
+                        tx = subject_split$genome2_tx,
                         stringsAsFactors = FALSE
                     )
                 )
@@ -249,25 +249,25 @@ reorgOrthopairs <- function(hdf5_fn,
         opr <- getOrthoPair(hdf5_fn = hdf5_fn[i], score = TRUE, loc = FALSE)[[1]]
         meta <- getMeta(hdf5_fn = hdf5_fn[i])
         if(is.null(reorg_list$split_list)){
-            target_col <- c("original_query_gene", "original_subject_gene",
-                            "query_tx", "subject_tx",
+            target_col <- c("original_genome1_gene", "original_genome2_gene",
+                            "genome1_tx", "genome2_tx",
                             "mutual_ci", "class")
             opr <- opr[, target_col]
-            names(opr) <- c("query_gene", "subject_gene",
-                            "query_tx", "subject_tx",
+            names(opr) <- c("genome1_gene", "genome2_gene",
+                            "genome1_tx", "genome2_tx",
                             "mutual_ci", "class")
             
         } else {
-            target_col <- c("query_gene", "subject_gene",
-                            "query_tx", "subject_tx",
+            target_col <- c("genome1_gene", "genome2_gene",
+                            "genome1_tx", "genome2_tx",
                             "mutual_ci", "class")
             opr <- opr[, target_col]
             opr <- .renameOrthoPair(opr = opr,
                                     meta = meta,
                                     reorg_list = reorg_list)
         }
-        opr$query_id <- paste(meta$genomes[1], opr$query_gene, sep = ":")
-        opr$subject_id <- paste(meta$genomes[2], opr$subject_gene, sep = ":")
+        opr$genome1_id <- paste(meta$genomes[1], opr$genome1_gene, sep = ":")
+        opr$genome2_id <- paste(meta$genomes[2], opr$genome2_gene, sep = ":")
         return(opr)
     }
     
@@ -287,18 +287,18 @@ reorgOrthopairs <- function(hdf5_fn,
 .renameOrthoPair <- function(opr, meta, reorg_list){
     genome_1 <- reorg_list$split_list$genome == meta$genomes[1]
     if (any(genome_1)) {
-        hit <- match(opr$query_tx, reorg_list$split_list$tx[genome_1])
+        hit <- match(opr$genome1_tx, reorg_list$split_list$tx[genome_1])
         not_na <- !is.na(hit)
         if (any(not_na)) {
-            opr$query_gene[not_na] <- reorg_list$split_list$gene[genome_1][hit[not_na]]
+            opr$genome1_gene[not_na] <- reorg_list$split_list$gene[genome_1][hit[not_na]]
         }
     }
     genome_2 <- reorg_list$split_list$genome == meta$genomes[2]
     if (any(genome_2)) {
-        hit <- match(opr$subject_tx, reorg_list$split_list$tx[genome_2])
+        hit <- match(opr$genome2_tx, reorg_list$split_list$tx[genome_2])
         not_na <- !is.na(hit)
         if (any(not_na)) {
-            opr$subject_gene[not_na] <- reorg_list$split_list$gene[genome_2][hit[not_na]]
+            opr$genome2_gene[not_na] <- reorg_list$split_list$gene[genome_2][hit[not_na]]
         }
     }
     return(opr)
@@ -312,8 +312,8 @@ reorgOrthopairs <- function(hdf5_fn,
     vertex_list$id <- paste(vertex_list$genome, vertex_list$gene, sep = ":")
     
     ## Build edge data.frame
-    edges_df <- data.frame(from = edges_list$query_id,
-                           to = edges_list$subject_id,
+    edges_df <- data.frame(from = edges_list$genome1_id,
+                           to = edges_list$genome2_id,
                            mutual_ci = edges_list$mutual_ci,
                            class = edges_list$class,
                            stringsAsFactors = FALSE)

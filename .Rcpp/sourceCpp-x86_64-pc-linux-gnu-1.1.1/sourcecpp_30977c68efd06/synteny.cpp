@@ -94,3 +94,30 @@ List rbh_shortest_path(
         _["best_dist"] = out_dist
     );
 }
+
+
+#include <Rcpp.h>
+#ifdef RCPP_USE_GLOBAL_ROSTREAM
+Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
+Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
+#endif
+
+// rbh_shortest_path
+List rbh_shortest_path(IntegerVector qgeneid, IntegerVector sgeneid, IntegerVector q_chr, IntegerVector s_chr, IntegerVector anchor_qgeneid, IntegerVector anchor_sgeneid, IntegerVector anchor_q_chr, IntegerVector anchor_s_chr, bool omit_zero);
+RcppExport SEXP sourceCpp_1_rbh_shortest_path(SEXP qgeneidSEXP, SEXP sgeneidSEXP, SEXP q_chrSEXP, SEXP s_chrSEXP, SEXP anchor_qgeneidSEXP, SEXP anchor_sgeneidSEXP, SEXP anchor_q_chrSEXP, SEXP anchor_s_chrSEXP, SEXP omit_zeroSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::RNGScope rcpp_rngScope_gen;
+    Rcpp::traits::input_parameter< IntegerVector >::type qgeneid(qgeneidSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type sgeneid(sgeneidSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type q_chr(q_chrSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type s_chr(s_chrSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type anchor_qgeneid(anchor_qgeneidSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type anchor_sgeneid(anchor_sgeneidSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type anchor_q_chr(anchor_q_chrSEXP);
+    Rcpp::traits::input_parameter< IntegerVector >::type anchor_s_chr(anchor_s_chrSEXP);
+    Rcpp::traits::input_parameter< bool >::type omit_zero(omit_zeroSEXP);
+    rcpp_result_gen = Rcpp::wrap(rbh_shortest_path(qgeneid, sgeneid, q_chr, s_chr, anchor_qgeneid, anchor_sgeneid, anchor_q_chr, anchor_s_chr, omit_zero));
+    return rcpp_result_gen;
+END_RCPP
+}
