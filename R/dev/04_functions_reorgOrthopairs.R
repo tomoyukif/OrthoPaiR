@@ -38,11 +38,9 @@
 #' @return The path to the output directory,
 #'   \code{file.path(working_dir, \"reorg_out\")}.
 #'
-#' @importFrom data.table data.table rbindlist fwrite setcolorder dcast
+#' @importFrom data.table data.table rbindlist fread fwrite setcolorder melt
 #' @importFrom parallel mclapply
-#' @importFrom igraph write_graph graph_from_data_frame components vertex_attr
-#'   edge_attr ends E
-#' @importFrom dplyr full_join
+#' @importFrom igraph write_graph graph_from_data_frame vertex_attr decompose induced_subgraph is_connected
 #' @export
 reorgOrthopairs <- function(working_dir,
                             rename = TRUE,
@@ -86,7 +84,7 @@ reorgOrthopairs <- function(working_dir,
     graph_fn <- file.path(out_dir, "orthopair.graphml")
     write_graph(graph = graph, file = graph_fn, format = "graphml")
     
-    .graph2df(graph = graph, out_dir = out_dir)
+    .graph2df(graph = graph, out_dir = out_dir, working_dir = working_dir)
     
     if (verbose) {
         message("[reorg] Wrote graph and summary tables to: ", out_dir)
@@ -120,19 +118,19 @@ reorgOrthopairs <- function(working_dir,
         # Gene sets per genome (after any renaming)
         dt_genome1 <- unique(dt[, .(original = original_genome1_gene, gene = genome1_gene)])
         dt_genome1[, genome := genomes_i[1]]
-
+        
         dt_genome2 <- unique(dt[, .(original = original_genome2_gene, gene = genome2_gene)])
         dt_genome2[, genome := genomes_i[2]]
-
+        
         genes_dt <- rbind(dt_genome1, dt_genome2)
         
         split_dt <- NULL
         if (rename) {
             # Identify split genes by pattern "split" in gene IDs
             genome1_split <- dt[grepl("split", genome1_gene),
-                              .(original = original_genome1_gene, 
-                                gene = genome1_gene, 
-                                tx = genome1_tx)]
+                                .(original = original_genome1_gene, 
+                                  gene = genome1_gene, 
+                                  tx = genome1_tx)]
             genome2_split <- dt[grepl("split", genome2_gene),
                                 .(original = original_genome2_gene, 
                                   gene = genome2_gene, 
@@ -333,171 +331,255 @@ reorgOrthopairs <- function(working_dir,
 }
 
 
-#' @importFrom igraph edge_attr ends E vertex_attr
-#' @importFrom dplyr full_join
-.graph2df <- function(graph, out_dir) {
-    comp <- igraph::components(graph)
+## Map orthology genome labels (\code{index + 1000} from GFF) to species folder suffix
+## from \code{working_dir/input/<index>_<species_name>/}.
+.genomeNumericIdToSpeciesFromInput <- function(working_dir) {
+    if (is.null(working_dir)) {
+        return(character(0L))
+    }
+    input_dir <- file.path(working_dir, "input")
+    if (!dir.exists(input_dir)) {
+        return(character(0L))
+    }
+    subdirs <- list.dirs(input_dir, full.names = FALSE, recursive = FALSE)
+    subdirs <- subdirs[nzchar(subdirs) & subdirs != "."]
+    out <- character(0L)
+    for (bn in subdirs) {
+        parts <- strsplit(bn, "_", fixed = TRUE)[[1L]]
+        if (length(parts) < 2L) next
+        idx <- suppressWarnings(as.integer(parts[[1L]]))
+        if (is.na(idx)) next
+        sp <- paste(parts[-1L], collapse = "_")
+        vid <- as.character(idx + 1000L)
+        out[[vid]] <- sp
+    }
+    out
+}
+
+
+## Matrix rows = orthogroup entries; name columns by genome; align to full \code{genomes} order.
+.groupMatrixToWideDT <- function(mat, genomes, nm2g) {
+    if (!nrow(mat)) {
+        empty <- stats::setNames(
+            replicate(length(genomes), character(0L), simplify = FALSE),
+            genomes
+        )
+        return(data.table::as.data.table(empty))
+    }
+    df <- as.data.frame(mat, stringsAsFactors = FALSE)
+    for (j in seq_len(ncol(df))) {
+        col_vals <- as.character(df[[j]])
+        col_vals <- col_vals[!is.na(col_vals) & nzchar(col_vals)]
+        gn <- if (length(col_vals)) {
+            unique(unname(nm2g[col_vals]))[1L]
+        } else {
+            genomes[j]
+        }
+        colnames(df)[j] <- gn
+    }
+    dt <- data.table::as.data.table(df)
+    miss <- setdiff(genomes, names(dt))
+    for (m in miss) {
+        dt[[m]] <- NA_character_
+    }
+    data.table::setcolorder(dt, genomes)
+    dt
+}
+
+
+## Upper bound on \code{|V|} per connected component for exact subset enumeration (2^k).
+.MAX_ENUM_VERTICES_PER_COMPONENT <- 100L
+
+
+.dedupeVertexSets <- function(sets) {
+    if (!length(sets)) {
+        return(sets)
+    }
+    keys <- vapply(sets, function(s) paste(sort(s), collapse = "\x1f"), character(1L))
+    sets[!duplicated(keys)]
+}
+
+
+.dropStrictSubsets <- function(sets) {
+    sets <- .dedupeVertexSets(sets)
+    n <- length(sets)
+    if (n < 2L) {
+        return(sets)
+    }
+    drop <- logical(n)
+    for (i in seq_len(n)) {
+        for (j in seq_len(n)) {
+            if (i == j) next
+            if (length(sets[[i]]) >= length(sets[[j]])) next
+            if (all(sets[[i]] %in% sets[[j]])) {
+                drop[i] <- TRUE
+                break
+            }
+        }
+    }
+    sets[!drop]
+}
+
+
+.enumerateValidSetsInComponent <- function(subg,
+                                           vnames,
+                                           species_per_vertex,
+                                           max_k = .MAX_ENUM_VERTICES_PER_COMPONENT) {
+    k <- length(vnames)
+    if (k < 1L) {
+        return(list())
+    }
+    if (k > max_k) {
+        warning(
+            "Orthology component with ", k,
+            " vertices skipped (enumeration cap is ", max_k, "). ",
+            "Increase .MAX_ENUM_VERTICES_PER_COMPONENT if needed."
+        )
+        return(list())
+    }
+    res <- list()
+    nout <- 0L
+    for (mask in seq_len(2^k - 1L)) {
+        idx <- which(as.logical(intToBits(mask))[seq_len(k)])
+        sp <- species_per_vertex[idx]
+        if (length(unique(sp)) != length(sp)) {
+            next
+        }
+        sub_ind <- igraph::induced_subgraph(subg, vids = idx)
+        if (!igraph::is_connected(sub_ind, mode = "weak")) {
+            next
+        }
+        nout <- nout + 1L
+        res[[nout]] <- sort(vnames[idx])
+    }
+    res
+}
+
+
+.vertexSetsToWideDT <- function(sets, genomes, nm2g) {
+    if (!length(sets)) {
+        empty <- stats::setNames(
+            replicate(length(genomes), character(0L), simplify = FALSE),
+            genomes
+        )
+        return(data.table::as.data.table(empty))
+    }
+    rows <- lapply(sets, function(S) {
+        row <- stats::setNames(rep(NA_character_, length(genomes)), genomes)
+        for (v in S) {
+            g <- unname(nm2g[v])[1L]
+            if (!is.na(g) && nzchar(g) && g %in% genomes) {
+                row[[g]] <- sub("[0-9]*:", "", v)
+            }
+        }
+        row
+    })
+    dt <- data.table::as.data.table(do.call(rbind, rows))
+    data.table::setcolorder(dt, genomes)
+    dt
+}
+
+
+#' @importFrom igraph vertex_attr decompose induced_subgraph is_connected
+#'
+#' Enumerates connected vertex sets with at most one vertex per species
+#' (\code{lab_genome} via \code{nm2g}), drops sets strictly contained in another,
+#' and writes \code{orthopair_list.tsv} (columns \code{sort(unique(lab_genome))},
+#' cells = vertex ids). Pairwise tables use original gene symbols.
+#'
+#' @param working_dir Project root (parent of \code{reorg_out} and \code{input}). Used
+#'   to map vertex genome IDs (\code{folder_index + 1000}) to \code{input} folder species names.
+.graph2df <- function(graph, out_dir, working_dir = NULL) {
     va <- igraph::vertex_attr(graph)
-    ea <- igraph::edge_attr(graph)
-    em <- igraph::ends(graph, igraph::E(graph), names = FALSE)
-    rm(graph); gc(); gc()
     
     orig_attr <- if ("original" %in% names(va)) va$original else va$name
-    dtv <- data.table::data.table(membership = comp$membership,
-                                  genome = va$genome,
-                                  gene = va$name,
-                                  original = orig_attr)
-    data.table::fwrite(dtv,
-                       file.path(out_dir, "orthopair_list_long.tsv"),
+    name_to_orig <- stats::setNames(orig_attr, va$name)
+    
+    gid2sp <- .genomeNumericIdToSpeciesFromInput(working_dir)
+    lab_genome <- as.character(va$genome)
+    if (length(gid2sp)) {
+        hit <- lab_genome %in% names(gid2sp)
+        if (any(hit)) {
+            lab_genome[hit] <- unname(gid2sp[lab_genome[hit]])
+        }
+    }
+    nm2g <- stats::setNames(lab_genome, va$name)
+    
+    genomes <- sort(unique(lab_genome))
+    n_genomes <- length(genomes)
+    fn_ortho_list <- file.path(out_dir, "orthopair_list.tsv")
+    
+    comps <- igraph::decompose(graph, mode = "weak")
+    n_comps <- sapply(comps, length)
+    origins_in_subg <- lapply(comps, function(x) {
+        unname(nm2g[V(x)$name])
+    })
+    n_origins <- sapply(origins_in_subg, function(x)length(unique(x)))
+    less_than_n_genomes <- n_comps == n_origins & n_origins <= n_genomes
+    comps_less_than_n_genomes <- comps[less_than_n_genomes]
+    rest_comps <- comps[!less_than_n_genomes]
+    comps_less_than_n_genomes <- lapply(comps_less_than_n_genomes, function(x){V(x)$name})
+    wide_out <- .vertexSetsToWideDT(comps_less_than_n_genomes, gid2sp, nm2g)
+    data.table::fwrite(wide_out,
+                       fn_ortho_list,
                        sep = "\t",
                        quote = FALSE,
-                       na = "")
+                       na = "",
+                       append = FALSE)
+    rm(less_than_n_genomes, comps_less_than_n_genomes, wide_out)
     
-    genome_levels <- unique(dtv$genome)
-    data.table::fwrite(
-        data.table::setcolorder(
-            data.table::dcast(
-                dtv[, .(gene = paste(gene, collapse=",")),
-                    by = .(membership, genome)],
-                membership ~ genome,
-                value.var = "gene",
-                fill = NA_character_
-            ),
-            c("membership", genome_levels)
-        ),
-        file.path(out_dir, "orthopair_list.tsv"),
-        sep = "\t",
-        quote = FALSE,
-        na = ""
-    )
+    for (subg in rest_comps) {
+        x_ego <- lapply(seq_len(n_genomes), ego, graph = subg)
+        x_ego <- do.call(c, x_ego)
+        valid_x_ego <- vapply(x_ego, FUN.VALUE = logical(1L),
+                              FUN = function(y){
+                                  origins <- nm2g[names(y)]
+                                  n_comps <- length(origins)
+                                  n_origins <- length(unique(origins))
+                                  return(n_comps == n_origins)
+                              })
+        valid_subgraphs <- lapply(x_ego[valid_x_ego], names)
+        valid_subgraphs <- .dropStrictSubsets(valid_subgraphs)
+        wide_out <- .vertexSetsToWideDT(valid_subgraphs, gid2sp, nm2g)
+        data.table::fwrite(wide_out,
+                           fn_ortho_list,
+                           sep = "\t",
+                           quote = FALSE,
+                           na = "",
+                           append = TRUE,
+                           col.names = FALSE)
+    }
+    rm(graph, rest_comps, wide_out, x_ego, valid_x_ego, valid_subgraphs)
+    gc()
     
-    ## -------- Pairwise ortholog lists (un-collapsed) per genome pair --------
+    ortho_df <- data.table::fread(fn_ortho_list,
+                                  sep = "\t",
+                                  header = TRUE,
+                                  quote = "",
+                                  na.strings = "")
+    
     pairwise_dir <- file.path(out_dir, "pairwise")
     dir.create(pairwise_dir, showWarnings = FALSE, recursive = TRUE)
-
-    if (nrow(dtv) > 0L) {
-        mem_ids <- unique(dtv$membership)
-        pairwise_list <- vector("list", length(mem_ids))
-        pw_idx <- 1L
-
-        for (m in mem_ids) {
-            sub <- dtv[membership == m]
-            gvec <- unique(sub$genome)
-            if (length(gvec) < 2L) next
-
-            if (length(gvec) == 2L) {
-                gpairs <- matrix(sort(gvec), ncol = 2L, byrow = TRUE)
-            } else {
-                gpairs <- t(utils::combn(sort(gvec), 2L))
-            }
-
-            for (k in seq_len(nrow(gpairs))) {
-                gA <- gpairs[k, 1L]
-                gB <- gpairs[k, 2L]
-                genesA <- sub[genome == gA, .(gene, original)]
-                genesB <- sub[genome == gB, .(gene, original)]
-                if (!nrow(genesA) || !nrow(genesB)) next
-
-                idxA <- seq_len(nrow(genesA))
-                idxB <- seq_len(nrow(genesB))
-                grid <- data.table::CJ(i = idxA, j = idxB, sorted = FALSE)
-
-                pw_dt <- data.table::data.table(
-                    membership     = m,
-                    genome1        = gA,
-                    gene1          = genesA$gene[grid$i],
-                    original_gene1 = genesA$original[grid$i],
-                    genome2        = gB,
-                    gene2          = genesB$gene[grid$j],
-                    original_gene2 = genesB$original[grid$j]
-                )
-
-                pairwise_list[[pw_idx]] <- pw_dt
-                pw_idx <- pw_idx + 1L
-            }
-        }
-
-        pairwise_list <- Filter(Negate(is.null), pairwise_list)
-        if (length(pairwise_list)) {
-            all_pairs <- data.table::rbindlist(pairwise_list, use.names = TRUE)
-            gpairs2 <- unique(all_pairs[, .(genome1, genome2)])
-            for (i in seq_len(nrow(gpairs2))) {
-                gA <- gpairs2$genome1[i]
-                gB <- gpairs2$genome2[i]
-                sub_dt <- all_pairs[genome1 == gA & genome2 == gB]
-                if (!nrow(sub_dt)) next
-                out_fn <- file.path(pairwise_dir, paste0(gA, "_", gB, ".tsv"))
-                data.table::fwrite(
-                    sub_dt,
-                    out_fn,
-                    sep = "\t",
-                    quote = FALSE,
-                    na = ""
-                )
-            }
+    
+    if (nrow(ortho_df) > 0L && length(genome_levels) >= 2L) {
+        pairwise_genomes <- combn(seq_along(gid2sp), 2)
+        for(i in seq_len(ncol(pairwise_genomes))){
+            pgi <- pairwise_genomes[, i]
+            pairwise_df <- subset(ortho_df, select = gid2sp[pgi])
+            names(pairwise_df) <- c("genome1_gene", "genome2_gene")
+            pairwise_df <- subset(pairwise_df, 
+                                  subset = !is.na(genome1_gene) & !is.na(genome2_gene))
+            pairwise_df <- unique(pairwise_df)
+            out_fn <- file.path(pairwise_dir, 
+                                paste0(paste(names(gid2sp[pgi]), collapse = "_"),
+                                       ".tsv"))
+            data.table::fwrite(pairwise_df,
+                               out_fn,
+                               sep = "\t",
+                               quote = FALSE,
+                               na = "")
         }
     }
-
-    eid <- dtv$membership[em[, 1]]
-    g1 <- va$genome[em[, 1]]
-    g2 <- va$genome[em[, 2]]
-    rm(comp, va, em); gc(); gc()
-    
-    v_sum <- dtv[, .(nV = .N, nGenome = data.table::uniqueN(genome)), by = membership]
-    
-    dte <- data.table::data.table(membership = eid, mutual_ci = ea$mutual_ci)
-    
-    e_sum <- dte[, .(nE = .N,
-                     max_mci = max(mutual_ci, na.rm = TRUE),
-                     q1 = stats::quantile(mutual_ci, 0.25, na.rm = TRUE),
-                     median_mci = stats::median(mutual_ci, na.rm = TRUE),
-                     q3 = stats::quantile(mutual_ci, 0.75, na.rm = TRUE),
-                     min_mci = min(mutual_ci, na.rm = TRUE),
-                     mean_mci = mean(mutual_ci, na.rm = TRUE),
-                     sd_mci = stats::sd(mutual_ci, na.rm = TRUE)),
-                 by = membership]
-    
-    out <- dplyr::full_join(v_sum, e_sum, "membership")
-    data.table::fwrite(out,
-                       file.path(out_dir, "orthogroup_stats.tsv"),
-                       sep = "\t",
-                       quote = FALSE,
-                       na = "")
-    
-    ## genomepair_edge_stats も、間接ペアを含むペア数を反映させる。
-    ## all_pairs が存在すれば、そこから genome1/genome2 ごとの行数で nE を計算し、
-    ## mutual_ci は NA（統計値は direct edges からのものを保持）とする。
-    if (exists("all_pairs") && is.data.frame(all_pairs) && nrow(all_pairs) > 0L) {
-        dt_pair <- data.table::data.table(
-            genome1   = all_pairs$genome1,
-            genome2   = all_pairs$genome2,
-            mutual_ci = NA_real_
-        )
-    } else {
-        genome1 <- pmin(g1, g2)
-        genome2 <- pmax(g1, g2)
-        dt_pair <- data.table::data.table(genome1 = genome1,
-                                          genome2 = genome2,
-                                          mutual_ci = ea$mutual_ci)
-    }
-    pair_sum <- dt_pair[, .(nE = .N,
-                            max_mci = max(mutual_ci, na.rm = TRUE),
-                            q1 = stats::quantile(mutual_ci, 0.75, na.rm = TRUE),
-                            median_mci= stats::median(mutual_ci, na.rm = TRUE),
-                            q3 = stats::quantile(mutual_ci, 0.25, na.rm = TRUE),
-                            min_mci = min(mutual_ci, na.rm = TRUE),
-                            mean_mci = mean(mutual_ci, na.rm = TRUE),
-                            sd_mci = stats::sd(mutual_ci, na.rm = TRUE)),
-                        by = .(genome1, genome2)][order(-nE)]
-    
-    data.table::fwrite(
-        pair_sum,
-        file.path(out_dir, "genomepair_edge_stats.tsv"),
-        sep = "\t",
-        quote = FALSE,
-        na = ""
-    )
-
-    rm(dtv, dt_pair, pair_sum, g1, g2); gc(); gc()
+    rm(ortho_df); gc(); gc()
 }
 

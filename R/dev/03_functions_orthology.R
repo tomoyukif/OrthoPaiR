@@ -17,11 +17,14 @@
 #' @param load_all_gff If TRUE, load all GFF data upfront (faster but uses more memory).
 #'   If FALSE, load GFF data per pair (slower but memory-efficient for 300+ genomes).
 #' @param verbose Print progress messages
-#' @return List of data.frames, one per genome pair, with ortholog pairs.
-#'   Also writes TSV files to `working_dir/orthopair/`.
+#' @return Invisibly `TRUE`. Writes per-pair ortholog TSVs under `working_dir/orthopair/`,
+#'   and after all pairs finish, writes `orthopair_pairwise_mutual_ci_stats.tsv`
+#'   (mean, sd, median, quantiles of `mutual_ci` per genome pair, from direct ortholog rows only)
+#'   and `orthopair_genome_mean_mutual_ci_matrix.tsv` (symmetric matrix of mean `mutual_ci`).
 #'
 #' @importFrom data.table fread fwrite setDT setkey setorder setnames
 #' @importFrom parallel mclapply
+#' @importFrom stats median quantile sd
 #' @export
 orthopair <- function(working_dir,
                       genome_width = 4L,
@@ -179,7 +182,121 @@ orthopair <- function(working_dir,
         message("[ortho] Output TSV files written to: ", orthopair_dir)
     }
     
+    .summarizeOrthopairMutualCi(orthopair_dir = orthopair_dir, verbose = verbose)
+    
     invisible(TRUE)
+}
+
+
+#' Summarize mutual_ci from written orthopair TSVs (direct scores only).
+#'
+#' @param orthopair_dir Directory containing `<genomeA>_<genomeB>.tsv` files.
+#' @param verbose Logical.
+#' @return Invisibly `NULL` if nothing to summarize; otherwise invisibly `NULL` after writing files.
+#' @keywords internal
+.summarizeOrthopairMutualCi <- function(orthopair_dir, verbose = TRUE) {
+    tsv_files <- list.files(orthopair_dir, pattern = "\\.tsv$", full.names = TRUE)
+    skip_names <- c(
+        "orthopair_pairwise_mutual_ci_stats.tsv",
+        "orthopair_genome_mean_mutual_ci_matrix.tsv"
+    )
+    tsv_files <- tsv_files[!basename(tsv_files) %in% skip_names]
+    if (!length(tsv_files)) {
+        if (verbose) message("[ortho] mutual_ci summary: no pair TSV files found")
+        return(invisible(NULL))
+    }
+    
+    long_parts <- list()
+    for (fn in tsv_files) {
+        pair_id <- sub("\\.tsv$", "", basename(fn))
+        parts <- strsplit(pair_id, "_", fixed = TRUE)[[1L]]
+        if (length(parts) != 2L || parts[1L] == parts[2L]) next
+        dt <- tryCatch(
+            data.table::fread(fn, sep = "\t", header = TRUE, select = "mutual_ci"),
+            error = function(e) NULL
+        )
+        if (is.null(dt) || !("mutual_ci" %in% names(dt))) next
+        mc <- suppressWarnings(as.numeric(dt$mutual_ci))
+        mc <- mc[is.finite(mc)]
+        if (!length(mc)) next
+        long_parts[[length(long_parts) + 1L]] <- data.table::data.table(
+            genome_a = parts[1L],
+            genome_b = parts[2L],
+            mutual_ci = mc
+        )
+    }
+    
+    if (!length(long_parts)) {
+        if (verbose) message("[ortho] mutual_ci summary: no finite mutual_ci values in pair TSVs")
+        return(invisible(NULL))
+    }
+    
+    long_dt <- data.table::rbindlist(long_parts, use.names = TRUE)
+    g1i <- suppressWarnings(as.integer(long_dt$genome_a))
+    g2i <- suppressWarnings(as.integer(long_dt$genome_b))
+    use_int <- !anyNA(g1i) && !anyNA(g2i)
+    if (use_int) {
+        long_dt[, genome_min := pmin(g1i, g2i)]
+        long_dt[, genome_max := pmax(g1i, g2i)]
+    } else {
+        long_dt[, genome_min := pmin(genome_a, genome_b)]
+        long_dt[, genome_max := pmax(genome_a, genome_b)]
+    }
+    
+    sum_dt <- long_dt[, {
+        n <- .N
+        list(
+            n_pairs = n,
+            mean = mean(mutual_ci),
+            sd = if (n > 1L) stats::sd(mutual_ci) else NA_real_,
+            median = stats::median(mutual_ci),
+            q10 = stats::quantile(mutual_ci, 0.10, na.rm = TRUE, names = FALSE, type = 7),
+            q25 = stats::quantile(mutual_ci, 0.25, na.rm = TRUE, names = FALSE, type = 7),
+            q75 = stats::quantile(mutual_ci, 0.75, na.rm = TRUE, names = FALSE, type = 7),
+            q90 = stats::quantile(mutual_ci, 0.90, na.rm = TRUE, names = FALSE, type = 7)
+        )
+    }, by = .(genome_min, genome_max)]
+    
+    all_gid <- sort(unique(c(sum_dt$genome_min, sum_dt$genome_max)))
+    if (use_int) {
+        w <- max(4L, max(nchar(as.character(all_gid)), na.rm = TRUE))
+        fmt <- paste0("%0", w, "d")
+        sum_dt[, genome1 := sprintf(fmt, genome_min)]
+        sum_dt[, genome2 := sprintf(fmt, genome_max)]
+    } else {
+        sum_dt[, genome1 := as.character(genome_min)]
+        sum_dt[, genome2 := as.character(genome_max)]
+    }
+    
+    stats_fn <- file.path(orthopair_dir, "orthopair_pairwise_mutual_ci_stats.tsv")
+    data.table::fwrite(
+        sum_dt[, .(genome1, genome2, n_pairs, mean, sd, median, q10, q25, q75, q90)],
+        stats_fn,
+        sep = "\t",
+        quote = FALSE,
+        na = ""
+    )
+    
+    lab <- sort(unique(c(sum_dt$genome1, sum_dt$genome2)))
+    mat <- matrix(NA_real_, nrow = length(lab), ncol = length(lab),
+                  dimnames = list(lab, lab))
+    for (k in seq_len(nrow(sum_dt))) {
+        i <- sum_dt$genome1[k]
+        j <- sum_dt$genome2[k]
+        v <- sum_dt$mean[k]
+        mat[i, j] <- v
+        mat[j, i] <- v
+    }
+    mat_df <- cbind(genome = rownames(mat), as.data.frame(mat, stringsAsFactors = FALSE))
+    rownames(mat_df) <- NULL
+    mat_fn <- file.path(orthopair_dir, "orthopair_genome_mean_mutual_ci_matrix.tsv")
+    data.table::fwrite(mat_df, mat_fn, sep = "\t", quote = FALSE, na = "")
+    
+    if (verbose) {
+        message("[ortho] Wrote mutual_ci summary: ", basename(stats_fn))
+        message("[ortho] Wrote mean mutual_ci matrix: ", basename(mat_fn))
+    }
+    invisible(NULL)
 }
 
 #' Create GFF lookup: genome ID -> GFF file path

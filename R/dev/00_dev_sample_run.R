@@ -63,7 +63,7 @@ overall_runtime
 source("/home/ftom/workspace/orthology/script/00_functions/02_eval_pairing.R")
 nb_wk21_busco_list <- read.csv(file.path(root_dir, "input/benchmark/benchmark_list/nb_wk21_buscolist.csv"))
 nb_wk21_del_list <- read.csv(file.path(root_dir, "input/benchmark/benchmark_list/nb_wk21_falsepositive.csv"))
-og <- read.table(file.path(working_dir, "orthopair", "1001_1002.tsv"), sep = "\t", header = TRUE)
+# og <- read.table(file.path(working_dir, "orthopair", "1001_1002.tsv"), sep = "\t", header = TRUE)
 og <- subset(og, select = c("original_genome1_gene", "original_genome2_gene"))
 names(og)[1:2] <- c("query", "subject")
 eval_busco_list(og = og,
