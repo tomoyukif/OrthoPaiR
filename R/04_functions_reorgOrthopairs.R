@@ -131,12 +131,22 @@ reorgOrthopairs <- function(working_dir,
         genomes_i <- parts
         
         dt <- fread(fn, sep = "\t", header = TRUE)
+        g1_original_col <- if("genome1_original_gene" %in% names(dt)) {
+            "genome1_original_gene"
+        } else {
+            "original_genome1_gene"
+        }
+        g2_original_col <- if("genome2_original_gene" %in% names(dt)) {
+            "genome2_original_gene"
+        } else {
+            "original_genome2_gene"
+        }
         
         # Gene sets per genome (after any renaming)
-        dt_genome1 <- unique(dt[, .(original = original_genome1_gene, gene = genome1_gene)])
+        dt_genome1 <- unique(dt[, .(original = get(g1_original_col), gene = genome1_gene)])
         dt_genome1[, genome := genomes_i[1]]
         
-        dt_genome2 <- unique(dt[, .(original = original_genome2_gene, gene = genome2_gene)])
+        dt_genome2 <- unique(dt[, .(original = get(g2_original_col), gene = genome2_gene)])
         dt_genome2[, genome := genomes_i[2]]
         
         genes_dt <- rbind(dt_genome1, dt_genome2)
@@ -145,11 +155,11 @@ reorgOrthopairs <- function(working_dir,
         if(rename) {
             # Identify split genes by pattern "split" in gene IDs
             genome1_split <- dt[grepl("split", genome1_gene),
-                                .(original = original_genome1_gene, 
+                                .(original = get(g1_original_col), 
                                   gene = genome1_gene, 
                                   tx = genome1_tx)]
             genome2_split <- dt[grepl("split", genome2_gene),
-                                .(original = original_genome2_gene, 
+                                .(original = get(g2_original_col), 
                                   gene = genome2_gene, 
                                   tx = genome2_tx)]
             
@@ -251,7 +261,15 @@ reorgOrthopairs <- function(working_dir,
         
         if(!rename) {
             # Use original_* genes if available (pre-split), otherwise current genes
-            if(all(c("original_genome1_gene", "original_genome2_gene") %in% names(opr))) {
+            if(all(c("genome1_original_gene", "genome2_original_gene") %in% names(opr))) {
+                target_col <- c("genome1_original_gene", "genome2_original_gene",
+                                "genome1_tx", "genome2_tx",
+                                "mutual_ci", "class")
+                opr <- as.data.frame(opr)[, target_col]
+                names(opr) <- c("genome1_gene", "genome2_gene",
+                                "genome1_tx", "genome2_tx",
+                                "mutual_ci", "class")
+            } else if(all(c("original_genome1_gene", "original_genome2_gene") %in% names(opr))) {
                 target_col <- c("original_genome1_gene", "original_genome2_gene",
                                 "genome1_tx", "genome2_tx",
                                 "mutual_ci", "class")

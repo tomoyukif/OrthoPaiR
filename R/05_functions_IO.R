@@ -46,7 +46,8 @@ getOrthoPair <- function(working_dir, pair, score = FALSE, loc = FALSE) {
         stop("ortholog pair file not found: ", fn, call. = FALSE)
     }
     dt <- data.table::fread(fn, sep = "\t", header = TRUE)
-    base_col <- c("original_genome1_gene", "original_genome2_gene",
+    base_col <- c("genome1_original_gene", "genome2_original_gene",
+                  "original_genome1_gene", "original_genome2_gene",
                   "genome1_gene", "genome1_tx",
                   "genome2_gene", "genome2_tx",
                   "genome1_synteny_block", "genome2_synteny_block",
@@ -111,12 +112,20 @@ summaryOrthoPair <- function(working_dir, pair) {
     q_total <- sum(q_tbl) + q_orphan
     s_total <- sum(s_tbl) + s_orphan
     
+    q_counts <- c(q_total, q_total - q_orphan, as.integer(q_tbl), q_orphan)
+    s_counts <- c(s_total, s_total - s_orphan, as.integer(s_tbl), s_orphan)
+    q_ratio <- if(q_total > 0) q_counts / q_total else rep(NA_real_, length(q_counts))
+    s_ratio <- if(s_total > 0) s_counts / s_total else rep(NA_real_, length(s_counts))
+    
     df <- data.frame(
-        genome1 = c(parts[1L], q_total, q_total - q_orphan, as.integer(q_tbl), q_orphan),
-        genome2 = c(parts[2L], s_total, s_total - s_orphan, as.integer(s_tbl), s_orphan),
+        genome1 = c(parts[1L], q_counts, round(q_ratio, 4)),
+        genome2 = c(parts[2L], s_counts, round(s_ratio, 4)),
         stringsAsFactors = FALSE
     )
-    rownames(df) <- c("Name", "Total", "Classified", "1to1", "1toM", "Mto1", "MtoM", "Orphan")
+    rownames(df) <- c(
+        "Name", "Total", "Classified", "1to1", "1toM", "Mto1", "MtoM", "Orphan",
+        "Total_ratio", "Classified_ratio", "1to1_ratio", "1toM_ratio", "Mto1_ratio", "MtoM_ratio", "Orphan_ratio"
+    )
     df
 }
 

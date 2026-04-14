@@ -218,12 +218,18 @@ orthopair <- function(working_dir,
         found1 <- character(0)
         found2 <- character(0)
     } else {
-        g1_col <- if("original_genome1_gene" %in% names(orthopair_df)) {
+        g1_col <- if("genome1_original_gene" %in% names(orthopair_df)) {
+            "genome1_original_gene"
+        } else if("original_genome1_gene" %in% names(orthopair_df)) {
+            # Backward compatibility for old column name.
             "original_genome1_gene"
         } else {
             "genome1_gene"
         }
-        g2_col <- if("original_genome2_gene" %in% names(orthopair_df)) {
+        g2_col <- if("genome2_original_gene" %in% names(orthopair_df)) {
+            "genome2_original_gene"
+        } else if("original_genome2_gene" %in% names(orthopair_df)) {
+            # Backward compatibility for old column name.
             "original_genome2_gene"
         } else {
             "genome2_gene"
@@ -817,7 +823,7 @@ orthopair <- function(working_dir,
     orthopair$genome1_strand[orthopair$genome1_strand == "2"] <- "-"
     q_split <- which(orthopair$genome1_gene < 0)
     orthopair$genome1_gene <- g2g_graph$genome1_df$gene_id[q_tx_hit]
-    orthopair$original_genome1_gene <- orthopair$genome1_gene
+    orthopair$genome1_original_gene <- orthopair$genome1_gene
     orthopair$genome1_gene[q_split] <- paste0(orthopair$genome1_tx[q_split], ":split")
     
     s_tx_hit <- match(orthopair$genome2_tx, g2g_graph$genome2_df$tx_index)
@@ -829,7 +835,7 @@ orthopair <- function(working_dir,
     orthopair$genome2_strand[orthopair$genome2_strand == "2"] <- "-"
     s_split <- which(orthopair$genome2_gene < 0)
     orthopair$genome2_gene <- g2g_graph$genome2_df$gene_id[s_tx_hit]
-    orthopair$original_genome2_gene <- orthopair$genome2_gene
+    orthopair$genome2_original_gene <- orthopair$genome2_gene
     orthopair$genome2_gene[s_split] <- paste0(orthopair$genome2_tx[s_split], ":split")
     
     # orthopair <- subset(orthopair,

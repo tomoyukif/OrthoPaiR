@@ -1,3 +1,8 @@
+Changes in version 0.7.7 (2026-04-14)
+
+- Rename orthopair output columns to `genome1_original_gene` / `genome2_original_gene` and keep backward-compatible readers.
+- Extend `summaryOrthoPair()` output with Total-based ratio rows for each classification category.
+
 Changes in version 0.7.6 (2026-04-14)
 
 - Use original gene IDs when computing orphan genes in both orthopair and reorg orphan outputs.
