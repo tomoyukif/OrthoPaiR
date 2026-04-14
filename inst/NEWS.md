@@ -1,3 +1,8 @@
+Changes in version 0.7.6 (2026-04-14)
+
+- Use original gene IDs when computing orphan genes in both orthopair and reorg orphan outputs.
+- Keep fallback behavior to current genome1/genome2 gene columns when original columns are unavailable.
+
 Changes in version 0.7.5 (2026-04-14)
 
 - Improve reformat/input robustness by fixing parallel worker error reporting paths.

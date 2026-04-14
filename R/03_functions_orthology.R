@@ -218,8 +218,18 @@ orthopair <- function(working_dir,
         found1 <- character(0)
         found2 <- character(0)
     } else {
-        found1 <- unique(as.character(orthopair_df$genome1_gene[!is.na(orthopair_df$genome1_gene)]))
-        found2 <- unique(as.character(orthopair_df$genome2_gene[!is.na(orthopair_df$genome2_gene)]))
+        g1_col <- if("original_genome1_gene" %in% names(orthopair_df)) {
+            "original_genome1_gene"
+        } else {
+            "genome1_gene"
+        }
+        g2_col <- if("original_genome2_gene" %in% names(orthopair_df)) {
+            "original_genome2_gene"
+        } else {
+            "genome2_gene"
+        }
+        found1 <- unique(as.character(orthopair_df[[g1_col]][!is.na(orthopair_df[[g1_col]])]))
+        found2 <- unique(as.character(orthopair_df[[g2_col]][!is.na(orthopair_df[[g2_col]])]))
     }
     orphan1 <- setdiff(all1, found1)
     orphan2 <- setdiff(all2, found2)

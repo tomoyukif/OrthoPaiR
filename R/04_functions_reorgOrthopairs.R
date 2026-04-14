@@ -784,12 +784,22 @@ reorgOrthopairs <- function(working_dir,
         if(length(parts) != 2L) next
         dt <- fread(fn, sep = "\t", header = TRUE)
         if(!all(c("genome1_gene", "genome2_gene") %in% names(dt))) next
+        g1_col <- if("genome1_original_gene" %in% names(dt)) {
+            "genome1_original_gene"
+        } else {
+            "genome1_gene"
+        }
+        g2_col <- if("genome2_original_gene" %in% names(dt)) {
+            "genome2_original_gene"
+        } else {
+            "genome2_gene"
+        }
         g1 <- parts[1L]
         g2 <- parts[2L]
         all1 <- get_all_gene(g1)
         all2 <- get_all_gene(g2)
-        found1 <- unique(as.character(dt$genome1_gene[!is.na(dt$genome1_gene)]))
-        found2 <- unique(as.character(dt$genome2_gene[!is.na(dt$genome2_gene)]))
+        found1 <- unique(as.character(dt[[g1_col]][!is.na(dt[[g1_col]])]))
+        found2 <- unique(as.character(dt[[g2_col]][!is.na(dt[[g2_col]])]))
         out <- rbind(
             data.frame(genome = rep(g1, length(setdiff(all1, found1))),
                        gene = setdiff(all1, found1),
