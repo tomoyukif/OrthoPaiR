@@ -101,6 +101,7 @@ reorgOrthopairs <- function(working_dir,
               working_dir = working_dir,
               n_threads = n_threads,
               max_components = max_components)
+    .writeReorgPairwiseOrphan(working_dir = working_dir, out_dir = out_dir)
     
     if(verbose) {
         message("[reorg] Wrote graph and summary tables to: ", out_dir)
@@ -373,26 +374,30 @@ reorgOrthopairs <- function(working_dir,
 }
 
 
-.vertexSetsToWideDT <- function(sets, genomes, nm2g) {
+.vertexSetsToWideDT <- function(sets, genomes, nm2g, nm2o) {
+    original_cols <- paste0(genomes, "_original")
     if(!length(sets)) {
-        empty <- setNames(
-            replicate(length(genomes), character(0L), simplify = FALSE),
-            genomes
-        )
+        empty_names <- c(genomes, original_cols)
+        empty <- setNames(replicate(length(empty_names), character(0L), simplify = FALSE), empty_names)
         return(as.data.table(empty))
     }
     rows <- lapply(sets, function(S) {
-        row <- setNames(rep(NA_character_, length(genomes)), genomes)
+        row_gene <- setNames(rep(NA_character_, length(genomes)), genomes)
+        row_orig <- setNames(rep(NA_character_, length(original_cols)), original_cols)
         for(v in S) {
             g <- unname(nm2g[v])[1L]
             if(!is.na(g) && nzchar(g) && g %in% genomes) {
-                row[[g]] <- sub("[0-9]*:", "", v)
+                gene_id <- sub("[0-9]*:", "", v)
+                row_gene[[g]] <- gene_id
+                orig_id <- unname(nm2o[v])[1L]
+                if(is.na(orig_id) || !nzchar(orig_id)) orig_id <- gene_id
+                row_orig[[paste0(g, "_original")]] <- orig_id
             }
         }
-        row
+        c(row_gene, row_orig)
     })
     dt <- as.data.table(do.call(rbind, rows))
-    setcolorder(dt, genomes)
+    setcolorder(dt, c(genomes, original_cols))
     dt
 }
 
@@ -435,9 +440,11 @@ reorgOrthopairs <- function(working_dir,
         }
     }
     nm2g <- setNames(lab_genome, va$name)
+    nm2o <- setNames(as.character(va$original), va$name)
     list(
         genomes = genomes,
         nm2g = nm2g,
+        nm2o = nm2o,
         n_genomes = length(genomes)
     )
 }
@@ -465,10 +472,11 @@ reorgOrthopairs <- function(working_dir,
 }
 
 
-.graph2df_write_small_block <- function(small_groups, genomes, nm2g, fn_ortho_list) {
-    out <- .vertexSetsToWideDT(small_groups, genomes, nm2g)
+.graph2df_write_small_block <- function(small_groups, genomes, nm2g, nm2o, fn_ortho_list) {
+    out <- .vertexSetsToWideDT(small_groups, genomes, nm2g, nm2o)
+    gene_cols <- genomes[genomes %in% names(out)]
     wide_colnames <- names(out)
-    out <- .sort_ortho_wide_dt(out, wide_colnames)
+    out <- .sort_ortho_wide_dt(out, gene_cols)
     fwrite(
         out,
         fn_ortho_list,
@@ -527,7 +535,7 @@ reorgOrthopairs <- function(working_dir,
 }
 
 
-.graph2df_wide_from_job <- function(job, genomes, nm2g, max_components = Inf) {
+.graph2df_wide_from_job <- function(job, genomes, nm2g, nm2o, max_components = Inf) {
     nv <- length(job$vids)
     if(is.finite(max_components) && nv > max_components) {
         warning(
@@ -536,14 +544,14 @@ reorgOrthopairs <- function(working_dir,
             "). No orthogroup rows from this component.",
             call. = FALSE
         )
-        return(.vertexSetsToWideDT(list(), genomes, nm2g))
+        return(.vertexSetsToWideDT(list(), genomes, nm2g, nm2o))
     }
     prep <- .graph2df_job_to_cpp(job)
     if(is.null(prep)) {
-        return(.vertexSetsToWideDT(list(), genomes, nm2g))
+        return(.vertexSetsToWideDT(list(), genomes, nm2g, nm2o))
     }
     sets <- cpp_em_max_cc_subg(prep$vids, prep$el, prep$color)
-    .vertexSetsToWideDT(sets, genomes, nm2g)
+    .vertexSetsToWideDT(sets, genomes, nm2g, nm2o)
 }
 
 
@@ -593,6 +601,14 @@ reorgOrthopairs <- function(working_dir,
             pgi <- pairwise_genomes[, i]
             pairwise_df <- subset(ortho_df, select = genomes[pgi])
             names(pairwise_df) <- c("genome1_gene", "genome2_gene")
+            ocols <- paste0(genomes[pgi], "_original")
+            if(all(ocols %in% names(ortho_df))) {
+                pairwise_df$genome1_original_gene <- ortho_df[[ocols[1]]]
+                pairwise_df$genome2_original_gene <- ortho_df[[ocols[2]]]
+            } else {
+                pairwise_df$genome1_original_gene <- pairwise_df$genome1_gene
+                pairwise_df$genome2_original_gene <- pairwise_df$genome2_gene
+            }
             pairwise_df <- subset(
                 pairwise_df,
                 subset = !is.na(genome1_gene) & !is.na(genome2_gene)
@@ -632,6 +648,7 @@ reorgOrthopairs <- function(working_dir,
     maps <- .graph2df_vertex_maps(graph, working_dir)
     genomes <- maps$genomes
     nm2g <- maps$nm2g
+    nm2o <- maps$nm2o
     n_genomes <- maps$n_genomes
     fn_ortho_list <- file.path(out_dir, "orthopair_list.tsv")
     
@@ -640,6 +657,7 @@ reorgOrthopairs <- function(working_dir,
         part$small_groups,
         genomes,
         nm2g,
+        nm2o,
         fn_ortho_list
     )
     
@@ -673,6 +691,7 @@ reorgOrthopairs <- function(working_dir,
                                        jobs[[cid]],
                                        genomes,
                                        nm2g,
+                                       nm2o,
                                        max_components = max_components)
                                    pp <- part_paths[cid]
                                    if(nrow(out_dt) > 0L) {
@@ -701,12 +720,14 @@ reorgOrthopairs <- function(working_dir,
                 .graph2df_wide_from_job,
                 genomes = genomes,
                 nm2g = nm2g,
+                nm2o = nm2o,
                 max_components = max_components
             )
             combined <- rbindlist(parts, use.names = TRUE, fill = TRUE)
             rm(jobs, parts)
             if(nrow(combined) > 0L) {
-                combined <- .sort_ortho_wide_dt(combined, wide_colnames)
+                gene_cols <- genomes[genomes %in% names(combined)]
+                combined <- .sort_ortho_wide_dt(combined, gene_cols)
                 fwrite(
                     combined,
                     fn_ortho_list,
@@ -727,4 +748,60 @@ reorgOrthopairs <- function(working_dir,
     
     .graph2df_write_pairwise_dir(fn_ortho_list, out_dir, genomes)
     gc()
+}
+
+.writeReorgPairwiseOrphan <- function(working_dir, out_dir) {
+    pairwise_dir <- file.path(out_dir, "pairwise")
+    pairwise_files <- list.files(pairwise_dir, pattern = "\\.tsv$", full.names = TRUE)
+    if(!length(pairwise_files)) {
+        return(invisible(NULL))
+    }
+    input_dir <- file.path(working_dir, "input")
+    input_folders <- list.dirs(input_dir, recursive = FALSE, full.names = TRUE)
+    gid_map <- lapply(input_folders, function(d){
+        bn <- basename(d)
+        idx <- suppressWarnings(as.integer(sub("_.*", "", bn)))
+        if(is.na(idx)) return(NULL)
+        list(gid = as.character(idx + 1000L), gff = file.path(d, "gff_df.rds"))
+    })
+    gid_map <- Filter(Negate(is.null), gid_map)
+    gff_lookup <- setNames(vapply(gid_map, `[[`, character(1), "gff"),
+                           vapply(gid_map, `[[`, character(1), "gid"))
+    get_all_gene <- function(gid){
+        fn <- gff_lookup[[gid]]
+        if(is.null(fn) || !file.exists(fn)) return(character(0))
+        x <- readRDS(fn)
+        if(is.list(x) && length(x) >= 1L) x <- x[[1L]]
+        if(!is.data.frame(x) || !("gene_id" %in% names(x))) return(character(0))
+        unique(as.character(x$gene_id[!is.na(x$gene_id)]))
+    }
+    
+    out_dir_orphan <- file.path(working_dir, "reorg_orphan")
+    dir.create(out_dir_orphan, showWarnings = FALSE, recursive = TRUE)
+    for(fn in pairwise_files){
+        pair_id <- sub("\\.tsv$", "", basename(fn))
+        parts <- strsplit(pair_id, "_", fixed = TRUE)[[1L]]
+        if(length(parts) != 2L) next
+        dt <- fread(fn, sep = "\t", header = TRUE)
+        if(!all(c("genome1_gene", "genome2_gene") %in% names(dt))) next
+        g1 <- parts[1L]
+        g2 <- parts[2L]
+        all1 <- get_all_gene(g1)
+        all2 <- get_all_gene(g2)
+        found1 <- unique(as.character(dt$genome1_gene[!is.na(dt$genome1_gene)]))
+        found2 <- unique(as.character(dt$genome2_gene[!is.na(dt$genome2_gene)]))
+        out <- rbind(
+            data.frame(genome = rep(g1, length(setdiff(all1, found1))),
+                       gene = setdiff(all1, found1),
+                       stringsAsFactors = FALSE),
+            data.frame(genome = rep(g2, length(setdiff(all2, found2))),
+                       gene = setdiff(all2, found2),
+                       stringsAsFactors = FALSE)
+        )
+        if(!nrow(out)) {
+            out <- data.frame(genome = character(0), gene = character(0), stringsAsFactors = FALSE)
+        }
+        fwrite(out, file.path(out_dir_orphan, paste0(pair_id, ".tsv")), sep = "\t", quote = FALSE, row.names = FALSE)
+    }
+    invisible(TRUE)
 }

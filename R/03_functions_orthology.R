@@ -77,6 +77,8 @@ orthopair <- function(working_dir,
     # Create output directory for ortholog pairs
     orthopair_dir <- file.path(working_dir, "orthopair")
     dir.create(orthopair_dir, showWarnings = FALSE, recursive = TRUE)
+    orphan_dir <- file.path(working_dir, "orphan")
+    dir.create(orphan_dir, showWarnings = FALSE, recursive = TRUE)
     
     # Create genome ID to GFF path mapping for efficient lookup
     gff_lookup <- .create_gff_lookup_dataframe(gff_df_paths, genome_width, verbose)
@@ -137,11 +139,18 @@ orthopair <- function(working_dir,
                 write.table(empty_df, file = out_tsv, sep = "\t", quote = FALSE,
                             row.names = FALSE, col.names = TRUE)
             }
+            orphan_df <- .extractPairOrphanGenes(gff_lookup = gff_lookup,
+                                                 pair_id = pair_id,
+                                                 orthopair_df = result)
+            orphan_fn <- file.path(orphan_dir, paste0(pair_id, ".tsv"))
+            fwrite(orphan_df, file = orphan_fn, sep = "\t", quote = FALSE, row.names = FALSE)
             
             return(list(pair_id = pair_id, error = NULL))
         }, error = function(e) {
             out_tsv <- file.path(orthopair_dir, paste0(pair_id, ".tsv"))
             writeLines("genome1_gene\tgenome2_gene", con = out_tsv)
+            orphan_fn <- file.path(orphan_dir, paste0(pair_id, ".tsv"))
+            writeLines("genome\tgene", con = orphan_fn)
             return(list(pair_id = pair_id, error = e$message))
         })
     }
@@ -185,6 +194,43 @@ orthopair <- function(working_dir,
     .summarizeOrthopairMutualCi(orthopair_dir = orthopair_dir, verbose = verbose)
     
     invisible(TRUE)
+}
+
+.extractPairOrphanGenes <- function(gff_lookup, pair_id, orthopair_df){
+    parts <- strsplit(pair_id, "_", fixed = TRUE)[[1L]]
+    if(length(parts) != 2L){
+        return(data.frame(genome = character(0), gene = character(0), stringsAsFactors = FALSE))
+    }
+    get_all_gene <- function(gid){
+        fn <- gff_lookup[[gid]]
+        if(is.null(fn) || !file.exists(fn)) return(character(0))
+        g <- readRDS(fn)
+        if(is.list(g) && length(g) >= 1L) g <- g[[1L]]
+        if(!is.data.frame(g) || !("gene_id" %in% names(g))) return(character(0))
+        unique(as.character(g$gene_id[!is.na(g$gene_id)]))
+    }
+    genome1 <- parts[1L]
+    genome2 <- parts[2L]
+    all1 <- get_all_gene(genome1)
+    all2 <- get_all_gene(genome2)
+    
+    if(is.null(orthopair_df) || !nrow(orthopair_df)){
+        found1 <- character(0)
+        found2 <- character(0)
+    } else {
+        found1 <- unique(as.character(orthopair_df$genome1_gene[!is.na(orthopair_df$genome1_gene)]))
+        found2 <- unique(as.character(orthopair_df$genome2_gene[!is.na(orthopair_df$genome2_gene)]))
+    }
+    orphan1 <- setdiff(all1, found1)
+    orphan2 <- setdiff(all2, found2)
+    out <- rbind(
+        data.frame(genome = rep(genome1, length(orphan1)), gene = orphan1, stringsAsFactors = FALSE),
+        data.frame(genome = rep(genome2, length(orphan2)), gene = orphan2, stringsAsFactors = FALSE)
+    )
+    if(!nrow(out)){
+        out <- data.frame(genome = character(0), gene = character(0), stringsAsFactors = FALSE)
+    }
+    out
 }
 
 

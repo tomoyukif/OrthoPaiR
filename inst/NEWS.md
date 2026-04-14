@@ -1,3 +1,10 @@
+Changes in version 0.7.2 (2026-04-14)
+
+- Add pairwise orphan outputs for `orthopair/` and `reorg_out/pairwise/`.
+- Reintroduce `summaryOrthoPair()`, `getOrthoPair()`, and `getOrphan()` for the current working_dir-based workflow.
+- Add `getGenomeID()` to list sample-name and assigned genome IDs from `input/`.
+- Update graph/table export to keep and emit original gene IDs in `orthopair_list.tsv` and pairwise outputs.
+
 Changes in version 0.7.1 (2026-04-14)
 
 - Major workflow refactor to a working_dir + TSV-based pipeline.
