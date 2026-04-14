@@ -13,8 +13,7 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
     .orgInput(input = input,
               working_dir = working_dir,
               overwrite = overwrite,
-              n_threads = n_threads,
-              verbose = verbose)
+              n_threads = n_threads)
     invisible(TRUE)
 }
 
@@ -97,8 +96,7 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
 .orgInput <- function(input, 
                       working_dir,
                       overwrite,
-                      n_threads,
-                      verbose){
+                      n_threads){
     n_threads <- .getThreadsLimit(n_threads = n_threads, min_ma = 2e09)
     
     input_list <- mclapply(X = seq_along(input$name),
@@ -107,6 +105,11 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
                            input = input,
                            working_dir = working_dir,
                            overwrite = overwrite)
+    is_err <- vapply(input_list, function(x) inherits(x, "try-error"), logical(1))
+    if(any(is_err)){
+        err_msg <- paste(as.character(input_list[is_err]), collapse = "\n")
+        stop("Error during input organization in parallel workers:\n", err_msg, call. = FALSE)
+    }
     input_list <- do.call(rbind, input_list)
 }
 
@@ -209,13 +212,9 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
     cds_fn <- file.path(out_dir_i, "cds.fa")
     
     if(!overwrite){
-        if(file.exists(taxid_map_fn)){
+        if(file.exists(cds_fn)){
             cds <- readDNAStringSet(cds_fn)
-            rep_tx_id <- read.table(file = taxid_map_fn, 
-                                    header = FALSE,
-                                    sep = "\t")
-            out <- list(cds = cds, rep_tx_id = rep_tx_id)
-            return(out)
+            return(invisible(cds))
         }
     }
     
@@ -481,8 +480,8 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
     return(gff_cds_minus)
 }
 
-#' @importFrom rhdf5 H5Fopen H5Fclose H5Lexists
-#' @importFrom Biostrings writeXStringSet translate
+#' @importFrom txdbmaker makeTxDbFromGFF makeTxDbFromGRanges
+#' @importFrom GenomicFeatures cdsBy extractTranscriptSeqs
 
 .orderGFF <- function(gff){
     # Order GFF data by chromosome and start position

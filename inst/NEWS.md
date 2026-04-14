@@ -1,3 +1,8 @@
+Changes in version 0.7.5 (2026-04-14)
+
+- Improve reformat/input robustness by fixing parallel worker error reporting paths.
+- Update package command/docs workflow and keep release notes synchronized with version bumps.
+
 Changes in version 0.7.4 (2026-04-14)
 
 - Refresh package documentation after regenerating Rcpp/roxygen outputs.

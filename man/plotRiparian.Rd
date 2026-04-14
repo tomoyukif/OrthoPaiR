@@ -2,10 +2,11 @@
 % Please edit documentation in R/10_functions_plot.R
 \name{plotRiparian}
 \alias{plotRiparian}
-\title{Riparian-style plot from orthopair HDF5 data}
+\title{Riparian-style plot from pairwise ortholog TSV data}
 \usage{
 plotRiparian(
-  hdf5_fn = NULL,
+  working_dir,
+  ortholog_source = c("orthopair", "reorg_out"),
   genomes = NULL,
   select_chr = NULL,
   chr_sizes = NULL,
@@ -20,18 +21,17 @@ plotRiparian(
   palette = c("#d73027", "#fc8d59", "#fee08b", "#91bfdb", "#4575b4"),
   min_block_width = 0,
   chr_bar_lw = 8,
+  chr_sep_lw = 0.35,
   chr_label_size = 5,
   normalize_genome = TRUE,
   genome_scale = 100
 )
 }
 \arguments{
-\item{hdf5_fn}{character scalar, path to the HDF5 file used by
-\code{getOrthoPair()}. Exactly one of \code{hdf5_fn} or \code{object} must be non-NULL.}
+\item{working_dir}{base working directory.}
 
-\item{object}{optional in-memory object accepted by \code{getOrthoPair()}
-(see that function for details). Exactly one of \code{hdf5_fn} or \code{object}
-must be non-NULL.}
+\item{ortholog_source}{source directory to read pairwise ortholog tables
+(\code{"orthopair"} or \code{"reorg_out"}).}
 
 \item{min_block_genes}{integer, minimum number of unique genes that a
 synteny block must contain on \emph{both} query and subject sides to be kept.}
@@ -64,20 +64,19 @@ colors for block pairs.}
 A \code{ggplot} object.
 }
 \description{
-\code{plot_riparian} draws a riparian / braided-river style plot directly
-from an HDF5 orthology file or an in-memory orthology object that can
-be passed to \code{getOrthoPair()}.
+\code{plotRiparian} draws a riparian / braided-river style plot directly
+from pairwise ortholog TSV files under \code{working_dir/orthopair} or
+\code{working_dir/reorg_out/pairwise}.
 
-Internally the function calls \code{getOrthoPair(score = FALSE, loc = TRUE)}
-to obtain a list of data.frames (\code{op}) and then builds the
-plot from the synteny block information, similar to \code{devel_script.R}.
+Internally the function reads ortholog TSV files into a list of
+data.frames (\code{op}) and then builds the plot from synteny block information.
 
 Each element of the resulting \code{op} should contain at least
 the columns defined in the \code{target_col} object from \code{devel_script.R},
 in particular:
 \itemize{
-\item \code{query_chr}, \code{query_synteny_block}
-\item \code{subject_chr}, \code{subject_synteny_block}
+\item \code{genome1_chr}, \code{genome1_synteny_block}
+\item \code{genome2_chr}, \code{genome2_synteny_block}
 }
 
 The function aggregates genes into synteny blocks on each side,
@@ -85,11 +84,8 @@ arranges blocks along the x–axis, and draws curved ribbons connecting
 matched query/subject blocks between two genome rows.
 }
 \details{
-This function is meant as a light-weight alternative to the full
-GENESPACE \code{plot_riparian} pipeline, for cases where orthology and
-synteny are already summarised in an HDF5 file that can be read
-with \code{getOrthoPair()}. It does \strong{not} require GENESPACE block files
-and instead works directly from the query/subject synteny block IDs.
+This function works directly from OrthoPaiR TSV outputs and does not
+read HDF5 files.
 
 The function expects that each element of \code{op} corresponds
 to a pair of genomes (query vs subject). For each pair, two horizontal

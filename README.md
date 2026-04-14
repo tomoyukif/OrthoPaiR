@@ -95,6 +95,49 @@ reorgOrthopairs(
 )
 ```
 
+### Input Helper
+
+You can also build inputs incrementally using `orgInputFiles()`:
+
+```r
+in_list <- orgInputFiles(
+  name = "Osat",
+  genome = "path/to/osat_genome.fa",
+  gff = "path/to/osat.gff3",
+  cds = "path/to/osat_cds.fa",
+  prot = NA
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name = "Hvul",
+  genome = "path/to/hvul_genome.fa",
+  gff = "path/to/hvul.gff3",
+  cds = "path/to/hvul_cds.fa",
+  prot = NA
+)
+
+input_df <- as.data.frame(in_list, stringsAsFactors = FALSE)
+```
+
+### Pairwise Accessors
+
+After running `orthopair()`:
+
+```r
+# ID mapping from working_dir/input
+getGenomeID(working_dir = wd)
+
+# Ortholog pairs for one genome pair
+op <- getOrthoPair(working_dir = wd, pair = c(1001, 1002), score = TRUE, loc = TRUE)
+
+# Orphan genes for one genome pair
+orphan <- getOrphan(working_dir = wd, pair = "1001_1002")
+
+# Pair-level summary
+summaryOrthoPair(working_dir = wd, pair = c(1001, 1002))
+```
+
 - For **two genomes**, `orthopair()` output in `working_dir/orthopair/<genomeA>_<genomeB>.tsv` is usually sufficient.
 - For **three or more genomes**, run `reorgOrthopairs()` to create graph and orthogroup summaries in `working_dir/reorg_out`.
 
@@ -120,6 +163,9 @@ When you run the workflow, the output directory will have the following structur
 ├── orthopair/
 │   ├── 1001_1002.tsv
 │   ├── 1001_1003.tsv
+│   ├── orphan/
+│   │   ├── 1001_1002.tsv
+│   │   └── ...
 │   ├── orthopair_pairwise_mutual_ci_stats.tsv
 │   └── orthopair_genome_mean_mutual_ci_matrix.tsv
 ├── reorg_out/
@@ -128,6 +174,9 @@ When you run the workflow, the output directory will have the following structur
 │   └── pairwise/
 │       ├── 1001_1002.tsv
 │       └── ...
+├── reorg_orphan/
+│   ├── 1001_1002.tsv
+│   └── ...
 ├── input/
 │   ├── 1_Osat/
 │   ├── 2_Hvul/

@@ -69,6 +69,29 @@ input_df <- data.frame(
 )
 ```
 
+If you prefer incremental construction, you can use `orgInputFiles()`:
+
+```{r, eval=FALSE}
+in_list <- orgInputFiles(
+  name = "Osat",
+  genome = "path/to/osat_genome.fa",
+  gff = "path/to/osat.gff3",
+  cds = "path/to/osat_cds.fa",
+  prot = NA
+)
+
+in_list <- orgInputFiles(
+  object = in_list,
+  name = "Hvul",
+  genome = "path/to/hvul_genome.fa",
+  gff = "path/to/hvul.gff3",
+  cds = "path/to/hvul_cds.fa",
+  prot = NA
+)
+
+input_df <- as.data.frame(in_list, stringsAsFactors = FALSE)
+```
+
 ## Required GFF and FASTA formats
 
 - **GFF3 file**
@@ -179,6 +202,35 @@ reorgOrthopairs(
 - `orthopair()` writes pairwise ortholog TSV files under `working_dir/orthopair`.
 - `reorgOrthopairs()` writes graph and orthogroup outputs under `working_dir/reorg_out`.
 
+## Accessing pairwise outputs
+
+After running `orthopair()`, use helper accessors:
+
+```{r, eval=FALSE}
+# Genome/sample ID mapping from input folders
+getGenomeID(working_dir = wd)
+
+# Pairwise ortholog table
+op <- getOrthoPair(
+  working_dir = wd,
+  pair = c(1001, 1002),
+  score = TRUE,
+  loc = TRUE
+)
+
+# Pairwise orphan genes
+orphan <- getOrphan(
+  working_dir = wd,
+  pair = "1001_1002"
+)
+
+# Summary table for one pair
+summaryOrthoPair(
+  working_dir = wd,
+  pair = c(1001, 1002)
+)
+```
+
 ## Two‑genome vs multi‑genome use
 
 When you analyse **only two genomes**, `orthopair()` output in `working_dir/orthopair` is usually sufficient.
@@ -230,6 +282,7 @@ in_list <- orgInputFiles(
 
 wd <- file.path(output_dir, "orthopair")
 
+input_df <- as.data.frame(in_list, stringsAsFactors = FALSE)
 reformatFiles(object = input_df, working_dir = wd, overwrite = TRUE, n_threads = 30)
 rbh(working_dir = wd, blast_path = "/path/to/blast/bin", n_threads = 30, overwrite = TRUE)
 orthopair(working_dir = wd, n_threads = 30)
@@ -273,8 +326,6 @@ When you run the pipeline, the output directory will have the following structur
 └── ... (other possible intermediate or log files)
 ```
 
-Each `*.h5` file is a pairwise result for two genomes. The summary tables and network files (e.g., `orthopair_list.csv`, `orthopair.graphml`) are generated when `reorg`, `makegraph`, or `output_table` are TRUE.
-
 Detailed descriptions of the output files:
 
 - **`input/<index>_<name>/`**
@@ -283,6 +334,9 @@ Detailed descriptions of the output files:
   - `all.rbh.tsv` and split pair files (`<genomeA>_<genomeB>.rbh`).
 - **`orthopair/`**
   - Pairwise ortholog tables (`<genomeA>_<genomeB>.tsv`) and pairwise mutual CI summaries.
+  - Pairwise orphan tables in `orthopair/orphan/<genomeA>_<genomeB>.tsv`.
 - **`reorg_out/`**
   - `orthopair.graphml`, `orthopair_list.tsv`, and pairwise tables in `reorg_out/pairwise/`.
+- **`reorg_orphan/`**
+  - Pairwise orphan tables computed from `reorg_out/pairwise`.
 
