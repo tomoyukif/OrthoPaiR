@@ -1,12 +1,11 @@
-##' @title Riparian-style plot from orthopair HDF5 data
+##' @title Riparian-style plot from pairwise ortholog TSV data
 ##' @description
-##' `plot_riparian` draws a riparian / braided-river style plot directly
-##' from an HDF5 orthology file or an in-memory orthology object that can
-##' be passed to `getOrthoPair()`.
+##' `plotRiparian` draws a riparian / braided-river style plot directly
+##' from pairwise ortholog TSV files under `working_dir/orthopair` or
+##' `working_dir/reorg_out/pairwise`.
 ##'
-##' Internally the function calls `getOrthoPair(score = FALSE, loc = TRUE)`
-##' to obtain a list of data.frames (`op`) and then builds the
-##' plot from the synteny block information, similar to `devel_script.R`.
+##' Internally the function reads ortholog TSV files into a list of
+##' data.frames (`op`) and then builds the plot from synteny block information.
 ##'
 ##' Each element of the resulting `op` should contain at least
 ##' the columns defined in the `target_col` object from `devel_script.R`,
@@ -18,11 +17,9 @@
 ##' arranges blocks along the x–axis, and draws curved ribbons connecting
 ##' matched query/subject blocks between two genome rows.
 ##'
-##' @param hdf5_fn character scalar, path to the HDF5 file used by
-##'   `getOrthoPair()`. Exactly one of `hdf5_fn` or `object` must be non-NULL.
-##' @param object optional in-memory object accepted by `getOrthoPair()`
-##'   (see that function for details). Exactly one of `hdf5_fn` or `object`
-##'   must be non-NULL.
+##' @param working_dir base working directory.
+##' @param ortholog_source source directory to read pairwise ortholog tables
+##'   (`"orthopair"` or `"reorg_out"`).
 ##' @param min_block_genes integer, minimum number of unique genes that a
 ##'   synteny block must contain on *both* query and subject sides to be kept.
 ##' @param genome_names optional character vector of genome row labels.
@@ -44,11 +41,8 @@
 ##' @return A `ggplot` object.
 ##'
 ##' @details
-##' This function is meant as a light-weight alternative to the full
-##' GENESPACE `plot_riparian` pipeline, for cases where orthology and
-##' synteny are already summarised in an HDF5 file that can be read
-##' with `getOrthoPair()`. It does **not** require GENESPACE block files
-##' and instead works directly from the query/subject synteny block IDs.
+##' This function works directly from OrthoPaiR TSV outputs and does not
+##' read HDF5 files.
 ##'
 ##' The function expects that each element of `op` corresponds
 ##' to a pair of genomes (query vs subject). For each pair, two horizontal
@@ -64,12 +58,12 @@
 ##' @import stringr
 ##' @import scales
 ##' @import ggforce
-##' @import rhdf5
 ##' @importFrom colorspace darken
 ##' 
 ##' 
 ##' @export
-plotRiparian <- function(hdf5_fn = NULL,
+plotRiparian <- function(working_dir,
+                         ortholog_source = c("orthopair", "reorg_out"),
                          genomes = NULL,
                          select_chr = NULL,
                          chr_sizes = NULL,
@@ -84,22 +78,15 @@ plotRiparian <- function(hdf5_fn = NULL,
                          palette = c("#d73027","#fc8d59","#fee08b","#91bfdb","#4575b4"),
                          min_block_width = 0,
                          chr_bar_lw = 8,
+                         chr_sep_lw = 0.35,
                          chr_label_size = 5,
                          normalize_genome = TRUE,
                          genome_scale = 100) {
-    
-    op_list <- NULL
-    meta_list <- NULL
-    for(i in seq_along(hdf5_fn)){
-        op_list <- c(op_list, 
-                     getOrthoPair(hdf5_fn = hdf5_fn[i],
-                                  score = FALSE, 
-                                  loc = TRUE))
-        meta <- getMeta(hdf5_fn = hdf5_fn[i])
-        names(op_list)[i] <- meta$pair_id
-        meta_list$pair_id <- c(meta_list$pair_id, meta$pair_id)
-        meta_list$genomes <- c(meta_list$genomes, meta$genomes)
-    }
+    ortholog_source <- match.arg(ortholog_source)
+    dat <- .loadRiparianInput(working_dir = working_dir,
+                              ortholog_source = ortholog_source)
+    op_list <- dat$op_list
+    meta_list <- dat$meta_list
     
     if (!is.list(op_list) || length(op_list) == 0L) {
         stop("`op` must be a non-empty list of data.frames.")
@@ -128,6 +115,55 @@ plotRiparian <- function(hdf5_fn = NULL,
                                chr_label_size = chr_label_size,
                                genome_scale = genome_scale)
     return(p)
+}
+
+.loadRiparianInput <- function(working_dir, ortholog_source){
+    orthopair_dir <- file.path(working_dir, "orthopair")
+    orthopair_fns <- list.files(orthopair_dir, pattern = "\\.tsv$", full.names = TRUE)
+    skip <- c("orthopair_pairwise_mutual_ci_stats.tsv", "orthopair_genome_mean_mutual_ci_matrix.tsv")
+    orthopair_fns <- orthopair_fns[!basename(orthopair_fns) %in% skip]
+    if(length(orthopair_fns) == 0){
+        stop("No pairwise ortholog TSV files in ", orthopair_dir, call. = FALSE)
+    }
+    normalize_pair_id <- function(x){
+        x <- sub("\\.tsv$", "", basename(x))
+        parts <- strsplit(x, "_", fixed = TRUE)[[1]]
+        paste(sort(parts), collapse = "_")
+    }
+    
+    op_list <- list()
+    meta_list <- list(pair_id = character(0), genomes = character(0))
+    
+    if(ortholog_source == "orthopair"){
+        use_fns <- orthopair_fns
+        
+    } else {
+        pairwise_dir <- file.path(working_dir, "reorg_out", "pairwise")
+        pairwise_fns <- list.files(pairwise_dir, pattern = "\\.tsv$", full.names = TRUE)
+        if(length(pairwise_fns) == 0){
+            stop("No pairwise ortholog TSV files in ", pairwise_dir, call. = FALSE)
+        }
+        keep_ids <- unique(vapply(pairwise_fns, normalize_pair_id, character(1)))
+        op_ids <- vapply(orthopair_fns, normalize_pair_id, character(1))
+        use_fns <- orthopair_fns[op_ids %in% keep_ids]
+    }
+    
+    for(fn in use_fns){
+        pair_id <- normalize_pair_id(fn)
+        dt <- data.table::fread(fn, sep = "\t", header = TRUE)
+        needed <- c("genome1_gene", "genome2_gene",
+                    "genome1_chr", "genome1_synteny_block", "genome1_start", "genome1_end",
+                    "genome2_chr", "genome2_synteny_block", "genome2_start", "genome2_end")
+        if(!all(needed %in% names(dt))) next
+        op_list[[pair_id]] <- as.data.frame(dt)
+        genomes_i <- strsplit(pair_id, "_", fixed = TRUE)[[1]]
+        meta_list$pair_id <- c(meta_list$pair_id, pair_id)
+        meta_list$genomes <- c(meta_list$genomes, genomes_i)
+    }
+    if(length(op_list) == 0){
+        stop("No usable ortholog tables found for riparian plot.")
+    }
+    list(op_list = op_list, meta_list = meta_list)
 }
 
 .get_block_list <- function(op, genomes, meta, select_chr = NULL){
@@ -223,12 +259,12 @@ plotRiparian <- function(hdf5_fn = NULL,
         block_df[, genome2_block_width := genome2_block_end - genome2_block_start]
         setorder(block_df, genome1_block_chr, genome1_block_start, genome2_block_chr, genome2_block_start)
         
-        query_reverse <- block_df$genome1_block_direction < 0
+        genome1_reverse <- block_df$genome1_block_direction < 0
         block_df$genome1_block_direction <- rep("+", length(block_df$genome1_block_direction))
-        block_df$genome1_block_direction[query_reverse] <- "-"
-        subject_reverse <- block_df$genome2_block_direction < 0
+        block_df$genome1_block_direction[genome1_reverse] <- "-"
+        genome2_reverse <- block_df$genome2_block_direction < 0
         block_df$genome2_block_direction <- rep("+", length(block_df$genome2_block_direction))
-        block_df$genome2_block_direction[subject_reverse] <- "-"
+        block_df$genome2_block_direction[genome2_reverse] <- "-"
         new_blocks <- list(block_df)
         names(new_blocks) <- pair_id
         pair_blocks <- c(pair_blocks, new_blocks)

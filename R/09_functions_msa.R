@@ -1,132 +1,179 @@
 #' @export
 #' 
 #' 
-compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = TRUE){
-    h5 <- H5Fopen(hdf5_fn)
-    on.exit(H5Fclose(h5))
-    out_dir <- file.path(dirname(dirname(hdf5_fn)), "msa_out")
-    check <- h5$data_type == "reorg_orthopair"
+compareOrthoSeq <- function(working_dir,
+                            ortholog_source = c("orthopair", "reorg_out"),
+                            n_threads = 1,
+                            verbose = TRUE){
+    ortholog_source <- match.arg(ortholog_source)
+    out_dir <- file.path(working_dir, "msa_out")
+    dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
+    
+    in_files <- .orgInputFiles(working_dir = working_dir)
+    orthopair_gene_list <- .loadOrthoPairGeneList(working_dir = working_dir,
+                                                  ortholog_source = ortholog_source)
+    pair_id <- names(orthopair_gene_list)
     if(verbose){
-        message("The input data type: reorg_orthopair")
+        message("The ortholog source: ", ortholog_source)
+        message("The number of genome pairs: ", length(pair_id))
     }
-    if(check){
-        in_files <- .orgInputFiles(hdf5_fn = hdf5_fn, h5 = h5)
+    
+    out <- NULL
+    for(i in seq_along(pair_id)){
+        pair_id_i <- pair_id[i]
         if(verbose){
-            message("The number of genome pairs: ", 
-                    length(in_files$comb_id$pair_id))
+            message("Running for the following genome pair: ", pair_id_i)
         }
-        out <- NULL
-        if(!is.null(graph_df)){
-            if(is.character(graph_df)){
-                graph_df <- read.csv(file = graph_df)
-            }
+        genomes <- strsplit(pair_id_i, "_", fixed = TRUE)[[1]]
+        genome1_id <- genomes[1]
+        genome2_id <- genomes[2]
+        genome1_index <- match(genome1_id, in_files$genome_ids)
+        genome2_index <- match(genome2_id, in_files$genome_ids)
+        if(is.na(genome1_index) || is.na(genome2_index)){
+            warning("Skip pair ", pair_id_i, " because genome IDs were not found in working_dir/input.")
+            next
+        }
+        required <- c(in_files$cds[genome1_index], in_files$cds[genome2_index],
+                      in_files$prot[genome1_index], in_files$prot[genome2_index],
+                      in_files$genome[genome1_index], in_files$genome[genome2_index],
+                      in_files$gff[genome1_index], in_files$gff[genome2_index])
+        if(any(is.na(required))){
+            warning("Skip pair ", pair_id_i, " due to missing CDS/PROT/GENOME/GFF files in input folders.")
+            next
         }
         
-        for(i in seq_along(in_files$comb_id$pair_id)){
-            pair_id <- in_files$comb_id$pair_id[i]
-            if(verbose){
-                message("Running for the following genome pair: ", pair_id)
-            }
-            query_id <- in_files$comb_id$query[i]
-            subject_id <- in_files$comb_id$subject[i]
-            genome1_index <- which(in_files$genome_names %in% query_id)
-            genome2_index <- which(in_files$genome_names %in% subject_id)
-            
-            if(!is.null(graph_df)){
-                orthopair_gene <- data.frame(query_tx = graph_df[[paste0(query_id, "_TX")]], 
-                                             subject_tx = graph_df[[paste0(subject_id, "_TX")]], 
-                                             SOG = graph_df$SOG)
-                orthopair_gene <- subset(orthopair_gene,
-                                         subset = !is.na(query_tx) & !is.na(subject_tx))
-                orthopair_gene <- unique(orthopair_gene)
-                
-            } else {
-                orthopair_gene <- h5$orthopair_gene[[pair_id]]
-            }
-            out_i <- .compareSeqEngine(cds1 = as.character(in_files$cds[genome1_index]),
-                                       prot1 = as.character(in_files$prot[genome1_index]),
-                                       promoter1 = as.character(in_files$promoter[genome1_index]),
-                                       genome1 = as.character(in_files$genome[[genome1_index]]),
-                                       gff1 = as.character(in_files$gff[genome1_index]),
-                                       cds2 = as.character(in_files$cds[genome2_index]),
-                                       prot2 = as.character(in_files$prot[genome2_index]),
-                                       promoter2 = as.character(in_files$promoter[genome2_index]),
-                                       genome2 = as.character(in_files$genome[[genome2_index]]),
-                                       gff2 = as.character(in_files$gff[genome2_index]),
-                                       orthopair_gene = orthopair_gene,
-                                       query_id = query_id,
-                                       subject_id = subject_id,
-                                       pair_id = pair_id,
-                                       out_dir = out_dir,
-                                       n_threads = n_threads,
-                                       verbose = verbose)
-            out <- c(out, list(out_i))
-        }
-        names(out) <- in_files$comb_id$pair_id
-        
-    } else {
-        promoter1 <- h5$files$query_promoter
-        promoter2 <- h5$files$subject_promoter
-        promoter1[is.null(promoter1)] <- "null/path"
-        promoter2[is.null(promoter2)] <- "null/path"
-        query_id <- basename(sub("/input.h5", "", h5$files$query_h5))
-        subject_id <- basename(sub("/input.h5", "", h5$files$subject_h5))
-        out <- .compareSeqEngine(cds1 = as.character(h5$files$query_cds),
-                                 prot1 = as.character(h5$files$query_prot),
-                                 promoter1 = promoter1,
-                                 genome1 = as.character(h5$files$query_genome),
-                                 gff1 = as.character(h5$files$query_gff),
-                                 cds2 = as.character(h5$files$subject_cds),
-                                 prot2 = as.character(h5$files$subject_prot),
-                                 promoter2 = promoter2,
-                                 genome2 = as.character(h5$files$subject_genome),
-                                 gff2 = as.character(h5$files$subject_gff),
-                                 orthopair_gene = h5$orthopair_gene,
-                                 query_id = query_id,
-                                 subject_id = subject_id,
-                                 pair_id = paste(query_id, subject_id, sep = "_"),
-                                 out_dir = out_dir,
-                                 n_threads = n_threads,
-                                 verbose = verbose)
-        out <- list(out)
-        names(out) <- ""
+        orthopair_gene <- orthopair_gene_list[[pair_id_i]]
+        out_i <- .compareSeqEngine(cds1 = as.character(in_files$cds[genome1_index]),
+                                   prot1 = as.character(in_files$prot[genome1_index]),
+                                   promoter1 = as.character(in_files$promoter[genome1_index]),
+                                   genome1 = as.character(in_files$genome[genome1_index]),
+                                   gff1 = as.character(in_files$gff[genome1_index]),
+                                   cds2 = as.character(in_files$cds[genome2_index]),
+                                   prot2 = as.character(in_files$prot[genome2_index]),
+                                   promoter2 = as.character(in_files$promoter[genome2_index]),
+                                   genome2 = as.character(in_files$genome[genome2_index]),
+                                   gff2 = as.character(in_files$gff[genome2_index]),
+                                   orthopair_gene = orthopair_gene,
+                                   genome1_id = genome1_id,
+                                   genome2_id = genome2_id,
+                                   pair_id = pair_id_i,
+                                   out_dir = out_dir,
+                                   n_threads = n_threads,
+                                   verbose = verbose)
+        out <- c(out, list(out_i))
     }
+    names(out) <- pair_id
     return(out)
 }
 
-.orgInputFiles <- function(hdf5_fn, h5){
-    genome_names <- names(h5$genome_fn)
-    gff_list <- NULL
-    cds_list <- NULL
-    prot_list <- NULL
-    promoter_list <- NULL
-    genome_list <- h5$genome_fn
-    for(i in seq_along(genome_names)){
-        gff_list <- c(gff_list,
-                      file.path(dirname(hdf5_fn), 
-                                paste0(genome_names[i], "_orthopair.gff")))
-        cds_list <- c(cds_list,
-                      file.path(dirname(hdf5_fn), 
-                                paste0(genome_names[i], "_orthopair.cds")))
-        prot_list <- c(prot_list,
-                       file.path(dirname(hdf5_fn), 
-                                 paste0(genome_names[i], "_orthopair.prot")))
-        promoter_list <- c(promoter_list,
-                           file.path(dirname(hdf5_fn), 
-                                     paste0(genome_names[i], "_orthopair.promoter")))}
+.orgInputFiles <- function(working_dir){
+    input_dir <- file.path(working_dir, "input")
+    input_folders <- list.dirs(path = input_dir, recursive = FALSE, full.names = TRUE)
+    if(length(input_folders) == 0){
+        stop("No input folders found under: ", input_dir, call. = FALSE)
+    }
+    base <- basename(input_folders)
+    genome_idx <- suppressWarnings(as.integer(sub("_.*", "", base)))
+    valid <- !is.na(genome_idx)
+    input_folders <- input_folders[valid]
+    base <- base[valid]
+    genome_ids <- as.character(genome_idx[valid] + 1000L)
     
-    comb_id <- data.frame(pair_id = names(h5$orthopair_gene))
-    comb_id$query <- sub("_.+", "", comb_id$pair_id)
-    comb_id$subject <- sub(".+_", "", comb_id$pair_id)
+    pick_existing <- function(candidates){
+        hit <- candidates[file.exists(candidates)]
+        if(length(hit) == 0) return(NA_character_)
+        hit[1]
+    }
     
-    out <- list(gff = gff_list, 
-                cds = cds_list,
-                prot = prot_list,
-                promoter = promoter_list,
-                genome = genome_list,
-                genome_names = genome_names,
-                comb_id = comb_id)
-    return(out)
+    cds <- vapply(input_folders, function(d){
+        pick_existing(file.path(d, c("cds.fa", "cds.fasta", "cds.fna")))
+    }, character(1))
+    prot <- vapply(input_folders, function(d){
+        pick_existing(file.path(d, c("prot.fa", "prot.faa", "protein.fa", "protein.faa")))
+    }, character(1))
+    gff <- vapply(input_folders, function(d){
+        pick_existing(file.path(d, c("gff3", "gff", "annotation.gff3", "annotation.gff")))
+    }, character(1))
+    promoter <- vapply(seq_along(input_folders), function(i){
+        file.path(input_folders[i], paste0(base[i], "_orthopair.promoter"))
+    }, character(1))
+    genome <- vapply(input_folders, function(d){
+        pick_existing(file.path(d, c("genome.fa", "genome.fna", "genome.fasta", "genome.fa.gz")))
+    }, character(1))
+    
+    names(cds) <- names(prot) <- names(gff) <- names(promoter) <- names(genome) <- genome_ids
+    list(gff = gff,
+         cds = cds,
+         prot = prot,
+         promoter = promoter,
+         genome = genome,
+         genome_ids = genome_ids)
+}
+
+.loadOrthoPairGeneList <- function(working_dir, ortholog_source){
+    normalize_pair_id <- function(x){
+        x <- sub("\\.tsv$", "", basename(x))
+        parts <- strsplit(x, "_", fixed = TRUE)[[1]]
+        paste(sort(parts), collapse = "_")
+    }
+    
+    load_from_orthopair <- function(){
+        orthopair_dir <- file.path(working_dir, "orthopair")
+        fns <- list.files(orthopair_dir, pattern = "\\.tsv$", full.names = TRUE)
+        skip <- c("orthopair_pairwise_mutual_ci_stats.tsv", "orthopair_genome_mean_mutual_ci_matrix.tsv")
+        fns <- fns[!basename(fns) %in% skip]
+        out <- list()
+        for(fn in fns){
+            dt <- data.table::fread(fn, sep = "\t", header = TRUE)
+            need <- c("genome1_tx", "genome2_tx")
+            if(!all(need %in% names(dt))) next
+            dt <- unique(dt[, c("genome1_tx", "genome2_tx"), with = FALSE])
+            dt <- dt[!is.na(genome1_tx) & !is.na(genome2_tx)]
+            if(nrow(dt) == 0) next
+            dt$SOG <- seq_len(nrow(dt))
+            out[[normalize_pair_id(fn)]] <- as.data.frame(dt[, .(genome1_tx, genome2_tx, SOG)])
+        }
+        out
+    }
+    
+    if(ortholog_source == "orthopair"){
+        out <- load_from_orthopair()
+        if(length(out) == 0){
+            stop("No usable pairwise ortholog TSV with genome1_tx/genome2_tx in working_dir/orthopair.")
+        }
+        return(out)
+    }
+    
+    pairwise_dir <- file.path(working_dir, "reorg_out", "pairwise")
+    pair_fns <- list.files(pairwise_dir, pattern = "\\.tsv$", full.names = TRUE)
+    if(length(pair_fns) == 0){
+        stop("No pairwise ortholog TSV files in: ", pairwise_dir, call. = FALSE)
+    }
+    orthopair_list <- load_from_orthopair()
+    if(length(orthopair_list) == 0){
+        stop("reorg_out source requires working_dir/orthopair/*.tsv to recover genome1_tx/genome2_tx.")
+    }
+    out <- list()
+    for(fn in pair_fns){
+        pair_id <- normalize_pair_id(fn)
+        pair_gene <- data.table::fread(fn, sep = "\t", header = TRUE)
+        if(!all(c("genome1_gene", "genome2_gene") %in% names(pair_gene))) next
+        op_fn <- file.path(working_dir, "orthopair", paste0(pair_id, ".tsv"))
+        if(!file.exists(op_fn)) next
+        op_dt <- data.table::fread(op_fn, sep = "\t", header = TRUE)
+        if(!all(c("genome1_gene", "genome2_gene", "genome1_tx", "genome2_tx") %in% names(op_dt))) next
+        m <- merge(pair_gene, op_dt[, .(genome1_gene, genome2_gene, genome1_tx, genome2_tx)],
+                   by = c("genome1_gene", "genome2_gene"), all.x = TRUE)
+        m <- unique(m[, .(genome1_tx, genome2_tx)])
+        m <- m[!is.na(genome1_tx) & !is.na(genome2_tx)]
+        if(nrow(m) == 0) next
+        m$SOG <- seq_len(nrow(m))
+        out[[pair_id]] <- as.data.frame(m)
+    }
+    if(length(out) == 0){
+        stop("Failed to build transcript-level pair list from reorg_out pairwise TSV files.")
+    }
+    out
 }
 
 #' @importFrom parallel mclapply
@@ -134,29 +181,29 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
 .compareSeqEngine <- function(cds1, prot1, promoter1, genome1, gff1, 
                               cds2, prot2, promoter2, genome2, gff2,
                               orthopair_gene,
-                              query_id = "", subject_id = "", pair_id = "",
+                              genome1_id = "", genome2_id = "", pair_id = "",
                               out_dir,
                               n_threads, verbose){
     
     if(!file.exists(promoter1)){
         if(verbose){
-            message("Preparing a promoter FASTA file for the query genome.")
+            message("Preparing a promoter FASTA file for genome1.")
         }
         promoter1 <- file.path(dirname(gff1),
-                            paste0(query_id, "_orthopair.promoter"))
+                            paste0(genome1_id, "_orthopair.promoter"))
         .getPromoterSeq(gff = gff1, genome = genome1, out_fn = promoter1)
     }
     
     if(!file.exists(promoter2)){
         if(verbose){
-            message("Preparing a promoter FASTA file for the subject genome.")
+            message("Preparing a promoter FASTA file for genome2.")
         }
         promoter2 <- file.path(dirname(gff2), 
-                            paste0(subject_id, "_orthopair.promoter"))
+                            paste0(genome2_id, "_orthopair.promoter"))
         .getPromoterSeq(gff = gff2, genome = genome2, out_fn = promoter2)
     }
     
-    file_list <- c(cds1, cds2, prot2, prot2, promoter1, promoter2)
+    file_list <- c(cds1, cds2, prot1, prot2, promoter1, promoter2)
     check <- file.exists(file_list)
     if(any(!check)){
         stop("Following file(s) not exist: \n", 
@@ -241,7 +288,6 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
 #' @importFrom S4Vectors mcols
 #' @import BSgenome
 #' @importFrom Biostrings readDNAStringSet writeXStringSet
-#' @importFrom rhdf5 H5Fopen H5Fclose
 #' 
 .getPromoterSeq <- function(gff, genome, out_fn){
     genome <- readDNAStringSet(genome)
@@ -284,16 +330,16 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     ol <- unique(ol[ol$queryHits != ol$subjectHits, ])
     
     hit <- match(ol$queryHits, df$gene_ID)
-    ol$query_start <- df$start[hit]
-    ol$query_end <- df$end[hit]
-    ol$query_strand <- df$strand[hit]
+    ol$genome1_start <- df$start[hit]
+    ol$genome1_end <- df$end[hit]
+    ol$genome1_strand <- df$strand[hit]
     hit <- match(ol$subjectHits, df$gene_ID)
     ol$ol_start <- df$start[hit]
     ol$ol_end <- df$end[hit]
     ol$ol_strand <- df$strand[hit]
-    ol <- ol[ol$query_strand == ol$ol_strand, ]
+    ol <- ol[ol$genome1_strand == ol$ol_strand, ]
     
-    ol_plus <- ol[ol$query_strand == "+", ]
+    ol_plus <- ol[ol$genome1_strand == "+", ]
     plus_target <- df$strand == "+" & df$gene_ID %in% ol_plus$queryHits
     hit <- match(promoters$gene_ID[plus_target], ol_plus$queryHits)
     plus_target_end <- end(promoters[plus_target])
@@ -301,7 +347,7 @@ compareOrthoSeq <- function(hdf5_fn, graph_df = NULL, n_threads = 1, verbose = T
     valid <- plus_target_end - ol_plus_hit_end < 3000 & plus_target_end - ol_plus_hit_end > 0
     start(promoters[plus_target][valid]) <- ol_plus$ol_end[hit][valid] + 1
     
-    ol_minus <- ol[ol$query_strand == "-", ]
+    ol_minus <- ol[ol$genome1_strand == "-", ]
     minus_target <- df$strand == "-" & df$gene_ID %in% ol_minus$queryHits
     hit <- match(promoters$gene_ID[minus_target], ol_minus$queryHits)
     minus_target_start <- start(promoters[minus_target])

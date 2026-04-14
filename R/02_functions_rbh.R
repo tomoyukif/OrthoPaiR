@@ -47,7 +47,7 @@ rbh <- function(working_dir,
                              n_threads = n_threads,
                              min_threads = 8L)
     
-    if (nrow(job_assign$fasta_chunk) > 0L) {
+    if(nrow(job_assign$fasta_chunk) > 0L) {
         mclapply(X = unique(job_assign$fasta_chunk$chunk),
                  mc.cores = job_assign$n_parallel_jobs,
                  FUN = .blastn_search,
@@ -85,36 +85,36 @@ rbh <- function(working_dir,
 }
 
 .normalize_target_pair <- function(target_pair, sample_names) {
-    if (is.null(target_pair)) {
-        message("Process all possible pairs.", call. = FALSE)
-        target_pair <- combn(x = sample_names, m = 2)
+    if(is.null(target_pair)) {
+        message("Process all possible pairs.")
+        target_pair <- t(combn(x = sample_names, m = 2))
     }
-    if (is.data.frame(target_pair)) {
+    if(is.data.frame(target_pair)) {
         target_pair <- as.matrix(target_pair)
     }
-    if (!is.matrix(target_pair)) {
+    if(!is.matrix(target_pair)) {
         stop("`target_pair` must be a matrix (N x 2) or a data.frame convertible to a matrix.", call. = FALSE)
     }
-    if (ncol(target_pair) != 2L) {
+    if(ncol(target_pair) != 2L) {
         stop("`target_pair` must have exactly 2 columns.", call. = FALSE)
     }
     storage.mode(target_pair) <- "character"
     target_pair <- trimws(target_pair)
-    if (anyNA(target_pair) || any(!nzchar(target_pair))) {
+    if(anyNA(target_pair) || any(!nzchar(target_pair))) {
         stop("`target_pair` must not contain NA or empty strings.", call. = FALSE)
     }
     keep <- target_pair[, 1] != target_pair[, 2]
     target_pair <- target_pair[keep, , drop = FALSE]
-    if (!nrow(target_pair)) {
+    if(!nrow(target_pair)) {
         stop("`target_pair` contains no valid pairs after removing self-pairs.", call. = FALSE)
     }
-    target_pair
+    return(target_pair)
 }
 
 .validate_target_pair_samples <- function(target_pair, sample_names) {
     samples <- unique(c(target_pair[, 1], target_pair[, 2]))
     missing <- setdiff(samples, sample_names)
-    if (length(missing)) {
+    if(length(missing)) {
         stop(
             "The following samples in `target_pair` were not found in `working_dir/input/*_<sample>/`:\n",
             paste(missing, collapse = ", "),
@@ -134,7 +134,7 @@ rbh <- function(working_dir,
 
 .connected_components_undirected <- function(vertices, edges) {
     vertices <- sort(unique(as.character(vertices)))
-    if (!length(vertices)) {
+    if(!length(vertices)) {
         return(data.frame(vertex = character(), comp_id = integer(), stringsAsFactors = FALSE))
     }
     parent <- seq_along(vertices)
@@ -142,7 +142,7 @@ rbh <- function(working_dir,
     
     find_root <- function(v) {
         i <- match(v, vertices)
-        while (parent[[i]] != i) {
+        while(parent[[i]] != i) {
             parent[[i]] <- parent[[parent[[i]]]]
             i <- parent[[i]]
         }
@@ -152,13 +152,13 @@ rbh <- function(working_dir,
     union <- function(v1, v2) {
         r1 <- find_root(v1)
         r2 <- find_root(v2)
-        if (r1 != r2) {
+        if(r1 != r2) {
             parent[[r2]] <<- r1
         }
     }
     
-    if (nrow(edges)) {
-        for (i in seq_len(nrow(edges))) {
+    if(nrow(edges)) {
+        for(i in seq_len(nrow(edges))) {
             union(as.character(edges$u[i]), as.character(edges$v[i]))
         }
     }
@@ -183,35 +183,35 @@ rbh <- function(working_dir,
     blast_jobs <- list()
     comp_plan <- list()
     
-    for (cid in comp_ids) {
+    for(cid in comp_ids) {
         V <- comps$vertex[comps$comp_id == cid]
         V <- sort(unique(as.character(V)))
-        if (length(V) < 2L) next
+        if(length(V) < 2L) next
         
         edges_c <- edges[edges$u %in% V & edges$v %in% V, , drop = FALSE]
-        if (!nrow(edges_c)) next
+        if(!nrow(edges_c)) next
         
         sumV <- sum(as.numeric(cds_sizes[V]), na.rm = TRUE)
         costA <- .cost_db(sumV) + .cost_blast(sumV, sumV)
         best <- list(type = "all_in_one", cost = costA, hub = NA_character_)
         
-        for (hub in V) {
+        for(hub in V) {
             rest <- setdiff(V, hub)
-            if (!length(rest)) next
+            if(!length(rest)) next
             
             edges_rest <- edges_c[edges_c$u %in% rest & edges_c$v %in% rest, , drop = FALSE]
-            if (nrow(edges_rest) > 0L) next
+            if(nrow(edges_rest) > 0L) next
             
             sumHub <- as.numeric(cds_sizes[[hub]])
             sumRest <- sum(as.numeric(cds_sizes[rest]), na.rm = TRUE)
             costB <- .cost_db(sumHub) + .cost_db(sumRest) +
                 .cost_blast(sumHub, sumRest) + .cost_blast(sumRest, sumHub)
-            if (is.finite(costB) && costB < best$cost) {
+            if(is.finite(costB) && costB < best$cost) {
                 best <- list(type = "hub_rest", cost = costB, hub = hub)
             }
         }
         
-        if (identical(best$type, "all_in_one")) {
+        if(identical(best$type, "all_in_one")) {
             db_sets[[length(db_sets) + 1L]] <- V
             db_id <- length(db_sets)
             blast_jobs[[length(blast_jobs) + 1L]] <- list(query = V, db_set_id = db_id)
@@ -229,7 +229,7 @@ rbh <- function(working_dir,
         comp_plan[[as.character(cid)]] <- best
     }
     
-    if (!length(db_sets) || !length(blast_jobs)) {
+    if(!length(db_sets) || !length(blast_jobs)) {
         stop("No BLAST jobs planned from `target_pair` (check pairs).", call. = FALSE)
     }
     
@@ -237,7 +237,7 @@ rbh <- function(working_dir,
 }
 
 .splitRBHbyGenomePair <- function(rbh_fn, rbh_dir, genome_width = 4L){
-    if (!file.exists(rbh_fn)) {
+    if(!file.exists(rbh_fn)) {
         warning("RBH file not found: ", rbh_fn, ". Skipping split by genome pairs.")
         return(invisible(NULL))
     }
@@ -247,18 +247,18 @@ rbh <- function(working_dir,
     
     # Delete any existing .rbh files in the output directory before writing new ones
     existing_rbh <- list.files(path = rbh_dir, pattern = "\\.rbh$", full.names = TRUE)
-    if (length(existing_rbh) > 0L) {
+    if(length(existing_rbh) > 0L) {
         unlink(existing_rbh, force = TRUE)
     }
     
     # Use awk for fast single-pass splitting (much faster than R line-by-line processing)
     # Columns: query_tx, subject_tx, pident, q2s_qcovs, s2q_qcovs, q2s_ci, s2q_ci, mutual_ci
     sys <- Sys.info()[["sysname"]]
-    if (!sys %in% c("Linux", "Darwin")) {
+    if(!sys %in% c("Linux", "Darwin")) {
         stop("Linux/macOS only (requires awk)")
     }
     
-    if (Sys.which("awk") == "") {
+    if(Sys.which("awk") == "") {
         stop("Required command not found in PATH: awk")
     }
     
@@ -272,7 +272,7 @@ rbh <- function(working_dir,
 NF >= 2 {
   gA = substr($1, 1, gw);
   gB = substr($2, 1, gw);
-  if (gA <= gB) {
+  if(gA <= gB) {
     pair_id = gA "_" gB;
   } else {
     pair_id = gB "_" gA;
@@ -288,7 +288,7 @@ NF >= 2 {
     
     # Run awk in single pass
     rc <- system2("awk", c("-f", awk_fn, rbh_fn), stdout = TRUE, stderr = TRUE)
-    if (!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
+    if(!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
         stop("awk split failed:\n", paste(rc, collapse = "\n"))
     }
     
@@ -306,10 +306,10 @@ NF >= 2 {
     # Existing DB definitions
     existing_list_files <- list.files(blast_dir, pattern = "_blastdb\\.list$", full.names = TRUE, recursive = TRUE)
     existing_sets <- list()
-    if (length(existing_list_files)) {
+    if(length(existing_list_files)) {
         existing_sets <- lapply(existing_list_files, function(fn) {
             x <- try(fread(file = fn, sep = "\t", header = FALSE, stringsAsFactors = FALSE), silent = TRUE)
-            if (inherits(x, "try-error")) return(character(0))
+            if(inherits(x, "try-error")) return(character(0))
             sort(unique(as.character(unlist(x))))
         })
         names(existing_sets) <- existing_list_files
@@ -317,28 +317,28 @@ NF >= 2 {
     
     # index offset
     idx_offset <- 0L
-    if (length(existing_list_files)) {
+    if(length(existing_list_files)) {
         idx <- suppressWarnings(as.integer(sub("_.+", "", basename(existing_list_files))))
         idx_offset <- max(idx, na.rm = TRUE)
-        if (!is.finite(idx_offset)) idx_offset <- 0L
+        if(!is.finite(idx_offset)) idx_offset <- 0L
     }
     
     db_map <- vector("list", length(scheme$db_sets))
-    for (i in seq_along(scheme$db_sets)) {
+    for(i in seq_along(scheme$db_sets)) {
         set_i <- sort(unique(as.character(scheme$db_sets[[i]])))
-        if (!length(set_i)) stop("Empty db_set in scheme at index ", i, call. = FALSE)
+        if(!length(set_i)) stop("Empty db_set in scheme at index ", i, call. = FALSE)
         
         # Try reuse exact-match DB if overwrite==FALSE
         reused <- FALSE
-        if (!overwrite && length(existing_sets)) {
+        if(!overwrite && length(existing_sets)) {
             hit <- vapply(existing_sets, function(s) identical(s, set_i), logical(1L))
-            if (any(hit)) {
+            if(any(hit)) {
                 list_fn <- names(existing_sets)[which(hit)[1L]]
                 cds_fn <- sub("_blastdb\\.list$", ".fa", list_fn)
                 # Old naming used all_cds.fa; also allow that
-                if (!file.exists(cds_fn)) {
+                if(!file.exists(cds_fn)) {
                     alt <- sub("_blastdb\\.list$", "_cds.fa", list_fn)
-                    if (file.exists(alt)) cds_fn <- alt
+                    if(file.exists(alt)) cds_fn <- alt
                 }
                 db_prefix <- sub("\\.fa$", ".blastdb", cds_fn)
                 db_map[[i]] <- list(
@@ -352,16 +352,16 @@ NF >= 2 {
             }
         }
         
-        if (!reused) {
+        if(!reused) {
             idx_offset <- idx_offset + 1L
             cds_fn <- file.path(blast_dir, paste0(idx_offset, "_group_cds.fa"))
             cds_fn_list <- input_list$cds[input_list$names %in% set_i]
             cds_fn_list <- normalizePath(cds_fn_list, mustWork = TRUE)
             
             sys <- Sys.info()[["sysname"]]
-            if (sys %in% c("Linux", "Darwin")) {
+            if(sys %in% c("Linux", "Darwin")) {
                 status <- system2("cat", cds_fn_list, stdout = cds_fn)
-                if (!identical(status, 0L)) {
+                if(!identical(status, 0L)) {
                     stop("Merge of CDS FASTA files failed for DB set ", i, " (cat exit ", status, ")", call. = FALSE)
                 }
             } else {
@@ -395,7 +395,7 @@ NF >= 2 {
 }
 
 .checkBLASTout_target <- function(blast_jobs, db_map, blast_dir, overwrite) {
-    if (!length(blast_jobs)) {
+    if(!length(blast_jobs)) {
         return(list(to_be_blast = data.frame(genome = character(), db = character(), stringsAsFactors = FALSE),
                     blast_out_index_offset = 0L))
     }
@@ -404,15 +404,15 @@ NF >= 2 {
     rows <- lapply(blast_jobs, function(job) {
         q <- as.character(job$query)
         sid <- as.integer(job$db_set_id)
-        if (!length(q)) return(NULL)
-        if (is.na(sid) || sid < 1L || sid > length(db_map)) {
+        if(!length(q)) return(NULL)
+        if(is.na(sid) || sid < 1L || sid > length(db_map)) {
             stop("Invalid db_set_id in blast_jobs: ", sid, call. = FALSE)
         }
         db_prefix <- db_map[[sid]]$db_prefix
         data.frame(genome = q, db = rep(db_prefix, length(q)), stringsAsFactors = FALSE)
     })
     to_be_blast <- do.call(rbind, rows)
-    if (is.null(to_be_blast) || !nrow(to_be_blast)) {
+    if(is.null(to_be_blast) || !nrow(to_be_blast)) {
         return(list(to_be_blast = data.frame(genome = character(), db = character(), stringsAsFactors = FALSE),
                     blast_out_index_offset = 0L))
     }
@@ -420,13 +420,13 @@ NF >= 2 {
     
     blast_out_list <- list.files(blast_dir, "blast\\.out\\.list$", full.names = TRUE, recursive = TRUE)
     blast_out_index_offset <- 0L
-    if (length(blast_out_list) > 0L && !overwrite) {
+    if(length(blast_out_list) > 0L && !overwrite) {
         done <- lapply(blast_out_list, function(x) {
             x_out <- fread(file = x, sep = "\t", header = FALSE, stringsAsFactors = FALSE)
             as.data.frame(x_out)
         })
         done <- do.call(rbind, done)
-        if (ncol(done) >= 2L) {
+        if(ncol(done) >= 2L) {
             done <- done[, 1:2, drop = FALSE]
             names(done) <- c("genome", "db")
             to_be_id <- paste(to_be_blast$genome, to_be_blast$db, sep = "_")
@@ -435,7 +435,7 @@ NF >= 2 {
         }
         idx <- suppressWarnings(as.integer(sub("_.+", "", basename(blast_out_list))))
         blast_out_index_offset <- max(idx, na.rm = TRUE)
-        if (!is.finite(blast_out_index_offset)) blast_out_index_offset <- 0L
+        if(!is.finite(blast_out_index_offset)) blast_out_index_offset <- 0L
     }
     
     list(to_be_blast = to_be_blast, blast_out_index_offset = as.integer(blast_out_index_offset))
@@ -477,12 +477,12 @@ NF >= 2 {
 .blastdb_disk_bytes <- function(db_prefix) {
     dir <- dirname(db_prefix)
     base <- basename(db_prefix)
-    if (!nzchar(base) || !dir.exists(dir)) {
+    if(!nzchar(base) || !dir.exists(dir)) {
         return(0)
     }
     pat <- paste0("^", gsub("([.|()\\^{}$+\\[\\]\\\\])", "\\\\\\1", base), "\\.")
     fn <- list.files(dir, pattern = pat, full.names = TRUE)
-    if (!length(fn)) {
+    if(!length(fn)) {
         return(0)
     }
     sum(file.size(fn))
@@ -492,7 +492,7 @@ NF >= 2 {
 .cds_file_sizes <- function(input_list) {
     nm <- input_list$names
     cds <- input_list$cds
-    if (length(nm) != length(cds)) {
+    if(length(nm) != length(cds)) {
         stop("input_list$names and input_list$cds must have the same length.")
     }
     sz <- file.size(cds)
@@ -503,22 +503,22 @@ NF >= 2 {
 
 ## Greedy packing: keep sum(S_q) <= S_q_max per chunk; order follows `genomes` order.
 .chunk_genomes_by_Sq_max <- function(genomes, cds_sizes, S_q_max) {
-    if (!length(genomes)) {
+    if(!length(genomes)) {
         return(integer(0))
     }
-    if (!length(S_q_max) || !is.finite(S_q_max) || S_q_max <= 0) {
+    if(!length(S_q_max) || !is.finite(S_q_max) || S_q_max <= 0) {
         return(seq_along(genomes))
     }
     chunk_id <- integer(length(genomes))
     cur <- 1L
     sum_s <- 0
-    for (i in seq_along(genomes)) {
+    for(i in seq_along(genomes)) {
         g <- genomes[[i]]
         sz <- as.numeric(cds_sizes[[g]])
-        if (!length(sz) || is.na(sz)) {
+        if(!length(sz) || is.na(sz)) {
             sz <- 0
         }
-        if (sum_s > 0 && sum_s + sz > S_q_max) {
+        if(sum_s > 0 && sum_s + sz > S_q_max) {
             cur <- cur + 1L
             sum_s <- 0
         }
@@ -541,7 +541,7 @@ NF >= 2 {
     ma <- .mem_available_bytes()
     margin <- max(512 * 1024^2, 0.05 * ma)
     ma_budget <- ma - margin
-    if (!is.finite(ma_budget) || ma_budget <= 0) {
+    if(!is.finite(ma_budget) || ma_budget <= 0) {
         warning("MemAvailable margin leaves no budget; using single-threaded BLAST.")
         ma_budget <- max(1, ma * 0.5)
     }
@@ -550,7 +550,7 @@ NF >= 2 {
     
     cds_sizes <- .cds_file_sizes(input_list)
     
-    if (!length(check_blast_out$to_be_blast$genome)) {
+    if(!length(check_blast_out$to_be_blast$genome)) {
         return(list(
             fasta_chunk = data.frame(
                 chunk = integer(),
@@ -584,29 +584,29 @@ NF >= 2 {
     
     ## M_job per global chunk, J_mem
     M_worst <- 0
-    for (ch in seq_len(n_chunk)) {
+    for(ch in seq_len(n_chunk)) {
         rows <- fasta_chunk$chunk == ch
         db_pref <- fasta_chunk$db[rows][1]
         S_db <- .blastdb_disk_bytes(as.character(db_pref))
         genomes_ch <- as.character(fasta_chunk$genome[rows])
         S_q <- sum(as.numeric(cds_sizes[genomes_ch]), na.rm = TRUE)
         M_job <- k_db * S_db + k_q * S_q + M_fixed_bytes
-        if (M_job > M_worst) {
+        if(M_job > M_worst) {
             M_worst <- M_job
         }
     }
-    if (M_worst <= 0) {
+    if(M_worst <= 0) {
         J_mem <- Inf
     } else {
         J_mem <- floor(ma_budget / M_worst)
     }
-    J_cap_display <- if (!is.finite(J_mem)) {
+    J_cap_display <- if(!is.finite(J_mem)) {
         as.integer(n_chunk)
     } else {
         max(1L, min(as.integer(J_mem), as.integer(n_chunk)))
     }
     
-    if (is.finite(J_mem) && J_mem < 1L) {
+    if(is.finite(J_mem) && J_mem < 1L) {
         warning(
             "Estimated RAM allows <1 parallel BLAST job (J_mem=", J_mem,
             "). Forcing single job; consider smaller chunks or more memory."
@@ -614,12 +614,12 @@ NF >= 2 {
         threads_per_job <- min(as.integer(n_threads), as.integer(max_threads_blastn))
         n_parallel_jobs <- 1L
         
-    } else if (n_threads < min_threads) {
+    } else if(n_threads < min_threads) {
         threads_per_job <- as.integer(n_threads)
         n_parallel_jobs <- 1L
         
     } else {
-        if (!is.finite(J_mem)) {
+        if(!is.finite(J_mem)) {
             J_cap <- as.integer(n_chunk)
         } else {
             J_cap <- max(1L, min(as.integer(J_mem), as.integer(n_chunk)))
@@ -630,10 +630,10 @@ NF >= 2 {
         )
         n_parallel_jobs <- min(J_cap, max(1L, floor(n_threads / threads_per_job)))
         ## Reconcile oversubscription of logical CPUs
-        while (n_parallel_jobs * threads_per_job > n_threads) {
-            if (threads_per_job > min_threads) {
+        while(n_parallel_jobs * threads_per_job > n_threads) {
+            if(threads_per_job > min_threads) {
                 threads_per_job <- threads_per_job - 1L
-            } else if (n_parallel_jobs > 1L) {
+            } else if(n_parallel_jobs > 1L) {
                 n_parallel_jobs <- n_parallel_jobs - 1L
             } else {
                 break
@@ -641,12 +641,12 @@ NF >= 2 {
         }
     }
     
-    if (isTRUE(verbose)) {
+    if(isTRUE(verbose)) {
         message(sprintf(
             "[rbh] blastn schedule: MemAvailable~%.1f GiB, M_worst~%.2f MiB, J_mem=%s, J_cap=%d, n_chunk=%d, threads_per_job=%d, n_parallel_jobs=%d",
             ma / 1024^3,
             M_worst / 1024^2,
-            if (M_worst <= 0) {
+            if(M_worst <= 0) {
                 "Inf"
             } else {
                 as.character(J_mem)
@@ -680,11 +680,11 @@ NF >= 2 {
     
     query_cds_list <- normalizePath(query_cds_list, mustWork = TRUE)
     sys <- Sys.info()[["sysname"]]
-    if (!sys %in% c("Linux", "Darwin")) {
+    if(!sys %in% c("Linux", "Darwin")) {
         stop("Linux/macOS only (requires cat).")
     }
     status <- system2("cat", query_cds_list, stdout = query_fn)
-    if (!identical(status, 0L)) {
+    if(!identical(status, 0L)) {
         stop("Merge of query CDS FASTA files failed (cat exited with status ", status, ")")
     }
     
@@ -745,7 +745,7 @@ NF >= 2 {
 rbh_extract <- function(blast_out_list,
                         out_rbh_fn,
                         genome_width = 4L,
-                        n_threads = parallel::detectCores(),
+                        n_threads = detectCores(),
                         tmpdir = tempdir(),
                         sort_tmp = tmpdir,
                         sort_mem = NULL,
@@ -759,7 +759,7 @@ rbh_extract <- function(blast_out_list,
     stopifnot(all(file.exists(blast_out_list)))
     
     sys <- Sys.info()[["sysname"]]
-    if (!sys %in% c("Linux", "Darwin")) {
+    if(!sys %in% c("Linux", "Darwin")) {
         stop("Linux/macOS only (mclapply + sort/awk/xargs).")
     }
     
@@ -771,25 +771,25 @@ rbh_extract <- function(blast_out_list,
     # ------------ helpers ------------
     
     assert_cmd <- function(cmd) {
-        if (Sys.which(cmd) == "") stop("Required command not found in PATH: ", cmd)
+        if(Sys.which(cmd) == "") stop("Required command not found in PATH: ", cmd)
     }
     
     get_free_bytes <- function(path) {
         out <- suppressWarnings(system2("df", c("-B1", path), stdout = TRUE, stderr = TRUE))
-        if (length(out) < 2) return(NA_real_)
+        if(length(out) < 2) return(NA_real_)
         cols <- strsplit(out[2], "[[:space:]]+")[[1]]
         cols <- cols[nzchar(cols)]
         avail <- suppressWarnings(as.numeric(cols[4]))
-        if (is.na(avail)) NA_real_ else avail
+        if(is.na(avail)) NA_real_ else avail
     }
     
     guess_sort_mem <- function(default = "4G") {
-        if (identical(sys, "Linux") && file.exists("/proc/meminfo")) {
+        if(identical(sys, "Linux") && file.exists("/proc/meminfo")) {
             mi <- readLines("/proc/meminfo", warn = FALSE)
             ma <- grep("^MemAvailable:", mi, value = TRUE)
-            if (length(ma)) {
+            if(length(ma)) {
                 kb <- suppressWarnings(as.numeric(sub("MemAvailable:\\s+([0-9]+)\\s+kB.*", "\\1", ma)))
-                if (!is.na(kb)) {
+                if(!is.na(kb)) {
                     bytes <- kb * 1024 * 0.25
                     gb <- floor(bytes / 1024^3)
                     gb <- max(1, gb)
@@ -803,8 +803,8 @@ rbh_extract <- function(blast_out_list,
     normalize_many <- function(blast_out_list, norm_dir) {
         dir.create(norm_dir, showWarnings = FALSE, recursive = TRUE)
         norm_files <- file.path(norm_dir, sprintf("norm_%05d.tsv", seq_along(blast_out_list)))
-        for (i in seq_along(blast_out_list)) {
-            if (verbose) message(sprintf("[norm %d/%d] %s", i, length(blast_out_list), basename(blast_out_list[i])))
+        for(i in seq_along(blast_out_list)) {
+            if(verbose) message(sprintf("[norm %d/%d] %s", i, length(blast_out_list), basename(blast_out_list[i])))
             normalize_blast_tsv_cpp(
                 infile = blast_out_list[i],
                 outfile = norm_files[i],
@@ -819,7 +819,7 @@ rbh_extract <- function(blast_out_list,
     write_nul_list <- function(files, list_fn) {
         con <- file(list_fn, open = "wb")
         on.exit(close(con), add = TRUE)
-        for (f in files) {
+        for(f in files) {
             writeBin(charToRaw(f), con)
             writeBin(as.raw(0), con)
         }
@@ -835,8 +835,8 @@ rbh_extract <- function(blast_out_list,
         list_fn <- tempfile("sort_inputs_", tmpdir = tmpdir, fileext = ".nul")
         write_nul_list(in_files, list_fn)
         
-        sort_part <- if (identical(sys, "Linux")) {
-            if (is.null(sort_mem)) sort_mem <- guess_sort_mem()
+        sort_part <- if(identical(sys, "Linux")) {
+            if(is.null(sort_mem)) sort_mem <- guess_sort_mem()
             sprintf("LC_ALL=C sort -t $'\\t' -S %s -T %s --parallel=%d %s",
                     sort_mem, shQuote(sort_tmp), as.integer(n_threads_sort), key_part)
         } else {
@@ -849,7 +849,7 @@ rbh_extract <- function(blast_out_list,
         on.exit(unlink(list_fn, force = TRUE), add = TRUE)
         
         rc <- system2("bash", c("-c", shQuote(script)), stdout = TRUE, stderr = TRUE)
-        if (!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
+        if(!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
             stop("sort pipeline failed. ", paste(rc, collapse = "\n"))
         }
         
@@ -857,25 +857,25 @@ rbh_extract <- function(blast_out_list,
     }
     
     final_sort_rbh <- function(rbh_fn) {
-        if (!final_sort_by_mutual_ci) return(invisible(rbh_fn))
+        if(!final_sort_by_mutual_ci) return(invisible(rbh_fn))
         assert_cmd("sort"); assert_cmd("bash")
         orig_size <- file.info(rbh_fn)$size
-        if (is.na(orig_size) || orig_size == 0L) return(invisible(rbh_fn))
+        if(is.na(orig_size) || orig_size == 0L) return(invisible(rbh_fn))
         tmp <- paste0(rbh_fn, ".tmp_sorted")
         script <- sprintf("LC_ALL=C sort -t $'\\t' -k8,8gr %s > %s",
                           shQuote(rbh_fn), shQuote(tmp))
         rc <- system2("bash", c("-c", shQuote(script)), stdout = TRUE, stderr = TRUE)
-        if (!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
+        if(!is.null(attr(rc, "status")) && attr(rc, "status") != 0L) {
             stop("final sort failed: ", paste(rc, collapse = "\n"))
         }
         tmp_size <- file.info(tmp)$size
-        if (is.na(tmp_size) || tmp_size == 0L) {
+        if(is.na(tmp_size) || tmp_size == 0L) {
             unlink(tmp, force = TRUE)
             stop("final sort produced empty output; ", rbh_fn, " left unchanged. ",
                  "Check that the file has 12 tab-separated columns (column 12 = mutual_ci).")
         }
         ok <- file.rename(tmp, rbh_fn)
-        if (!ok) {
+        if(!ok) {
             file.copy(tmp, rbh_fn, overwrite = TRUE)
             unlink(tmp, force = TRUE)
         }
@@ -885,9 +885,9 @@ rbh_extract <- function(blast_out_list,
     bucketize_norm_files <- function(norm_files, bucket_dir, n_buckets, overwrite = TRUE) {
         assert_cmd("awk")
         dir.create(bucket_dir, showWarnings = FALSE, recursive = TRUE)
-        if (overwrite) {
+        if(overwrite) {
             old <- list.files(bucket_dir, full.names = TRUE, pattern = "\\.tsv$")
-            if (length(old)) unlink(old)
+            if(length(old)) unlink(old)
         }
         
         awk_script <- sprintf(
@@ -904,9 +904,9 @@ rbh_extract <- function(blast_out_list,
         awk_fn <- file.path(bucket_dir, "bucketize.awk")
         writeLines(awk_script, awk_fn)
         
-        if (verbose) message(sprintf("[bucketize] distributing into %d buckets", n_buckets))
+        if(verbose) message(sprintf("[bucketize] distributing into %d buckets", n_buckets))
         rc <- system2("awk", c("-f", awk_fn, norm_files), stdout = TRUE, stderr = TRUE)
-        if (!is.null(attr(rc, "status")) && attr(rc, "status") != 0) {
+        if(!is.null(attr(rc, "status")) && attr(rc, "status") != 0) {
             stop("awk bucketize failed:\n", paste(rc, collapse = "\n"))
         }
         
@@ -916,7 +916,7 @@ rbh_extract <- function(blast_out_list,
     
     process_one_bucket <- function(bucket_fn, out_bucket_fn, sort_tmp, sort_mem, sort_parallel = 1L) {
         fi <- file.info(bucket_fn)
-        if (is.na(fi$size) || fi$size == 0) return(NA_character_)
+        if(is.na(fi$size) || fi$size == 0) return(NA_character_)
         sorted_fn <- sub("\\.tsv$", ".sorted.tsv", bucket_fn)
         
         run_sort_cmd(in_files = bucket_fn,
@@ -937,24 +937,24 @@ rbh_extract <- function(blast_out_list,
         cmd <- sprintf("xargs -0 cat < %s > %s", shQuote(list_fn), shQuote(out_file))
         rc <- system(cmd, ignore.stdout = TRUE, ignore.stderr = FALSE)
         unlink(list_fn)
-        if (!identical(rc, 0L)) stop("merge(cat) failed (exit code ", rc, "):\n", cmd)
+        if(!identical(rc, 0L)) stop("merge(cat) failed (exit code ", rc, "):\n", cmd)
         out_file
     }
     
     # ------------ decide auto strategy ------------
     
     total_bytes <- sum(file.info(blast_out_list)$size, na.rm = TRUE)
-    if (is.null(sort_mem)) sort_mem <- guess_sort_mem()
+    if(is.null(sort_mem)) sort_mem <- guess_sort_mem()
     
-    if (strategy == "auto") {
+    if(strategy == "auto") {
         free_bytes <- get_free_bytes(sort_tmp)
         need <- total_bytes * 2
-        if (!is.na(free_bytes) && free_bytes < need) {
-            if (verbose) message(sprintf("[auto] tmp free %.1f GB < need %.1f GB -> bucket",
+        if(!is.na(free_bytes) && free_bytes < need) {
+            if(verbose) message(sprintf("[auto] tmp free %.1f GB < need %.1f GB -> bucket",
                                          free_bytes/1024^3, need/1024^3))
             strategy <- "bucket"
         } else {
-            if (verbose) message("[auto] using global_sort")
+            if(verbose) message("[auto] using global_sort")
             strategy <- "global_sort"
         }
     }
@@ -968,7 +968,7 @@ rbh_extract <- function(blast_out_list,
     rbh_bucket_dir <- file.path(tmpdir, "rbh_buckets")
     
     on.exit({
-        if (!keep_intermediate) {
+        if(!keep_intermediate) {
             unlink(norm_dir, recursive = TRUE, force = TRUE)
             unlink(bucket_dir, recursive = TRUE, force = TRUE)
             unlink(rbh_bucket_dir, recursive = TRUE, force = TRUE)
@@ -977,11 +977,11 @@ rbh_extract <- function(blast_out_list,
     
     # ------------ execute ------------
     
-    if (strategy == "global_sort") {
+    if(strategy == "global_sort") {
         norm_files <- normalize_many(blast_out_list, norm_dir)
         norm_sizes <- file.info(norm_files)$size
         norm_nonempty <- !is.na(norm_sizes) & norm_sizes > 0L
-        if (!any(norm_nonempty)) {
+        if(!any(norm_nonempty)) {
             stop("All norm files are empty. Normalization wrote no rows. ",
                  "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 10 columns: ",
                  "qseqid sseqid pident qcovs qstart qend sstart send qlen slen).")
@@ -989,7 +989,7 @@ rbh_extract <- function(blast_out_list,
         norm_files <- norm_files[norm_nonempty]
         
         sorted_norm_fn <- file.path(tmpdir, "all.norm.sorted.tsv")
-        if (verbose) message(sprintf("[sort] global -> %s (%d norm files)", sorted_norm_fn, length(norm_files)))
+        if(verbose) message(sprintf("[sort] global -> %s (%d norm files)", sorted_norm_fn, length(norm_files)))
         
         run_sort_cmd(in_files = norm_files,
                      out_file = sorted_norm_fn,
@@ -998,24 +998,24 @@ rbh_extract <- function(blast_out_list,
                      n_threads_sort = n_threads)
         
         sz <- file.info(sorted_norm_fn)$size
-        if (is.na(sz) || sz == 0L) {
+        if(is.na(sz) || sz == 0L) {
             stop("Sort produced empty output file: ", sorted_norm_fn,
                  ". Norm files had total ", sum(norm_sizes, na.rm = TRUE), " bytes. ",
                  "Try running the pipeline manually: LC_ALL=C xargs -0 cat < <list_of_norm_paths> | sort -t $'\\t' ...")
         }
-        if (verbose) message(sprintf("[rbh] streaming -> %s", out_rbh_fn))
+        if(verbose) message(sprintf("[rbh] streaming -> %s", out_rbh_fn))
         rbh_from_sorted_norm_cpp(sorted_norm_fn, out_rbh_fn)
         
-        if (!keep_intermediate) unlink(sorted_norm_fn)
+        if(!keep_intermediate) unlink(sorted_norm_fn)
         final_sort_rbh(out_rbh_fn)
         return(invisible(out_rbh_fn))
     }
     
-    if (strategy == "bucket") {
+    if(strategy == "bucket") {
         norm_files <- normalize_many(blast_out_list, norm_dir)
         norm_sizes <- file.info(norm_files)$size
         norm_nonempty <- !is.na(norm_sizes) & norm_sizes > 0L
-        if (!any(norm_nonempty)) {
+        if(!any(norm_nonempty)) {
             stop("All norm files are empty. Normalization wrote no rows. ",
                  "Check that blast_out_list files are BLAST outfmt 6 (tab-separated, 10 columns: qseqid sseqid pident qcovs qstart qend sstart send qlen slen).")
         }
@@ -1025,12 +1025,12 @@ rbh_extract <- function(blast_out_list,
         bucket_files_all <- file.path(bucket_dir, sprintf("bucket_%03d.tsv", 0:(n_buckets-1L)))
         sizes <- suppressWarnings(file.info(bucket_files_all)$size)
         ok <- which(!is.na(sizes) & sizes > 0)
-        if (length(ok) == 0L) {
+        if(length(ok) == 0L) {
             file.create(out_rbh_fn)
             return(invisible(out_rbh_fn))
         }
         bucket_files <- bucket_files_all[ok]
-        if (verbose) message(sprintf("[bucket] non-empty buckets: %d / %d", length(bucket_files), n_buckets))
+        if(verbose) message(sprintf("[bucket] non-empty buckets: %d / %d", length(bucket_files), n_buckets))
         
         dir.create(rbh_bucket_dir, showWarnings = FALSE, recursive = TRUE)
         out_bucket_files <- file.path(rbh_bucket_dir, sub("\\.tsv$", ".rbh.tsv", basename(bucket_files)))
@@ -1038,10 +1038,10 @@ rbh_extract <- function(blast_out_list,
         mc_cores <- max(1L, min(as.integer(n_threads), length(bucket_files)))
         
         bucket_sort_mem <- sort_mem
-        if (is.null(match.call()$sort_mem) && mc_cores > 1L) bucket_sort_mem <- "2G"
-        if (verbose) message(sprintf("[bucket] mclapply workers=%d, bucket_sort_mem=%s", mc_cores, bucket_sort_mem))
+        if(is.null(match.call()$sort_mem) && mc_cores > 1L) bucket_sort_mem <- "2G"
+        if(verbose) message(sprintf("[bucket] mclapply workers=%d, bucket_sort_mem=%s", mc_cores, bucket_sort_mem))
         
-        out_done <- parallel::mclapply(seq_along(bucket_files), function(i) {
+        out_done <- mclapply(seq_along(bucket_files), function(i) {
             process_one_bucket(
                 bucket_fn = bucket_files[i],
                 out_bucket_fn = out_bucket_files[i],
@@ -1052,12 +1052,12 @@ rbh_extract <- function(blast_out_list,
         }, mc.cores = mc_cores)
         
         out_done <- Filter(Negate(is.na), unlist(out_done, use.names = FALSE))
-        if (length(out_done) == 0L) {
+        if(length(out_done) == 0L) {
             file.create(out_rbh_fn)
             return(invisible(out_rbh_fn))
         }
         
-        if (verbose) message(sprintf("[merge] %d bucket outputs -> %s", length(out_done), out_rbh_fn))
+        if(verbose) message(sprintf("[merge] %d bucket outputs -> %s", length(out_done), out_rbh_fn))
         merge_files_xargs_cat(out_done, out_rbh_fn)
         
         final_sort_rbh(out_rbh_fn)
@@ -1068,3 +1068,60 @@ rbh_extract <- function(blast_out_list,
 }
 
 
+
+.mem_available_bytes <- function() {
+    os <- Sys.info()[["sysname"]]
+    
+    ## -------- Linux --------
+    if (os == "Linux") {
+        mi <- tryCatch(readLines("/proc/meminfo", warn = FALSE), error = function(e) NULL)
+        if (!is.null(mi)) {
+            ma <- grep("^MemAvailable:", mi, value = TRUE)
+            if (length(ma)) {
+                kb <- as.numeric(gsub("[^0-9]", "", ma))
+                return(kb * 1024)
+            }
+        }
+    }
+    
+    ## -------- macOS --------
+    if (os == "Darwin") {
+        # ページサイズ
+        ps <- tryCatch(
+            as.numeric(system("sysctl -n hw.pagesize", intern = TRUE)),
+            error = function(e) NA_real_
+        )
+        
+        vm <- tryCatch(system("vm_stat", intern = TRUE), error = function(e) NULL)
+        if (!is.na(ps) && !is.null(vm)) {
+            get <- function(name) {
+                x <- grep(paste0("^", name), vm, value = TRUE)
+                if (length(x)) as.numeric(gsub("[^0-9]", "", x)) else 0
+            }
+            free     <- get("Pages free")
+            inactive <- get("Pages inactive")
+            speculative <- get("Pages speculative")
+            
+            # macOS では inactive + speculative も実質使える
+            pages <- free + inactive + speculative
+            return(pages * ps)
+        }
+    }
+    
+    ## -------- Windows --------
+    if (os == "Windows") {
+        out <- tryCatch(
+            system("wmic OS get FreePhysicalMemory /Value", intern = TRUE),
+            error = function(e) NULL
+        )
+        if (!is.null(out)) {
+            x <- grep("FreePhysicalMemory=", out, value = TRUE)
+            if (length(x)) {
+                kb <- as.numeric(gsub("[^0-9]", "", x))
+                return(kb * 1024)
+            }
+        }
+    }
+    
+    NA_real_
+}
