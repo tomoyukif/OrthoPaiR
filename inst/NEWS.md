@@ -1,3 +1,8 @@
+Changes in version 0.7.4 (2026-04-14)
+
+- Refresh package documentation after regenerating Rcpp/roxygen outputs.
+- Consolidate C++ source layout to `src/` and remove duplicate copies under `inst/src/`.
+
 Changes in version 0.7.3 (2026-04-14)
 
 - Restore `orgInputFiles()` in the active `R/01_functions_reformatFiles.R` workflow file.

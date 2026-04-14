@@ -1,6 +1,6 @@
 Package: OrthoPaiR
 Title: Syntenic orthologous gene pairing between given genomes
-Version: 0.7.3
+Version: 0.7.4
 Date: 2026-04-14
 Authors@R: person("Tomoyuki", "Furuta", 
            email = "f.tomoyuki@okayama-u.ac.jp",
