@@ -513,3 +513,137 @@ reformatFiles <- function(object, working_dir, overwrite, n_threads){
     cds <- cds[order(names(cds))]
     return(cds)
 }
+
+#' Build/append input file definitions
+#'
+#' Create an `OrthoPairInput` object that stores per-genome input file paths.
+#' This helper is kept for backward compatibility with previous OrthoPaiR workflows.
+#'
+#' @param object Existing `OrthoPairInput` object or `NULL`.
+#' @param name Genome/sample name.
+#' @param genome Genome FASTA path (optional; use `NA` when unavailable).
+#' @param gff GFF3 path.
+#' @param cds CDS FASTA path (optional; use `NA` when unavailable).
+#' @param prot Protein FASTA path (optional; use `NA` when unavailable).
+#' @param validation Logical; run lightweight file/format checks.
+#'
+#' @return `OrthoPairInput` object (list with `name`, `genome`, `gff`, `cds`, `prot`).
+#' @export
+orgInputFiles <- function(object = NULL,
+                          name,
+                          genome = NULL,
+                          gff,
+                          cds = NULL,
+                          prot = NULL,
+                          validation = FALSE){
+    if(length(gff) > 1){
+        message("Multiple input files were specified.")
+        if(is.null(genome)) genome <- rep(NA, length(gff))
+        if(is.null(cds)) cds <- rep(NA, length(gff))
+        if(is.null(prot)) prot <- rep(NA, length(gff))
+        for(i in seq_along(gff)){
+            message("Processing input ", i, ": ", name[i], "...")
+            object <- orgInputFiles(object = object,
+                                    name = name[i],
+                                    genome = genome[i],
+                                    gff = gff[i],
+                                    cds = cds[i],
+                                    prot = prot[i],
+                                    validation = validation)
+        }
+        return(object)
+    } else {
+        if(is.null(genome)) genome <- NA
+        if(is.null(cds)) cds <- NA
+        if(is.null(prot)) prot <- NA
+    }
+    
+    if(validation){
+        .validateInput(name = name, genome = genome, gff = gff, cds = cds, prot = prot)
+    }
+    
+    if(is.null(object)){
+        object <- list(name = name,
+                       genome = genome,
+                       gff = gff,
+                       cds = cds,
+                       prot = prot)
+        class(object) <- c(class(object), "OrthoPairInput")
+    } else {
+        if(!inherits(x = object, what = "OrthoPairInput")){
+            stop("The input object must be an OrthoPairInput class object.", call. = FALSE)
+        }
+        name_hit <- object$name %in% name
+        if(any(name_hit)){
+            object$genome[name_hit] <- genome
+            object$gff[name_hit] <- gff
+            object$cds[name_hit] <- cds
+            object$prot[name_hit] <- prot
+        } else {
+            object$name <- c(object$name, name)
+            object$genome <- c(object$genome, genome)
+            object$gff <- c(object$gff, gff)
+            object$cds <- c(object$cds, cds)
+            object$prot <- c(object$prot, prot)
+        }
+    }
+    return(object)
+}
+
+.validateInput <- function(name, genome, gff, cds, prot){
+    if(is.na(name) || name == ""){
+        stop("Empty name is not allowed.", call. = FALSE)
+    }
+    if(!is.na(genome) && !file.exists(genome)){
+        stop('The file "genome" does not exist.', call. = FALSE)
+    }
+    if(!file.exists(gff)){
+        stop('The file "gff" does not exist.', call. = FALSE)
+    }
+    if(!is.na(cds) && !file.exists(cds)){
+        stop('The file "cds" does not exist.', call. = FALSE)
+    }
+    if(!is.na(prot) && !file.exists(prot)){
+        stop('The file "prot" does not exist.', call. = FALSE)
+    }
+    
+    gff_obj <- import.gff3(gff)
+    chk <- .checkGFFstr(gff_obj)
+    if(isTRUE(chk$check)){
+        stop(paste0("In input data validation for ", name, "\n", chk$msg), call. = FALSE)
+    }
+    
+    if(!is.na(genome)){
+        gff_seq_lev <- seqlevels(gff_obj)
+        genome_obj <- readDNAStringSet(filepath = genome)
+        genome_seq_name <- names(genome_obj)
+        check <- gff_seq_lev %in% genome_seq_name
+        if(!all(check)){
+            stop(paste0("In input data validation for ", name),
+                 "\nFollowing sequence names appeared in the GFF but not in the genome:\n",
+                 paste(head(gff_seq_lev[!check]), collapse = ", "),
+                 call. = FALSE)
+        }
+    } else if(is.na(cds)){
+        stop("the cds argument must be specified when the genome argument is missing.", call. = FALSE)
+    }
+}
+
+.checkGFFstr <- function(gff){
+    check <- any(is.na(gff$type)) || any(gff$type == "")
+    if(check){
+        return(list(check = TRUE, msg = "NA or missing values in the type column."))
+    }
+    gene <- gff[gff$type %in% "gene"]
+    tx <- gff[gff$type %in% c("mRNA", "transcript")]
+    tx_p <- unlist(tx$Parent)
+    if(!all(tx_p %in% gene$ID)){
+        return(list(check = TRUE,
+                    msg = "The Parent column of transcripts contains values not present in gene IDs."))
+    }
+    if(!all(gene$ID %in% tx_p)){
+        return(list(check = TRUE,
+                    msg = "The ID column of genes contains values not present in transcript Parent values."))
+    }
+    list(check = FALSE)
+}

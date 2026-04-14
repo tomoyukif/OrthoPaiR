@@ -1,3 +1,8 @@
+Changes in version 0.7.3 (2026-04-14)
+
+- Restore `orgInputFiles()` in the active `R/01_functions_reformatFiles.R` workflow file.
+- Re-enable its validation helpers and package export for backward-compatible input-object construction.
+
 Changes in version 0.7.2 (2026-04-14)
 
 - Add pairwise orphan outputs for `orthopair/` and `reorg_out/pairwise/`.

@@ -30,8 +30,6 @@ reorg <- TRUE
 makegraph <- TRUE
 output_table <- TRUE
 
-library(data.table)
-source("R/dev/01_functions_reformatFiles.R")
 init_start <- Sys.time()
 opr <- reformatFiles(object = in_list, 
                      working_dir = working_dir, 
@@ -39,8 +37,6 @@ opr <- reformatFiles(object = in_list,
                      n_threads = n_threads)
 init_end <- Sys.time()
 
-source("R/dev/02_functions_rbh.R")
-Rcpp::sourceCpp("inst/src/rbh.cpp")
 rbh_start <- Sys.time()
 rbh(working_dir = working_dir,
     blast_path = blast_path,
@@ -48,8 +44,6 @@ rbh(working_dir = working_dir,
     overwrite = overwrite)
 rbh_end <- Sys.time()
 
-source("R/dev/03_functions_orthology.R")
-Rcpp::sourceCpp("inst/src/synteny.cpp")
 opr_start <- Sys.time()
 out <- orthopair(working_dir = working_dir,
                  n_threads = n_threads)
