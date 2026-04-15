@@ -30,18 +30,23 @@ getGenomeID <- function(working_dir) {
 
 #' Get ortholog table for a genome pair
 #'
-#' Read pairwise ortholog table from `working_dir/orthopair/<pair>.tsv`.
+#' Read pairwise ortholog table from `working_dir/orthopair/<pair>.tsv`, or from
+#' `working_dir/reorg_out/pairwise/<pair>.tsv` when `ortholog_source = "reorg_out"`.
 #'
 #' @param working_dir Working directory.
 #' @param pair Genome pair (e.g. `c(1001, 1002)` or `"1001_1002"`).
 #' @param score Logical; include score-related columns when available.
 #' @param loc Logical; include location-related columns when available.
+#' @param ortholog_source `"orthopair"` (default) or `"reorg_out"`; which result
+#'   tree to read (same `ortholog_source` values as in \code{\link{plotRiparian}}).
 #'
 #' @return data.frame of ortholog pairs.
 #' @export
-getOrthoPair <- function(working_dir, pair, score = FALSE, loc = FALSE) {
+getOrthoPair <- function(working_dir, pair, score = FALSE, loc = FALSE,
+                         ortholog_source = c("orthopair", "reorg_out")) {
+    ortholog_source <- match.arg(ortholog_source)
     pair_id <- .normalize_pair_id(pair)
-    fn <- file.path(working_dir, "orthopair", paste0(pair_id, ".tsv"))
+    fn <- .pairwise_ortholog_tsv(working_dir, pair_id, ortholog_source)
     if(!file.exists(fn)) {
         stop("ortholog pair file not found: ", fn, call. = FALSE)
     }
@@ -73,16 +78,20 @@ getOrthoPair <- function(working_dir, pair, score = FALSE, loc = FALSE) {
 
 #' Get orphan genes for a genome pair
 #'
-#' Read orphan list from `working_dir/orphan/<pair>.tsv`.
+#' Read orphan list from `working_dir/orphan/<pair>.tsv`, or from
+#' `working_dir/reorg_orphan/<pair>.tsv` when `ortholog_source = "reorg_out"`.
 #'
 #' @param working_dir Working directory.
 #' @param pair Genome pair (e.g. `c(1001, 1002)` or `"1001_1002"`).
+#' @param ortholog_source `"orthopair"` (default) or `"reorg_out"`.
 #'
 #' @return data.frame with columns `genome` and `gene`.
 #' @export
-getOrphan <- function(working_dir, pair) {
+getOrphan <- function(working_dir, pair,
+                      ortholog_source = c("orthopair", "reorg_out")) {
+    ortholog_source <- match.arg(ortholog_source)
     pair_id <- .normalize_pair_id(pair)
-    fn <- file.path(working_dir, "orphan", paste0(pair_id, ".tsv"))
+    fn <- .orphan_pair_tsv(working_dir, pair_id, ortholog_source)
     if(!file.exists(fn)) {
         stop("orphan file not found: ", fn, call. = FALSE)
     }
@@ -93,14 +102,20 @@ getOrphan <- function(working_dir, pair) {
 #'
 #' @param working_dir Working directory.
 #' @param pair Genome pair (e.g. `c(1001, 1002)` or `"1001_1002"`).
+#' @param ortholog_source `"orthopair"` (default) or `"reorg_out"`; passed to
+#'   [getOrthoPair()] and [getOrphan()].
 #'
 #' @return data.frame summary by genome side and class.
 #' @export
-summaryOrthoPair <- function(working_dir, pair) {
+summaryOrthoPair <- function(working_dir, pair,
+                             ortholog_source = c("orthopair", "reorg_out")) {
+    ortholog_source <- match.arg(ortholog_source)
     pair_id <- .normalize_pair_id(pair)
     parts <- strsplit(pair_id, "_", fixed = TRUE)[[1L]]
-    op <- getOrthoPair(working_dir = working_dir, pair = pair, score = FALSE, loc = FALSE)
-    orphan <- getOrphan(working_dir = working_dir, pair = pair)
+    op <- getOrthoPair(working_dir = working_dir, pair = pair, score = FALSE, loc = FALSE,
+                       ortholog_source = ortholog_source)
+    orphan <- getOrphan(working_dir = working_dir, pair = pair,
+                        ortholog_source = ortholog_source)
     
     cls <- c("1to1", "1toM", "Mto1", "MtoM")
     q <- op[!duplicated(op$genome1_gene), , drop = FALSE]
@@ -127,6 +142,20 @@ summaryOrthoPair <- function(working_dir, pair) {
         "Total_ratio", "Classified_ratio", "1to1_ratio", "1toM_ratio", "Mto1_ratio", "MtoM_ratio", "Orphan_ratio"
     )
     df
+}
+
+.pairwise_ortholog_tsv <- function(working_dir, pair_id, ortholog_source) {
+    subdir <- switch(ortholog_source,
+                     orthopair = file.path(working_dir, "orthopair"),
+                     reorg_out = file.path(working_dir, "reorg_out", "pairwise"))
+    file.path(subdir, paste0(pair_id, ".tsv"))
+}
+
+.orphan_pair_tsv <- function(working_dir, pair_id, ortholog_source) {
+    subdir <- switch(ortholog_source,
+                     orthopair = file.path(working_dir, "orphan"),
+                     reorg_out = file.path(working_dir, "reorg_orphan"))
+    file.path(subdir, paste0(pair_id, ".tsv"))
 }
 
 .normalize_pair_id <- function(pair) {

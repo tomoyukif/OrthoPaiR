@@ -4,12 +4,19 @@
 \alias{summaryOrthoPair}
 \title{Summarize ortholog class counts for one pair}
 \usage{
-summaryOrthoPair(working_dir, pair)
+summaryOrthoPair(
+  working_dir,
+  pair,
+  ortholog_source = c("orthopair", "reorg_out")
+)
 }
 \arguments{
 \item{working_dir}{Working directory.}
 
 \item{pair}{Genome pair (e.g. \code{c(1001, 1002)} or \code{"1001_1002"}).}
+
+\item{ortholog_source}{\code{"orthopair"} (default) or \code{"reorg_out"}; passed to
+\code{\link[=getOrthoPair]{getOrthoPair()}} and \code{\link[=getOrphan]{getOrphan()}}.}
 }
 \value{
 data.frame summary by genome side and class.

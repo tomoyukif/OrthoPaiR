@@ -1,3 +1,7 @@
+Changes in version 0.7.8 (2026-04-15)
+
+- Add `ortholog_source` argument to `getOrthoPair()`, `getOrphan()`, and `summaryOrthoPair()` to read pairwise tables from `orthopair/` or `reorg_out/pairwise/` and matching orphan files from `orphan/` or `reorg_orphan/` (default remains orthopair workflow).
+
 Changes in version 0.7.7 (2026-04-14)
 
 - Rename orthopair output columns to `genome1_original_gene` / `genome2_original_gene` and keep backward-compatible readers.

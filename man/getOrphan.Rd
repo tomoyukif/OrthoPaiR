@@ -4,16 +4,19 @@
 \alias{getOrphan}
 \title{Get orphan genes for a genome pair}
 \usage{
-getOrphan(working_dir, pair)
+getOrphan(working_dir, pair, ortholog_source = c("orthopair", "reorg_out"))
 }
 \arguments{
 \item{working_dir}{Working directory.}
 
 \item{pair}{Genome pair (e.g. \code{c(1001, 1002)} or \code{"1001_1002"}).}
+
+\item{ortholog_source}{\code{"orthopair"} (default) or \code{"reorg_out"}.}
 }
 \value{
 data.frame with columns \code{genome} and \code{gene}.
 }
 \description{
-Read orphan list from \verb{working_dir/orphan/<pair>.tsv}.
+Read orphan list from \verb{working_dir/orphan/<pair>.tsv}, or from
+\verb{working_dir/reorg_orphan/<pair>.tsv} when \code{ortholog_source = "reorg_out"}.
 }

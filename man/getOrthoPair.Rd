@@ -4,7 +4,13 @@
 \alias{getOrthoPair}
 \title{Get ortholog table for a genome pair}
 \usage{
-getOrthoPair(working_dir, pair, score = FALSE, loc = FALSE)
+getOrthoPair(
+  working_dir,
+  pair,
+  score = FALSE,
+  loc = FALSE,
+  ortholog_source = c("orthopair", "reorg_out")
+)
 }
 \arguments{
 \item{working_dir}{Working directory.}
@@ -14,10 +20,14 @@ getOrthoPair(working_dir, pair, score = FALSE, loc = FALSE)
 \item{score}{Logical; include score-related columns when available.}
 
 \item{loc}{Logical; include location-related columns when available.}
+
+\item{ortholog_source}{\code{"orthopair"} (default) or \code{"reorg_out"}; which result
+tree to read (same \code{ortholog_source} values as in \code{\link{plotRiparian}}).}
 }
 \value{
 data.frame of ortholog pairs.
 }
 \description{
-Read pairwise ortholog table from \verb{working_dir/orthopair/<pair>.tsv}.
+Read pairwise ortholog table from \verb{working_dir/orthopair/<pair>.tsv}, or from
+\verb{working_dir/reorg_out/pairwise/<pair>.tsv} when \code{ortholog_source = "reorg_out"}.
 }
