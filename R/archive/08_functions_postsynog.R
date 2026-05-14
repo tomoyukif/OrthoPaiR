@@ -305,7 +305,6 @@ reorgOrthopairs <- function(hdf5_fn,
 }
 
 
-#' @import data.table
 .createGraph <- function(orthopair_list, reorg_list){
     edges_list <- rbindlist(orthopair_list)
     vertex_list <- rbindlist(reorg_list$genes_list)

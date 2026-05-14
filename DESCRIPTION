@@ -10,9 +10,9 @@ Description: The OrthoPaiR package provides tools for conducting syntenic orthol
 License: GPL (>= 3)
 Encoding: UTF-8
 Imports: Biobase, txdbmaker, BiocGenerics, GenomeInfoDb, GenomicFeatures,
-    GenomicRanges, IRanges, S4Vectors, data.table, dplyr, ggplot2, parallel,
-    rBLAST, rhdf5, rtracklayer, BSgenome, Biostrings, Rcpp (>= 1.0.6),
-    igraph (>= 1.2.6)
+    GenomicRanges, IRanges, S4Vectors, BSgenome, Biostrings, colorspace,
+    data.table, dplyr, ggplot2, ggforce, igraph (>= 1.2.6), parallel, pwalign,
+    rBLAST, rhdf5, rtracklayer, Rcpp (>= 1.0.6), scales, stringr
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3

@@ -51,13 +51,10 @@
 ##'
 ##' @seealso `getOrthoPair`, `calc_curvePolygon`, `round_rect`
 ##' 
-##' @import data.table
 ##' @import ggplot2
-##' @import dplyr
-##' @import tidyr
-##' @import stringr
 ##' @import scales
 ##' @import ggforce
+##' @importFrom stringr str_extract str_pad str_replace_all
 ##' @importFrom colorspace darken
 ##' 
 ##' 

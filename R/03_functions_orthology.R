@@ -22,7 +22,6 @@
 #'   (mean, sd, median, quantiles of `mutual_ci` per genome pair, from direct ortholog rows only)
 #'   and `orthopair_genome_mean_mutual_ci_matrix.tsv` (symmetric matrix of mean `mutual_ci`).
 #'
-#' @importFrom data.table fread fwrite setDT setkey setorder setnames
 #' @importFrom parallel mclapply
 #' @importFrom stats median quantile sd
 #' @export
@@ -1119,8 +1118,6 @@ orthopair <- function(working_dir,
     
     return(link2anchor)
 }
-
-#' @importFrom dplyr left_join
 
 .splitGene <- function(orthopair, g2g_graph){
     split_1toM <- .split1toM(orthopair, gff = g2g_graph$genome1_df)

@@ -109,7 +109,6 @@
 #' \code{plot_riparian} The main GENESPACE plotting routine, which generate
 #' braided river or 'riparian' plots.
 #' @rdname plot_riparian
-#' @import data.table
 #' @import ggplot2
 #' @export
 plot_riparian <- function(gsParam,
@@ -343,7 +342,6 @@ plot_riparian <- function(gsParam,
 #' \code{riparian_engine} underlying routines for plot_riparian, related to
 #' plotting and data parsing.
 #' @rdname plot_riparian
-#' @import data.table
 #' @import ggplot2
 #' @importFrom graphics par
 #' @importFrom grDevices dev.size

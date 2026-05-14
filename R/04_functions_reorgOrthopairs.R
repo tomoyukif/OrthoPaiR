@@ -42,7 +42,6 @@
 #' @return The path to the output directory,
 #'   \code{file.path(working_dir, \"reorg_out\")}.
 #'
-#' @importFrom data.table data.table rbindlist fread fwrite setcolorder melt
 #' @importFrom parallel mclapply
 #' @importFrom igraph write_graph graph_from_data_frame vertex_attr decompose induced_subgraph is_connected as_edgelist components
 #' @export
@@ -334,7 +333,6 @@ reorgOrthopairs <- function(working_dir,
 
 ## Graph creation & summarisation (copied from 08_functions_postsynog.R) ----
 
-#' @import data.table
 .createGraph <- function(orthopair_list, reorg_list){
     edges_list <- rbindlist(orthopair_list)
     vertex_list <- reorg_list$genes_list
