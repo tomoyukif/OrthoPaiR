@@ -4,7 +4,7 @@
 **ブランチ:** `aied`  
 **配置:** `.cursor/plans/publication_grade_benchmark_protocol.md`
 
-本ドキュメントは、OrthoPaiR の性能を**査読付き論文で主張できる水準**まで評価するための方針と、実際の作業手順を定義する。方法論の背景は [orthology_benchmark_methods_2021_2026.md](./orthology_benchmark_methods_2021_2026.md)、改修文脈は [orthopair_superiority_and_evaluation_plan.md](./orthopair_superiority_and_evaluation_plan.md) を参照。
+本ドキュメントは、OrthoPaiR の性能を**査読付き論文で主張できる水準**まで評価するための方針と、実際の作業手順を定義する。方法論の背景は [orthology_benchmark_methods_2021_2026.md](./orthology_benchmark_methods_2021_2026.md)、改修文脈は [orthopair_superiority_and_evaluation_plan.md](./archive/orthopair_superiority_and_evaluation_plan.md) を参照。
 
 ---
 
@@ -573,8 +573,8 @@ hyperfine --warmup 1 --runs 3 \
 | ドキュメント | 内容 |
 |-------------|------|
 | [orthology_benchmark_methods_2021_2026.md](./orthology_benchmark_methods_2021_2026.md) | 2021–2026 文献調査・方法分類 |
-| [orthopair_superiority_and_evaluation_plan.md](./orthopair_superiority_and_evaluation_plan.md) | 改修意図・競合比較の論点 |
-| [orthopair_algorithm_revision_plan.md](./orthopair_algorithm_revision_plan.md) | アルゴリズム Phase 計画 |
+| [orthopair_superiority_and_evaluation_plan.md](./archive/orthopair_superiority_and_evaluation_plan.md) | 改修意図・競合比較の論点 |
+| [orthopair_algorithm_revision_plan.md](./archive/orthopair_algorithm_revision_plan.md) | アルゴリズム Phase 計画（アーカイブ） |
 | `orthology/prior/cursor_dev/compare_tools/compare_tools_plan.md` | Disputed pairs・証拠ベクトル E1–E9 |
 | `orthology/prior/cursor_dev/eval_process_audit.md` | BUSCO/del 評価の監査 |
 | `orthology/prior/cursor_dev/validate_ortho/evaluation_method.md` | Tier C 手順 |
